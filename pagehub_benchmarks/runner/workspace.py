@@ -8,24 +8,35 @@ and checks that ref out.
 ``capture_built_sha`` snapshots whatever the harness produced as one commit so
 the run record can point at an exact tree.
 
-``run_service`` is an optional context manager: if the worktree has a
-``Makefile`` with an ``up`` target it runs ``make up`` (else
-``docker compose up -d`` if a compose file is present), waits for ``health_url``
-to answer, yields, then tears the service down. The grader's HTTP run needs the
-built service reachable at the URL in ``grader.env``; this is the simplest way
-to make that true. Bypassed entirely on ``--dry-run`` and ``--no-serve``.
+``run_service`` is an optional context manager: it finds how to start the built
+service — a ``Makefile`` ``up`` (or ``serve`` / ``run`` / ``dev`` / ``start``)
+target, else ``docker compose up -d --build`` if a compose file is present —
+launches it **detached in its own process group** (a ``make up`` is usually a
+foreground ``uvicorn …`` process, so the runner must own and later kill it),
+polls ``health_url`` until the service answers (and just warns + proceeds if it
+never does — the grader will report the transport errors, which is the right
+signal), yields, then kills the process group and runs the ``down`` target /
+``docker compose down``. The grader's HTTP run needs the built service reachable
+at the URL in ``grader.env``; this is the simplest way to make that true.
+Bypassed entirely on ``--dry-run`` and ``--no-serve``.
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 import shutil
+import signal
 import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+
+_SERVICE_LOG = ".pagehub-benchmarks-service.log"
+_MAKE_UP_TARGETS = ("up", "serve", "run", "dev", "start")
+_COMPOSE_FILES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 
 
 class WorkspaceError(RuntimeError):
@@ -65,6 +76,12 @@ def prepare_worktree(target_repo: str, target_start: str, base_dir: str | Path) 
 def capture_built_sha(worktree: str | Path) -> str | None:
     """Commit whatever the harness wrote; return the resulting sha (or None)."""
     try:
+        # Don't drag the service log (or other run artifacts) into the snapshot.
+        gi = Path(worktree) / ".git" / "info" / "exclude"
+        with contextlib.suppress(OSError):
+            existing = gi.read_text() if gi.is_file() else ""
+            if _SERVICE_LOG not in existing:
+                gi.write_text(existing + f"\n{_SERVICE_LOG}\n")
         _git(["add", "-A"], cwd=worktree)
         # --allow-empty so a no-op build still yields a sha.
         _git(["commit", "-q", "--allow-empty", "-m", "pagehub-benchmarks: built state"], cwd=worktree)
@@ -84,18 +101,45 @@ def _has_make_target(worktree: Path, target: str) -> bool:
     )
 
 
-def _wait_for(health_url: str, timeout_s: float) -> None:
+def _resolve_up_down(worktree: Path) -> tuple[list[str] | None, list[str] | None]:
+    if shutil.which("make"):
+        for target in _MAKE_UP_TARGETS:
+            if _has_make_target(worktree, target):
+                down = ["make", "down"] if _has_make_target(worktree, "down") else None
+                return ["make", target], down
+    if shutil.which("docker") and any((worktree / f).is_file() for f in _COMPOSE_FILES):
+        return ["docker", "compose", "up", "-d", "--build"], ["docker", "compose", "down"]
+    return None, None
+
+
+def _wait_for(health_url: str, timeout_s: float, proc: subprocess.Popen | None) -> bool:
+    """Poll until the service answers (<500). Returns False (with a warning) on
+    timeout or if the start command exits non-zero — never raises (a dead
+    service surfaces as grader transport errors, not a crashed run)."""
     deadline = time.monotonic() + timeout_s
-    last_err: Exception | None = None
     while time.monotonic() < deadline:
-        try:
+        if proc is not None:
+            rc = proc.poll()
+            if rc is not None and rc != 0:
+                print(f"(warning: service start command exited {rc}; grading anyway)")
+                return False
+        with contextlib.suppress(httpx.HTTPError):
             r = httpx.get(health_url, timeout=3.0)
             if r.status_code < 500:
-                return
-        except httpx.HTTPError as exc:  # noqa: PERF203
-            last_err = exc
-        time.sleep(1.0)
-    raise WorkspaceError(f"service did not come up at {health_url}: {last_err}")
+                return True
+        time.sleep(1.5)
+    print(f"(warning: service did not answer at {health_url} within {timeout_s:.0f}s — grading anyway)")
+    return False
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=10)
+    if proc.poll() is None:
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
 @contextlib.contextmanager
@@ -103,25 +147,30 @@ def run_service(
     worktree: str | Path,
     health_url: str | None,
     *,
-    startup_timeout_s: float = 120.0,
+    startup_timeout_s: float = 300.0,
 ) -> Iterator[None]:
     """Best-effort: bring the built service up, yield, tear it down."""
     worktree = Path(worktree)
-    up: list[str] | None = None
-    down: list[str] | None = None
-    if shutil.which("make") and _has_make_target(worktree, "up"):
-        up, down = ["make", "up"], ["make", "down"]
-    elif any((worktree / f).is_file() for f in ("docker-compose.yml", "docker-compose.yaml", "compose.yml")):
-        up, down = ["docker", "compose", "up", "-d"], ["docker", "compose", "down"]
+    up, down = _resolve_up_down(worktree)
     if up is None:
         # Nothing we know how to start — assume the operator runs it.
+        print("(no `make up` / compose file in the built repo — assuming the service is already running)")
         yield
         return
-    subprocess.run(up, cwd=str(worktree), check=True)  # noqa: S603
+    log_path = worktree / _SERVICE_LOG
+    print(f"starting built service: {' '.join(up)} (cwd={worktree}, log={_SERVICE_LOG})")
+    log_fh = open(log_path, "w")  # noqa: SIM115 — closed in the finally below
+    proc = subprocess.Popen(  # noqa: S603
+        up, cwd=str(worktree), start_new_session=True, stdout=log_fh, stderr=subprocess.STDOUT
+    )
     try:
         if health_url:
-            _wait_for(health_url, startup_timeout_s)
+            _wait_for(health_url, startup_timeout_s, proc)
         yield
     finally:
-        with contextlib.suppress(subprocess.SubprocessError, OSError):
-            subprocess.run(down, cwd=str(worktree), check=False)  # noqa: S603
+        _kill_group(proc)
+        if down is not None:
+            with contextlib.suppress(subprocess.SubprocessError, OSError):
+                subprocess.run(down, cwd=str(worktree), check=False, timeout=120)  # noqa: S603
+        with contextlib.suppress(OSError):
+            log_fh.close()

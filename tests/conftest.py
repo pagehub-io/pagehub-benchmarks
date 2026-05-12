@@ -35,7 +35,7 @@ def bench_spec(tmp_path: Path):
         "target_start": "empty",
         "build_prompt_file": str(prompt),
         "grader": {
-            "evals_base_url": "http://localhost:4002",
+            "evals_base_url": "http://localhost:8002",
             "fixture_bundle": "fixtures/demo.json",
             "collection": "demo-rules",
             "env": {"demo_url": "http://localhost:9999"},

@@ -86,7 +86,7 @@ A real run needs:
   comparing harnesses / models / configs, not an actual API bill.
   `config.effort` (`low|medium|high|xhigh|max`) is passed as `claude --effort`.
 - **pagehub-evals running** at `grader.evals_base_url` (default
-  `http://localhost:4002`). The grader imports `grader.fixture_bundle` (a path
+  `http://localhost:8002`). The grader imports `grader.fixture_bundle` (a path
   *within the pagehub-evals repo* — resolved relative to `PAGEHUB_EVALS_REPO`,
   default `~/github/pagehub-io/pagehub-evals`), then runs `grader.collection`.
   Fixture import is operator-only; provide a bearer token via

@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = REPO_ROOT / "benchmarks"
 PROMPTS_DIR = REPO_ROOT / "prompts"
 PRICING_FILE = REPO_ROOT / "pricing.yaml"
-DEFAULT_EVALS_BASE_URL = "http://localhost:4002"
+DEFAULT_EVALS_BASE_URL = "http://localhost:8002"
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_PAGEHUB_EVALS_REPO = "~/github/pagehub-io/pagehub-evals"
 

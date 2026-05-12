@@ -77,12 +77,18 @@ def build_followup_prompt(failures: list[str]) -> str:
     )
 
 
+def _local_probe_url(url: str) -> str:
+    """``host.docker.internal`` reaches the host *from a container*; from the
+    host itself it resolves elsewhere — probe localhost instead."""
+    return url.replace("host.docker.internal", "localhost").replace("host.containers.internal", "localhost")
+
+
 def _health_url(spec: BenchmarkSpec) -> str | None:
-    """Best-effort: derive a health URL from a ``*_url`` entry in grader.env."""
+    """Best-effort: derive a (host-side) health URL from a ``*_url`` entry in grader.env."""
     for value in spec.grader.env.values():
         v = str(value).rstrip("/")
         if v.startswith(("http://", "https://")):
-            return f"{v}/health"
+            return f"{_local_probe_url(v)}/health"
     return None
 
 

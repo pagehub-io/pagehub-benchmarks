@@ -23,7 +23,7 @@ def test_loads_shipped_chess_backend_benchmark():
     assert spec.build_prompt_file == "prompts/chess-backend.md"
     assert spec.grader.collection == "chess-rules"
     assert spec.grader.fixture_bundle == "fixtures/chess-rules.json"
-    assert spec.grader.env == {"eval-chess-backend_url": "http://localhost:8003"}
+    assert spec.grader.env == {"eval-chess-backend_url": "http://host.docker.internal:8003"}
     assert len(spec.harnesses) == 1
     h = spec.harnesses[0]
     assert h.harness == "claude-code"
@@ -45,7 +45,7 @@ def test_grader_defaults_and_fixture_path(monkeypatch, tmp_path):
         "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
     }
     spec = parse_benchmark(data, tmp_path / "x.yaml")
-    assert spec.grader.evals_base_url == "http://localhost:4002"  # default
+    assert spec.grader.evals_base_url == "http://localhost:8002"  # default
     assert spec.max_attempts == 5  # default
     assert spec.target_start == "empty"  # default
     assert spec.grader.fixture_bundle_path == tmp_path / "fixtures" / "x.json"

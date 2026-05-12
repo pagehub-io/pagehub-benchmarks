@@ -9,16 +9,21 @@ target_start: empty
 build_prompt_file: prompts/chess-backend.md
 
 grader:
-  evals_base_url: http://localhost:4002
+  # The standalone pagehub-evals service (its docker-compose maps the API to
+  # :8002). (:4002 was the old platform/evals/ service — not this one.)
+  evals_base_url: http://localhost:8002
   # Path within the pagehub-evals repo checkout (resolved relative to
   # PAGEHUB_EVALS_REPO, default ~/github/pagehub-io/pagehub-evals).
   fixture_bundle: fixtures/chess-rules.json
   collection: chess-rules
   env:
-    # The bundle's "chess-local" environment already maps this to :8003;
-    # the runner re-applies it here so a run can repoint it (e.g. a
-    # worktree-local deployment on another port).
-    eval-chess-backend_url: http://localhost:8003
+    # The pagehub-evals run engine fires HTTP from inside its own container, so
+    # the built service (running on the host's :8003) must be addressed as
+    # host.docker.internal:8003, not localhost:8003. (The runner rewrites this
+    # back to localhost for its own host-side health probe.) The bundle's
+    # "chess-local" environment is PATCHed with this value at grade time, so a
+    # run can also repoint it (different host / port / a worktree deployment).
+    eval-chess-backend_url: http://host.docker.internal:8003
 
 max_attempts: 5
 
