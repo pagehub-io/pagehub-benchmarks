@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}pagehub-benchmarks — all runs{% endblock %}
+{% block content %}
+<h1>pagehub-benchmarks</h1>
+<p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="{{ repo_url }}">repo</a></p>
+
+{% if not runs %}
+<p class="muted">No runs recorded yet. Run <code>make run BENCHMARK=&lt;name&gt;</code> and the run record lands under <code>results/</code>.</p>
+{% else %}
+
+<h2>Benchmarks</h2>
+<div class="cards">
+{% for b in benchmarks %}
+  <div class="card">
+    <h3><a href="benchmarks/{{ b.slug }}.html">{{ b.name }}</a></h3>
+    <dl>
+      <dt>runs</dt><dd>{{ b.run_count }}</dd>
+      <dt>pass rate</dt><dd>{{ b.pass_rate_display }}</dd>
+      <dt>best attempts</dt><dd>{{ b.best_attempts_display }}</dd>
+      <dt>median attempts</dt><dd>{{ b.median_attempts_display }}</dd>
+      <dt>cheapest pass</dt><dd>{% if b.cheapest %}<a href="runs/{{ b.cheapest.run_id }}.html">${{ '%.4f' % b.cheapest.cost_usd }}</a>{% else %}—{% endif %}</dd>
+    </dl>
+  </div>
+{% endfor %}
+</div>
+
+<h2>All runs</h2>
+<table id="runs">
+<thead><tr>
+  <th data-sort="str">benchmark</th>
+  <th data-sort="str">harness</th>
+  <th data-sort="str">model</th>
+  <th data-sort="str">config</th>
+  <th data-sort="str">date</th>
+  <th data-sort="num" class="num">attempts</th>
+  <th data-sort="str">passed</th>
+  <th data-sort="num" class="num">in tokens</th>
+  <th data-sort="num" class="num">out tokens</th>
+  <th data-sort="num" class="num">cost USD</th>
+  <th data-sort="num" class="num">wall s</th>
+</tr></thead>
+<tbody>
+{% for r in runs %}
+<tr>
+  <td><a href="benchmarks/{{ r.benchmark_slug }}.html">{{ r.benchmark }}</a></td>
+  <td><a href="runs/{{ r.run_id }}.html">{{ r.harness }}</a></td>
+  <td>{{ r.model }}</td>
+  <td class="mono">{{ r.config_str }}</td>
+  <td data-v="{{ r.started_at }}">{{ r.date_display }}</td>
+  <td class="num" data-v="{{ r.attempts if r.passed else 9999 }}">{{ r.attempts_display }}</td>
+  <td data-v="{{ 1 if r.passed else 0 }}">{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
+  <td class="num">{{ '{:,}'.format(r.total_input_tokens) }}</td>
+  <td class="num">{{ '{:,}'.format(r.total_output_tokens) }}</td>
+  <td class="num">${{ '%.4f' % r.cost_usd }}</td>
+  <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+// minimal client-side column sort
+document.querySelectorAll('#runs th[data-sort]').forEach((th, idx) => {
+  th.addEventListener('click', () => {
+    const tbody = th.closest('table').querySelector('tbody');
+    const rows = [...tbody.querySelectorAll('tr')];
+    const kind = th.dataset.sort;
+    const asc = th.dataset.dir !== 'asc';
+    th.closest('tr').querySelectorAll('th').forEach(h => delete h.dataset.dir);
+    th.dataset.dir = asc ? 'asc' : 'desc';
+    const val = tr => { const c = tr.children[idx]; return c.dataset.v !== undefined ? c.dataset.v : c.textContent.trim(); };
+    rows.sort((a, b) => {
+      let x = val(a), y = val(b);
+      if (kind === 'num') { x = parseFloat(x) || 0; y = parseFloat(y) || 0; return asc ? x - y : y - x; }
+      return asc ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  });
+});
+</script>
+{% endblock %}

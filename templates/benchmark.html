@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ b.name }} — benchmark{% endblock %}
+{% block crumbs %} / {{ b.name }}{% endblock %}
+{% block content %}
+<h1>{{ b.name }}</h1>
+<p class="muted">{{ b.description or "(no description)" }}</p>
+
+<h2>Definition</h2>
+<ul class="links">
+  <li>Benchmark YAML: <a href="{{ b.yaml_url }}">benchmarks/{{ b.name }}.yaml</a></li>
+  <li>Build prompt: <a href="{{ b.prompt_url }}">{{ b.prompt_file }}</a></li>
+  <li>Grader: pagehub-evals collection <code class="mono">{{ b.collection }}</code> · fixture bundle <a href="{{ b.fixture_url }}">{{ b.fixture_bundle }}</a></li>
+  <li>Target repo: <a href="{{ b.target_repo_url }}">{{ b.target_repo_short }}</a> (start: <code class="mono">{{ b.target_start }}</code>)</li>
+</ul>
+
+<h2>Runs ({{ b.runs|length }})</h2>
+{% if not b.runs %}
+<p class="muted">No runs recorded for this benchmark yet.</p>
+{% else %}
+<table>
+<thead><tr>
+  <th>date</th><th>harness</th><th>model</th><th>config</th>
+  <th class="num">attempts</th><th>passed</th><th class="num">in tokens</th><th class="num">out tokens</th>
+  <th class="num">cost USD</th><th class="num">wall s</th><th>links</th>
+</tr></thead>
+<tbody>
+{% for r in b.runs %}
+<tr>
+  <td>{{ r.date_display }}</td>
+  <td><a href="{{ rel }}runs/{{ r.run_id }}.html">{{ r.harness }}</a></td>
+  <td>{{ r.model }}</td>
+  <td class="mono">{{ r.config_str }}</td>
+  <td class="num">{{ r.attempts_display }}</td>
+  <td>{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
+  <td class="num">{{ '{:,}'.format(r.total_input_tokens) }}</td>
+  <td class="num">{{ '{:,}'.format(r.total_output_tokens) }}</td>
+  <td class="num">${{ '%.4f' % r.cost_usd }}</td>
+  <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
+  <td>
+    <a href="{{ rel }}runs/{{ r.run_id }}.html">detail</a>{% if r.commit_url %} · <a href="{{ r.commit_url }}">commit</a>{% endif %} · <a href="{{ rel }}{{ r.results_url }}">json</a>
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+{% endblock %}

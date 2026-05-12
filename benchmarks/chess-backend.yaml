@@ -1,0 +1,30 @@
+name: chess-backend
+description: >-
+  Build a python-chess-backed FastAPI chess API (games, moves, legal-moves)
+  on port 8003; grade it against the pagehub-evals "chess-rules" conformance
+  battery.
+
+target_repo: git@github.com:pagehub-io/eval-chess-backend.git
+target_start: empty
+build_prompt_file: prompts/chess-backend.md
+
+grader:
+  evals_base_url: http://localhost:4002
+  # Path within the pagehub-evals repo checkout (resolved relative to
+  # PAGEHUB_EVALS_REPO, default ~/github/pagehub-io/pagehub-evals).
+  fixture_bundle: fixtures/chess-rules.json
+  collection: chess-rules
+  env:
+    # The bundle's "chess-local" environment already maps this to :8003;
+    # the runner re-applies it here so a run can repoint it (e.g. a
+    # worktree-local deployment on another port).
+    eval-chess-backend_url: http://localhost:8003
+
+max_attempts: 5
+
+# The matrix: one run per entry.
+harnesses:
+  - harness: claude-code
+    model: claude-opus-4-7
+    config:
+      effort: xhigh

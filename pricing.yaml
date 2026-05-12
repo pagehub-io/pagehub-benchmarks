@@ -1,0 +1,27 @@
+# Per-model Anthropic API pricing — USD per 1,000,000 tokens.
+#
+# `input` / `output` are the standard per-token rates. `cache_write` is the
+# 5-minute prompt-cache write rate (1.25x input). `cache_read` is the cache-hit
+# read rate (0.1x input). `cost_usd` in a run record is recomputed from this
+# table over the run's summed token counts — change a rate here, re-derive.
+#
+# To add a model: drop in a new key with the same four fields.
+
+models:
+  claude-opus-4-7:
+    input: 15.00
+    output: 75.00
+    cache_write: 18.75
+    cache_read: 1.50
+
+  claude-sonnet-4-6:
+    input: 3.00
+    output: 15.00
+    cache_write: 3.75
+    cache_read: 0.30
+
+  claude-haiku-4-5:
+    input: 1.00
+    output: 5.00
+    cache_write: 1.25
+    cache_read: 0.10
