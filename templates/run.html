@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ r.benchmark }} · {{ r.harness }} {{ r.model }} — run{% endblock %}
+{% block crumbs %} / <a href="{{ rel }}benchmarks/{{ r.benchmark_slug }}.html">{{ r.benchmark }}</a> / run{% endblock %}
+{% block content %}
+<h1>{{ r.benchmark }} — {{ r.harness }} <span class="muted">{{ r.model }}</span></h1>
+<p>
+  {% if r.passed %}<span class="pass">PASSED</span>{% else %}<span class="fail">FAILED</span>{% endif %}
+  · attempt {{ r.attempts_display }} of {{ r.max_attempts }}
+  · ${{ '%.4f' % r.cost_usd }} (computed)
+  · {{ '%.0f' % r.total_wall_time_seconds }}s
+  · config <code class="mono">{{ r.config_str }}</code>
+</p>
+
+<h2>Metrics</h2>
+<div class="cards">
+  <div class="card"><h3>Outcome</h3><dl>
+    <dt>passed</dt><dd>{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</dd>
+    <dt>attempts</dt><dd>{{ r.attempts_display }}</dd>
+    <dt>max_attempts</dt><dd>{{ r.max_attempts }}</dd>
+    <dt>started</dt><dd>{{ r.started_at }}</dd>
+    <dt>finished</dt><dd>{{ r.finished_at }}</dd>
+  </dl></div>
+  <div class="card"><h3>Tokens</h3><dl>
+    <dt>input</dt><dd>{{ '{:,}'.format(r.total_input_tokens) }}</dd>
+    <dt>output</dt><dd>{{ '{:,}'.format(r.total_output_tokens) }}</dd>
+    <dt>cache</dt><dd>{{ '{:,}'.format(r.total_cache_tokens) }}</dd>
+    <dt>cost USD</dt><dd>${{ '%.4f' % r.cost_usd }}</dd>
+    <dt>wall time</dt><dd>{{ '%.1f' % r.total_wall_time_seconds }}s</dd>
+  </dl></div>
+  <div class="card"><h3>Target</h3><dl>
+    <dt>repo</dt><dd><a href="{{ r.target_repo_url }}">{{ r.target_repo_short }}</a></dd>
+    <dt>start</dt><dd class="mono">{{ r.target_start }}</dd>
+    <dt>built sha</dt><dd>{% if r.commit_url %}<a href="{{ r.commit_url }}">{{ r.built_git_sha[:12] }}</a>{% else %}<span class="muted">—</span>{% endif %}</dd>
+    <dt>worktree</dt><dd class="mono" title="{{ r.worktree_path }}">{{ r.worktree_basename }}</dd>
+  </dl></div>
+</div>
+
+<h2>Per-attempt breakdown</h2>
+<table>
+<thead><tr>
+  <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
+  <th class="num">wall s</th><th>grader passed?</th><th>grader failures</th>
+</tr></thead>
+<tbody>
+{% for a in r.per_attempt %}
+<tr>
+  <td class="num">{{ a.attempt }}</td>
+  <td class="num">{{ '{:,}'.format(a.input_tokens) }}</td>
+  <td class="num">{{ '{:,}'.format(a.output_tokens) }}</td>
+  <td class="num">{{ '%.1f' % a.wall_time_seconds }}</td>
+  <td>{% if a.grader_passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
+  <td>
+    {% if a.grader_failures %}
+      <details class="failures"><summary>{{ a.grader_failures|length }} failure(s)</summary>
+        <ul>{% for f in a.grader_failures %}<li class="mono">{{ f }}</li>{% endfor %}</ul>
+      </details>
+    {% else %}<span class="muted">none</span>{% endif %}
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Target repo: <a href="{{ r.target_repo_url }}">{{ r.target_repo_url }}</a></li>
+  {% if r.commit_url %}<li>Built code commit: <a href="{{ r.commit_url }}">{{ r.commit_url }}</a></li>{% endif %}
+  <li>Benchmark definition: <a href="{{ r.yaml_url }}">benchmarks/{{ r.benchmark }}.yaml</a></li>
+  <li>Build prompt: <a href="{{ r.prompt_url }}">{{ r.prompt_file }}</a></li>
+  <li>Grader fixture bundle: <a href="{{ r.fixture_url }}">{{ r.fixture_bundle }}</a> (pagehub-evals)</li>
+  <li>Raw run record (JSON): <a href="{{ rel }}{{ r.results_url }}">{{ r.results_url }}</a></li>
+</ul>
+{% endblock %}

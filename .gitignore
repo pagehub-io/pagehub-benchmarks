@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Build worktrees the runner makes (per-run target-repo checkouts).
+.worktrees/
+
+# NOTE: results/**/*.json (run records) and docs/ (the generated static site)
+# ARE committed — version-controlled run history is the point. Don't ignore them.

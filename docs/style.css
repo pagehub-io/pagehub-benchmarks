@@ -1,0 +1,43 @@
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0; padding: 2rem 1.5rem 4rem; max-width: 1100px; margin-inline: auto;
+  color: #1a1a1a; background: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  body { color: #e6e6e6; background: #14161a; }
+  a { color: #6db3f2; }
+  th { background: #1e2128 !important; }
+  tr:hover td { background: #1b1e24; }
+  .card, table { border-color: #2c3038 !important; }
+  code, .mono { background: #1e2128; }
+}
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+h3 { font-size: 1rem; margin: 1.25rem 0 .35rem; }
+a { color: #1864ab; }
+nav { font-size: .9rem; margin-bottom: 1.5rem; color: #888; }
+nav a { color: inherit; }
+.muted { color: #888; }
+.mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; background: #f3f4f6; padding: .05em .35em; border-radius: 3px; }
+table { border-collapse: collapse; width: 100%; margin: .5rem 0 1.5rem; font-size: .9rem; }
+th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e3e3e3; white-space: nowrap; }
+th { background: #f6f7f8; cursor: pointer; user-select: none; position: sticky; top: 0; }
+th[data-sort]::after { content: " \2195"; opacity: .35; font-size: .8em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:hover td { background: #f7f8fa; }
+.pass { color: #2b8a3e; font-weight: 600; }
+.fail { color: #c92a2a; font-weight: 600; }
+.cards { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 2rem; }
+.card { border: 1px solid #e3e3e3; border-radius: 8px; padding: .85rem 1rem; min-width: 230px; flex: 1; }
+.card h3 { margin: 0 0 .4rem; }
+.card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; font-size: .88rem; }
+.card dt { color: #888; }
+.card dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+ul.links { list-style: none; padding: 0; }
+ul.links li { margin: .25rem 0; }
+.failures { background: #fff5f5; border: 1px solid #ffc9c9; border-radius: 4px; padding: .4rem .6rem; margin: .3rem 0; font-size: .82rem; }
+@media (prefers-color-scheme: dark) { .failures { background: #2a1d1f; border-color: #5c2a2e; } .pass { color: #69db7c; } .fail { color: #ff8787; } .card dt { color: #888; } }
+.failures ul { margin: .2rem 0; padding-left: 1.2rem; }
+footer { margin-top: 3rem; font-size: .8rem; color: #999; border-top: 1px solid #e3e3e3; padding-top: 1rem; }
