@@ -1,7 +1,7 @@
 .PHONY: install test lint fmt run dry-run list site clean
 
 PY ?= python3
-BENCHMARK ?= chess-backend
+BENCHMARK ?= eval-chess-backend
 PYTEST_ARGS ?=
 
 install:

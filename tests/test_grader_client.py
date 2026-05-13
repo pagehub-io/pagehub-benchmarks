@@ -86,9 +86,9 @@ def test_setup_and_grade_http_flow(tmp_path: Path):
         "environments": [{"name": "chess-local", "variables": {"eval-chess-backend_url": "http://localhost:8003"}, "secrets": {}}],
         "requests": [{"name": "r", "method": "GET", "url": "{{eval-chess-backend_url}}/health",
                       "evaluations": [{"name": "ok", "kind": "status_eq", "config": {"expected": 200}}]}],
-        "collections": [{"name": "chess-rules", "items": ["r"]}],
+        "collections": [{"name": "eval-chess-backend", "items": ["r"]}],
     }
-    bundle_path = tmp_path / "chess-rules.json"
+    bundle_path = tmp_path / "eval-chess-backend.json"
     bundle_path.write_text(json.dumps(bundle))
 
     seen: dict[str, object] = {"imported": False, "patched": None, "run_created": None, "polls": 0}
@@ -99,7 +99,7 @@ def test_setup_and_grade_http_flow(tmp_path: Path):
             seen["imported"] = json.loads(request.content)
             return httpx.Response(200, json={"requests": {"created": 1, "updated": 0}})
         if request.method == "GET" and url.path == "/v1/collections":
-            return httpx.Response(200, json={"items": [{"id": "col-9", "name": "chess-rules"}]})
+            return httpx.Response(200, json={"items": [{"id": "col-9", "name": "eval-chess-backend"}]})
         if request.method == "GET" and url.path == "/v1/environments":
             return httpx.Response(200, json={"items": [{"id": "env-9", "name": "chess-local", "variables": {"eval-chess-backend_url": "http://localhost:8003"}}]})
         if request.method == "PATCH" and url.path == "/v1/environments/env-9":
@@ -119,7 +119,7 @@ def test_setup_and_grade_http_flow(tmp_path: Path):
     grader = EvalsGrader(
         "http://evals.test",
         bundle_path,
-        "chess-rules",
+        "eval-chess-backend",
         {"eval-chess-backend_url": "http://localhost:18003"},
         token="test-token",
         poll_interval_seconds=0,

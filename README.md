@@ -64,13 +64,13 @@ make site                          # regenerate docs/ from results/**/*.json
 
 # Sanity-check a benchmark's wiring offline — YAML + prompt + grader fixture +
 # pricing — without calling claude or pagehub-evals:
-make run BENCHMARK=chess-backend DRY_RUN=1
-#   == python -m pagehub_benchmarks run chess-backend --dry-run
+make run BENCHMARK=eval-chess-backend DRY_RUN=1
+#   == python -m pagehub_benchmarks run eval-chess-backend --dry-run
 
 # Real run (builds the target repo for real — costs tokens):
-make run BENCHMARK=chess-backend
-#   == python -m pagehub_benchmarks run chess-backend
-python -m pagehub_benchmarks run chess-backend --harness claude-code --model claude-opus-4-7 \
+make run BENCHMARK=eval-chess-backend
+#   == python -m pagehub_benchmarks run eval-chess-backend
+python -m pagehub_benchmarks run eval-chess-backend --harness claude-code --model claude-opus-4-7 \
     --config effort=xhigh --max-attempts 5 --results-dir results
 ```
 
@@ -122,13 +122,13 @@ append-only, one per run:
 }
 ```
 
-## The first benchmark — `chess-backend`
+## The first benchmark — `eval-chess-backend`
 
 Builds [`pagehub-io/eval-chess-backend`](https://github.com/pagehub-io/eval-chess-backend)
 from empty: a `python-chess`-backed FastAPI chess API on :8003 (games / moves /
-legal-moves, with the 404/422 edge cases spelled out in `prompts/chess-backend.md`).
-Graded by the pagehub-evals `chess-rules` collection (fixture bundle:
-`pagehub-evals/fixtures/chess-rules.json`) — a rule-conformance battery
+legal-moves, with the 404/422 edge cases spelled out in `prompts/eval-chess-backend.md`).
+Graded by the pagehub-evals `eval-chess-backend` collection (fixture bundle:
+`pagehub-evals/fixtures/eval-chess-backend.json`) — a rule-conformance battery
 (castling, en passant, promotion, pins, check evasion, checkmate, stalemate,
 the draw rules).
 
