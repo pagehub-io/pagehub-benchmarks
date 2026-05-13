@@ -8,7 +8,7 @@ from pathlib import Path
 from tools.build_site import build, github_repo_url
 
 SAMPLE_RUN = {
-    "benchmark": "chess-backend",
+    "benchmark": "eval-chess-backend",
     "harness": "claude-code",
     "model": "claude-opus-4-7",
     "config": {"effort": "xhigh"},
@@ -17,7 +17,7 @@ SAMPLE_RUN = {
     "target_repo": "git@github.com:pagehub-io/eval-chess-backend.git",
     "target_start": "empty",
     "built_git_sha": "abc123def4567890",
-    "worktree_path": "/tmp/wt/chess-backend/claude-code__x__y",
+    "worktree_path": "/tmp/wt/eval-chess-backend/claude-code__x__y",
     "max_attempts": 5,
     "attempts": 2,
     "passed": True,
@@ -42,7 +42,7 @@ def test_github_repo_url():
 
 
 def test_build_with_one_run(tmp_path: Path):
-    results = tmp_path / "results" / "chess-backend"
+    results = tmp_path / "results" / "eval-chess-backend"
     results.mkdir(parents=True)
     (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
         json.dumps(SAMPLE_RUN)
@@ -51,7 +51,7 @@ def test_build_with_one_run(tmp_path: Path):
     build(results_dir=tmp_path / "results", docs_dir=docs)
 
     index = (docs / "index.html").read_text()
-    assert "chess-backend" in index
+    assert "eval-chess-backend" in index
     assert "claude-opus-4-7" in index
     assert "1/1 (100%)" in index  # pass rate
     assert "$12.3456" in index
@@ -60,19 +60,19 @@ def test_build_with_one_run(tmp_path: Path):
     assert "PASSED" in run_html
     assert "https://github.com/pagehub-io/eval-chess-backend" in run_html
     assert "https://github.com/pagehub-io/eval-chess-backend/commit/abc123def4567890" in run_html
-    assert "benchmarks/chess-backend.yaml" in run_html
-    assert "prompts/chess-backend.md" in run_html
-    assert "fixtures/chess-backend.json" in run_html or "fixtures/chess-rules.json" in run_html
+    assert "benchmarks/eval-chess-backend.yaml" in run_html
+    assert "prompts/eval-chess-backend.md" in run_html
+    assert "fixtures/eval-chess-backend.json" in run_html
     assert "castle-k-fen" in run_html  # a grader failure surfaced
-    assert "../results/chess-backend/claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json" in run_html
+    assert "../results/eval-chess-backend/claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json" in run_html
 
-    bench_html = (docs / "benchmarks" / "chess-backend.html").read_text()
+    bench_html = (docs / "benchmarks" / "eval-chess-backend.html").read_text()
     assert "claude-opus-4-7" in bench_html
 
     # the raw record was copied into the site so its in-page link resolves
-    copied = docs / "results" / "chess-backend" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json"
+    copied = docs / "results" / "eval-chess-backend" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json"
     assert copied.is_file()
-    assert json.loads(copied.read_text())["benchmark"] == "chess-backend"
+    assert json.loads(copied.read_text())["benchmark"] == "eval-chess-backend"
 
 
 def test_build_with_pushed_run_shows_built_code_section(tmp_path: Path):
@@ -87,7 +87,7 @@ def test_build_with_pushed_run_shows_built_code_section(tmp_path: Path):
             "push_error": None,
         }
     )
-    results = tmp_path / "results" / "chess-backend"
+    results = tmp_path / "results" / "eval-chess-backend"
     results.mkdir(parents=True)
     (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
         json.dumps(pushed_run)
@@ -120,7 +120,7 @@ def test_build_with_push_failure_surfaces_error_note(tmp_path: Path):
             "push_error": "remote: Permission denied",
         }
     )
-    results = tmp_path / "results" / "chess-backend"
+    results = tmp_path / "results" / "eval-chess-backend"
     results.mkdir(parents=True)
     (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
         json.dumps(failed_run)

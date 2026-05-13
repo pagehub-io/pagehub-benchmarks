@@ -1,6 +1,6 @@
 {
   "attempts": 2,
-  "benchmark": "chess-backend",
+  "benchmark": "eval-chess-backend",
   "built_git_sha": "bbd4585360238f5a5cf8c805e0865e4d28ce3d5d",
   "config": {
     "effort": "xhigh"
@@ -46,5 +46,5 @@
   "total_input_tokens": 76,
   "total_output_tokens": 94538,
   "total_wall_time_seconds": 1037.501,
-  "worktree_path": "/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/chess-backend/claude-code__claude-opus-4-7__effort-xhigh__20260512T234806Z"
+  "worktree_path": "/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/eval-chess-backend/claude-code__claude-opus-4-7__effort-xhigh__20260512T234806Z"
 }

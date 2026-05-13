@@ -14,15 +14,15 @@ from pagehub_benchmarks.config import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_loads_shipped_chess_backend_benchmark():
-    spec = load_benchmark("chess-backend")
-    assert spec.name == "chess-backend"
+def test_loads_shipped_eval_chess_backend_benchmark():
+    spec = load_benchmark("eval-chess-backend")
+    assert spec.name == "eval-chess-backend"
     assert spec.target_repo == "git@github.com:pagehub-io/eval-chess-backend.git"
     assert spec.target_start == "empty"
     assert spec.max_attempts == 5
-    assert spec.build_prompt_file == "prompts/chess-backend.md"
-    assert spec.grader.collection == "chess-rules"
-    assert spec.grader.fixture_bundle == "fixtures/chess-rules.json"
+    assert spec.build_prompt_file == "prompts/eval-chess-backend.md"
+    assert spec.grader.collection == "eval-chess-backend"
+    assert spec.grader.fixture_bundle == "fixtures/eval-chess-backend.json"
     assert spec.grader.env == {"eval-chess-backend_url": "http://host.docker.internal:8003"}
     assert len(spec.harnesses) == 1
     h = spec.harnesses[0]

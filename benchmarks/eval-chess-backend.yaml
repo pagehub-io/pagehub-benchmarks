@@ -1,12 +1,12 @@
-name: chess-backend
+name: eval-chess-backend
 description: >-
   Build a python-chess-backed FastAPI chess API (games, moves, legal-moves)
-  on port 8003; grade it against the pagehub-evals "chess-rules" conformance
-  battery.
+  on port 8003; grade it against the pagehub-evals "eval-chess-backend"
+  conformance battery.
 
 target_repo: git@github.com:pagehub-io/eval-chess-backend.git
 target_start: empty
-build_prompt_file: prompts/chess-backend.md
+build_prompt_file: prompts/eval-chess-backend.md
 
 grader:
   # The standalone pagehub-evals service (its docker-compose maps the API to
@@ -14,8 +14,8 @@ grader:
   evals_base_url: http://localhost:8002
   # Path within the pagehub-evals repo checkout (resolved relative to
   # PAGEHUB_EVALS_REPO, default ~/github/pagehub-io/pagehub-evals).
-  fixture_bundle: fixtures/chess-rules.json
-  collection: chess-rules
+  fixture_bundle: fixtures/eval-chess-backend.json
+  collection: eval-chess-backend
   env:
     # The pagehub-evals run engine fires HTTP from inside its own container, so
     # the built service (running on the host's :8003) must be addressed as
