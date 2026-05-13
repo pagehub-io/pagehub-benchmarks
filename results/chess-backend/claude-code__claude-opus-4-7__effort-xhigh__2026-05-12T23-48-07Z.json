@@ -33,6 +33,12 @@
       "wall_time_seconds": 304.702
     }
   ],
+  "push_error": null,
+  "pushed_at": "2026-05-13T11:41:27Z",
+  "pushed_branch": "bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-12T23-48-07Z",
+  "pushed_branch_url": "https://github.com/pagehub-io/eval-chess-backend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-12T23-48-07Z",
+  "pushed_commit": "bbd4585360238f5a5cf8c805e0865e4d28ce3d5d",
+  "pushed_to_default_branch": true,
   "started_at": "2026-05-12T23:48:07.030822Z",
   "target_repo": "git@github.com:pagehub-io/eval-chess-backend.git",
   "target_start": "empty",
