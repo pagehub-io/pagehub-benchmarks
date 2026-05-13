@@ -100,6 +100,8 @@ def test_result_record_shape_round_trips(bench_spec, fixed_clock, tmp_path):
         "max_attempts", "attempts", "passed", "total_input_tokens",
         "total_output_tokens", "total_cache_tokens", "cost_usd",
         "total_wall_time_seconds", "per_attempt",
+        "pushed_branch", "pushed_branch_url", "pushed_commit",
+        "pushed_to_default_branch", "pushed_at", "push_error",
     }
     assert set(loaded) == expected_keys
     assert loaded["benchmark"] == "demo"

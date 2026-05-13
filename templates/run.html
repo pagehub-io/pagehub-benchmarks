@@ -35,6 +35,28 @@
   </dl></div>
 </div>
 
+<h2>Built code</h2>
+{% if r.pushed_branch_url or r.push_error %}
+<div class="cards"><div class="card"><dl>
+  {% if r.pushed_branch_url %}
+    <dt>branch</dt>
+    <dd>
+      <a href="{{ r.pushed_branch_url }}"><span class="mono">{{ r.pushed_branch }}</span></a>
+      {% if r.pushed_to_default_branch %} <span class="pass" title="also pushed to the target's default branch">★ default branch</span>{% endif %}
+    </dd>
+    <dt>commit</dt>
+    <dd>{% if r.pushed_commit_url %}<a href="{{ r.pushed_commit_url }}" class="mono">{{ r.pushed_commit[:12] }}</a>{% else %}<span class="mono">{{ r.pushed_commit[:12] if r.pushed_commit else '—' }}</span>{% endif %}</dd>
+    <dt>pushed at</dt><dd>{{ r.pushed_at or '—' }}</dd>
+    <dt>browse repo</dt><dd><a href="{{ r.target_repo_url }}">{{ r.target_repo_short }}</a></dd>
+  {% endif %}
+  {% if r.push_error %}
+    <dt>push error</dt><dd><span class="fail mono">{{ r.push_error }}</span></dd>
+  {% endif %}
+</dl></div></div>
+{% else %}
+<p class="muted">No built-code push recorded for this run.</p>
+{% endif %}
+
 <h2>Per-attempt breakdown</h2>
 <table>
 <thead><tr>

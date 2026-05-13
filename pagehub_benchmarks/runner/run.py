@@ -32,6 +32,7 @@ from pagehub_benchmarks.config import (
 from pagehub_benchmarks.grader import EvalsGrader, GraderResult
 from pagehub_benchmarks.harnesses import HARNESSES, Harness, get_harness
 from pagehub_benchmarks.runner.pricing import cost_usd
+from pagehub_benchmarks.runner.push import GitPusher, Pusher, branch_for
 from pagehub_benchmarks.runner.results import AttemptRecord, RunRecord, config_slug
 from pagehub_benchmarks.runner.workspace import (
     capture_built_sha,
@@ -237,6 +238,7 @@ def run_benchmark(
     worktrees_dir: str | Path | None = None,
     serve: bool = True,
     build_site: bool = True,
+    pusher: Pusher | None = None,
 ) -> list[Path]:
     spec = load_benchmark(name_or_path)
     if max_attempts is not None:
@@ -253,6 +255,7 @@ def run_benchmark(
 
     results_root = Path(results_dir) if results_dir else DEFAULT_RESULTS_DIR
     worktrees_root = Path(worktrees_dir) if worktrees_dir else DEFAULT_WORKTREES_DIR
+    pusher = pusher if pusher is not None else GitPusher()
 
     written: list[Path] = []
     for h in selected:
@@ -278,6 +281,7 @@ def run_benchmark(
                 service_factory=service_factory,
             )
         record.built_git_sha = capture_built_sha(worktree)
+        _push_built_tree(record, h, spec, worktree, pusher)
         path = record.write(results_root)
         written.append(path)
         print(
@@ -289,6 +293,56 @@ def run_benchmark(
     if build_site and written:
         _rebuild_site(results_root)
     return written
+
+
+def _push_built_tree(
+    record: RunRecord,
+    h: HarnessSpec,
+    spec: BenchmarkSpec,
+    worktree: Path,
+    pusher: Pusher,
+) -> None:
+    """Push every run (pass or fail). On a pass to an empty target, also push
+    the default branch. The grader verdict is the source of truth — a push
+    failure logs loudly but never fails the run."""
+    started = datetime.fromisoformat(record.started_at.replace("Z", "+00:00"))
+    branch = branch_for(
+        harness=h.harness,
+        model=h.model,
+        config_slug=config_slug(h.config),
+        when=started,
+    )
+    push_to_default = False
+    if record.passed:
+        try:
+            push_to_default = pusher.is_target_empty(spec.target_repo)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"(warning: could not probe {spec.target_repo} for emptiness: "
+                f"{type(exc).__name__}: {exc})"
+            )
+    try:
+        pr = pusher.push(
+            worktree=worktree,
+            target_repo=spec.target_repo,
+            branch=branch,
+            push_to_default_branch=push_to_default,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"(push failed: {type(exc).__name__}: {exc})")
+        record.push_error = f"{type(exc).__name__}: {exc}"
+        return
+    record.pushed_branch = pr.pushed_branch
+    record.pushed_branch_url = pr.pushed_branch_url
+    record.pushed_commit = pr.pushed_commit
+    record.pushed_to_default_branch = pr.pushed_to_default_branch
+    record.pushed_at = pr.pushed_at
+    record.push_error = pr.error
+    if pr.pushed_branch_url:
+        flag = " (also -> default branch)" if pr.pushed_to_default_branch else ""
+        print(f"pushed -> {pr.pushed_branch_url}{flag}")
+    if pr.error:
+        print(f"(push error: {pr.error})")
 
 
 def _rebuild_site(results_dir: Path) -> None:

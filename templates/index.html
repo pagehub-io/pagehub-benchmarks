@@ -38,6 +38,7 @@
   <th data-sort="num" class="num">out tokens</th>
   <th data-sort="num" class="num">cost USD</th>
   <th data-sort="num" class="num">wall s</th>
+  <th>built</th>
 </tr></thead>
 <tbody>
 {% for r in runs %}
@@ -53,6 +54,15 @@
   <td class="num">{{ '{:,}'.format(r.total_output_tokens) }}</td>
   <td class="num">${{ '%.4f' % r.cost_usd }}</td>
   <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
+  <td>
+    {% if r.pushed_branch_url %}
+      <a href="{{ r.pushed_branch_url }}" class="mono" title="{{ r.pushed_branch }}">{{ r.pushed_branch_short }}</a>{% if r.pushed_to_default_branch %} <span class="pass" title="also pushed to default branch">★</span>{% endif %}
+    {% elif r.push_error %}
+      <span class="fail" title="{{ r.push_error }}">push failed</span>
+    {% else %}
+      <span class="muted">—</span>
+    {% endif %}
+  </td>
 </tr>
 {% endfor %}
 </tbody>
