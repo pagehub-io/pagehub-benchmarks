@@ -139,14 +139,10 @@ class GitPusher:
             return result
         result.pushed_commit = head_cp.stdout.strip()
 
-        push_cp = self._git_push(worktree, target_repo, f"HEAD:refs/heads/{branch}")
-        if push_cp.returncode != 0:
-            result.error = self._fmt_push_err(push_cp, branch)
-            return result
-        result.pushed_branch = branch
-        result.pushed_branch_url = f"{github_https_url(target_repo)}/tree/{branch}"
-        result.pushed_at = _iso(self._clock())
-
+        # Push order matters when the target is empty: GitHub auto-promotes the
+        # FIRST pushed ref to the repo's default branch. Push the default
+        # branch first so the configured default (typically ``main``) wins;
+        # then push the per-run branch.
         if push_to_default_branch:
             default_branch = self._discover_default_branch(target_repo)
             cp = self._git_push(
@@ -155,7 +151,18 @@ class GitPusher:
             if cp.returncode == 0:
                 result.pushed_to_default_branch = True
             else:
+                # Don't abort the per-run branch push on default-branch failure;
+                # record the note and keep going.
                 result.error = self._fmt_push_err(cp, default_branch)
+
+        push_cp = self._git_push(worktree, target_repo, f"HEAD:refs/heads/{branch}")
+        if push_cp.returncode != 0:
+            err = self._fmt_push_err(push_cp, branch)
+            result.error = err if result.error is None else f"{result.error}; {err}"
+            return result
+        result.pushed_branch = branch
+        result.pushed_branch_url = f"{github_https_url(target_repo)}/tree/{branch}"
+        result.pushed_at = _iso(self._clock())
         return result
 
     def _git_push(
