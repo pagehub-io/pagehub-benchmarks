@@ -80,6 +80,12 @@ class RunRecord:
     cost_usd: float
     total_wall_time_seconds: float
     per_attempt: list[AttemptRecord] = field(default_factory=list)
+    pushed_branch: str | None = None
+    pushed_branch_url: str | None = None
+    pushed_commit: str | None = None
+    pushed_to_default_branch: bool = False
+    pushed_at: str | None = None
+    push_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

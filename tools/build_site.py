@@ -159,6 +159,18 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         passed = bool(rec.get("passed"))
         attempts = int(rec.get("attempts") or 0)
         wt = str(rec.get("worktree_path") or "")
+        pushed_commit = rec.get("pushed_commit")
+        pushed_commit_url = (
+            f"{target_repo_url}/commit/{pushed_commit}"
+            if pushed_commit and target_repo_url.startswith("https://github.com/")
+            else None
+        )
+        pushed_branch = rec.get("pushed_branch")
+        # The branch's last segment is the only thing that differs between
+        # runs of the same config; show it as a compact label in the index.
+        pushed_branch_short = (
+            pushed_branch.rsplit("/", 1)[-1] if pushed_branch else ""
+        )
         rec.update(
             {
                 "run_id": run_id,
@@ -180,6 +192,15 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
                 "fixture_url": meta["fixture_url"],
                 "fixture_bundle": meta["fixture_bundle"],
                 "max_attempts": int(rec.get("max_attempts") or attempts or 0),
+                # built-code-push fields (None when the record predates the push feature)
+                "pushed_branch": pushed_branch,
+                "pushed_branch_url": rec.get("pushed_branch_url"),
+                "pushed_branch_short": pushed_branch_short,
+                "pushed_commit": pushed_commit,
+                "pushed_commit_url": pushed_commit_url,
+                "pushed_to_default_branch": bool(rec.get("pushed_to_default_branch")),
+                "pushed_at": rec.get("pushed_at"),
+                "push_error": rec.get("push_error"),
             }
         )
         rec.setdefault("total_input_tokens", 0)

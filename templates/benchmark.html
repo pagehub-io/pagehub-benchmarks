@@ -37,7 +37,7 @@
   <td class="num">${{ '%.4f' % r.cost_usd }}</td>
   <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
   <td>
-    <a href="{{ rel }}runs/{{ r.run_id }}.html">detail</a>{% if r.commit_url %} · <a href="{{ r.commit_url }}">commit</a>{% endif %} · <a href="{{ rel }}{{ r.results_url }}">json</a>
+    <a href="{{ rel }}runs/{{ r.run_id }}.html">detail</a>{% if r.pushed_branch_url %} · <a href="{{ r.pushed_branch_url }}" title="{{ r.pushed_branch }}">branch{% if r.pushed_to_default_branch %}★{% endif %}</a>{% elif r.push_error %} · <span class="fail" title="{{ r.push_error }}">push failed</span>{% endif %}{% if r.commit_url %} · <a href="{{ r.commit_url }}">commit</a>{% endif %} · <a href="{{ rel }}{{ r.results_url }}">json</a>
   </td>
 </tr>
 {% endfor %}

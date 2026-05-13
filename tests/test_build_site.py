@@ -75,6 +75,67 @@ def test_build_with_one_run(tmp_path: Path):
     assert json.loads(copied.read_text())["benchmark"] == "chess-backend"
 
 
+def test_build_with_pushed_run_shows_built_code_section(tmp_path: Path):
+    pushed_run = dict(SAMPLE_RUN)
+    pushed_run.update(
+        {
+            "pushed_branch": "bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-12T16-30-00Z",
+            "pushed_branch_url": "https://github.com/pagehub-io/eval-chess-backend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-12T16-30-00Z",
+            "pushed_commit": "abc123def4567890",
+            "pushed_to_default_branch": True,
+            "pushed_at": "2026-05-12T17:00:00Z",
+            "push_error": None,
+        }
+    )
+    results = tmp_path / "results" / "chess-backend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(pushed_run)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    assert "Built code" in run_html
+    assert (
+        "https://github.com/pagehub-io/eval-chess-backend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-12T16-30-00Z"
+        in run_html
+    )
+    assert "default branch" in run_html  # the badge
+
+    index = (docs / "index.html").read_text()
+    # The compact branch label in the all-runs table.
+    assert "2026-05-12T16-30-00Z" in index
+
+
+def test_build_with_push_failure_surfaces_error_note(tmp_path: Path):
+    failed_run = dict(SAMPLE_RUN)
+    failed_run.update(
+        {
+            "pushed_branch": None,
+            "pushed_branch_url": None,
+            "pushed_commit": "abc123def4567890",
+            "pushed_to_default_branch": False,
+            "pushed_at": None,
+            "push_error": "remote: Permission denied",
+        }
+    )
+    results = tmp_path / "results" / "chess-backend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(failed_run)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    assert "push error" in run_html
+    assert "Permission denied" in run_html
+
+    index = (docs / "index.html").read_text()
+    assert "push failed" in index
+
+
 def test_build_empty_is_fine(tmp_path: Path):
     docs = tmp_path / "docs"
     build(results_dir=tmp_path / "results", docs_dir=docs)  # no results dir at all
