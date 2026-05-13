@@ -1,0 +1,44 @@
+{
+  "attempts": 2,
+  "benchmark": "chess-backend",
+  "built_git_sha": "bbd4585360238f5a5cf8c805e0865e4d28ce3d5d",
+  "config": {
+    "effort": "xhigh"
+  },
+  "cost_usd": 14.455298,
+  "finished_at": "2026-05-13T00:05:32.069474Z",
+  "harness": "claude-code",
+  "max_attempts": 5,
+  "model": "claude-opus-4-7",
+  "passed": true,
+  "per_attempt": [
+    {
+      "attempt": 1,
+      "cache_tokens": 1712653,
+      "grader_failures": [
+        "chess-35-create-fifty-move :: create-fifty-status [json_path_eq] failed: {\"path\": \"$.status\", \"expected\": \"in_progress\", \"observed\": \"draw\"}"
+      ],
+      "grader_passed": false,
+      "input_tokens": 62,
+      "output_tokens": 66607,
+      "wall_time_seconds": 732.799
+    },
+    {
+      "attempt": 2,
+      "cache_tokens": 810199,
+      "grader_failures": [],
+      "grader_passed": true,
+      "input_tokens": 14,
+      "output_tokens": 27931,
+      "wall_time_seconds": 304.702
+    }
+  ],
+  "started_at": "2026-05-12T23:48:07.030822Z",
+  "target_repo": "git@github.com:pagehub-io/eval-chess-backend.git",
+  "target_start": "empty",
+  "total_cache_tokens": 2522852,
+  "total_input_tokens": 76,
+  "total_output_tokens": 94538,
+  "total_wall_time_seconds": 1037.501,
+  "worktree_path": "/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/chess-backend/claude-code__claude-opus-4-7__effort-xhigh__20260512T234806Z"
+}
