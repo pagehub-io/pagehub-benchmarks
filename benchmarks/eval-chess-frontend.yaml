@@ -24,8 +24,14 @@ grader:
     # The bundle's "chess-frontend-local" environment is PATCHed with these
     # values at grade time, so a run can repoint either at a worktree-local
     # deployment without editing the bundle.
-    pagehub-browser_url: http://host.docker.internal:4010
+    #
+    # Order matters: the runner's readiness probe (`run.py::_health_url`)
+    # picks the FIRST *_url here and waits for `<localhost>/health` to
+    # answer. That MUST be the built service we're grading (port 8004),
+    # NOT pagehub-browser (already up on :4010 → would short-circuit the
+    # probe and start grading before `make up` is even ready).
     eval-chess-frontend_url: http://host.docker.internal:8004
+    pagehub-browser_url:     http://host.docker.internal:4010
 
 max_attempts: 5
 
