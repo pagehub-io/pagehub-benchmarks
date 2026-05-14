@@ -49,6 +49,11 @@ BLOB_BRANCH = os.environ.get("PAGEHUB_BENCHMARKS_BLOB_BRANCH", "main")
 
 _SLUG = re.compile(r"[^A-Za-z0-9._-]+")
 
+# Files under docs/ that survive an orphan-sweep even though build_site.py
+# didn't write them. These are drop-ins an operator may add by hand for
+# GitHub Pages (Jekyll bypass marker, custom-domain config, empty-dir marker).
+_PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
+
 
 def _slug(s: str) -> str:
     return _SLUG.sub("-", s).strip("-") or "x"
@@ -273,21 +278,30 @@ def build(results_dir: Path | str | None = None, docs_dir: Path | str | None = N
     (docs_dir / "runs").mkdir(exist_ok=True)
     (docs_dir / "benchmarks").mkdir(exist_ok=True)
 
+    # Track everything this build emits. After all writes, anything else
+    # under docs/ is a stale orphan from a prior build (e.g., a renamed
+    # benchmark) and gets swept — docs/ is canonical output.
+    written: set[Path] = set()
+
     # static asset
     if STATIC_DIR.is_dir():
-        shutil.copy2(STATIC_DIR / "style.css", docs_dir / "style.css")
+        dst = docs_dir / "style.css"
+        shutil.copy2(STATIC_DIR / "style.css", dst)
+        written.add(dst)
 
     common = {"repo_url": BENCHMARKS_REPO_URL}
 
-    (docs_dir / "index.html").write_text(
+    index_path = docs_dir / "index.html"
+    index_path.write_text(
         env.get_template("index.html").render(rel="", runs=runs, benchmarks=benchmarks, **common)
     )
+    written.add(index_path)
 
     bench_tmpl = env.get_template("benchmark.html")
     for b in benchmarks:
-        (docs_dir / "benchmarks" / f"{b['slug']}.html").write_text(
-            bench_tmpl.render(rel="../", b=b, **common)
-        )
+        bench_path = docs_dir / "benchmarks" / f"{b['slug']}.html"
+        bench_path.write_text(bench_tmpl.render(rel="../", b=b, **common))
+        written.add(bench_path)
 
     run_tmpl = env.get_template("run.html")
     seen_ids: set[str] = set()
@@ -301,13 +315,39 @@ def build(results_dir: Path | str | None = None, docs_dir: Path | str | None = N
             rid = f"{rid}-{i}"
             r["run_id"] = rid
         seen_ids.add(rid)
-        (docs_dir / "runs" / f"{rid}.html").write_text(run_tmpl.render(rel="../", r=r, **common))
+        run_path = docs_dir / "runs" / f"{rid}.html"
+        run_path.write_text(run_tmpl.render(rel="../", r=r, **common))
+        written.add(run_path)
         # copy the raw record so the in-site JSON link resolves
         dst = docs_dir / "results" / Path(r["results_url"]).relative_to("results")
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(r["results_src_path"], dst)
+        written.add(dst)
 
+    _clean_orphans(docs_dir, written)
     return docs_dir
+
+
+def _clean_orphans(docs_dir: Path, written: set[Path]) -> None:
+    """Remove files under ``docs_dir`` that ``build()`` didn't just write.
+
+    Keeps the set in ``_PRESERVED_BASENAMES`` (`.nojekyll`, `.gitkeep`,
+    `CNAME`) so a hand-placed GitHub Pages config survives rebuilds. Empty
+    directories left behind by removals are pruned bottom-up.
+    """
+    if not docs_dir.is_dir():
+        return
+    for path in docs_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path in written or path.name in _PRESERVED_BASENAMES:
+            continue
+        path.unlink()
+    # bottom-up so a directory whose only children are now-removed orphans
+    # also goes
+    for path in sorted(docs_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
 
 
 def main(argv: list[str] | None = None) -> int:

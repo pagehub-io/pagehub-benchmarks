@@ -140,3 +140,46 @@ def test_build_empty_is_fine(tmp_path: Path):
     docs = tmp_path / "docs"
     build(results_dir=tmp_path / "results", docs_dir=docs)  # no results dir at all
     assert "No runs recorded yet" in (docs / "index.html").read_text()
+
+
+def test_build_removes_orphans_from_prior_run(tmp_path: Path):
+    # Simulate the state after renaming a benchmark/run: docs/ contains
+    # output paths from the *previous* build that the current build will
+    # not emit.
+    docs = tmp_path / "docs"
+    (docs / "runs").mkdir(parents=True)
+    (docs / "benchmarks").mkdir()
+    (docs / "results" / "old-benchmark").mkdir(parents=True)
+    orphan_run = docs / "runs" / "stale-run.html"
+    orphan_run.write_text("<html>stale</html>")
+    orphan_bench = docs / "benchmarks" / "old-benchmark.html"
+    orphan_bench.write_text("<html>stale</html>")
+    orphan_result = docs / "results" / "old-benchmark" / "stale.json"
+    orphan_result.write_text("{}")
+    # Hand-placed GitHub Pages drop-ins should survive a rebuild.
+    nojekyll = docs / ".nojekyll"
+    nojekyll.write_text("")
+    cname = docs / "CNAME"
+    cname.write_text("benchmarks.example.com\n")
+
+    # One real run so the build has something to write.
+    results = tmp_path / "results" / "eval-chess-backend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(SAMPLE_RUN)
+    )
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    # Orphans gone.
+    assert not orphan_run.exists()
+    assert not orphan_bench.exists()
+    assert not orphan_result.exists()
+    # The orphan's now-empty parent directory is pruned too.
+    assert not (docs / "results" / "old-benchmark").exists()
+    # Allowlisted drop-ins survive.
+    assert nojekyll.exists()
+    assert cname.read_text() == "benchmarks.example.com\n"
+    # And the build's own output is present.
+    assert (docs / "index.html").is_file()
+    assert (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").is_file()
+    assert (docs / "results" / "eval-chess-backend" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").is_file()
