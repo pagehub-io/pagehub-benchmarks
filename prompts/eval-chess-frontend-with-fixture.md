@@ -3,6 +3,17 @@ by the `chess.js` library for rule enforcement. It runs on **port 8004**
 (port 8003 is reserved for eval-chess-backend; pick 8004). There is **no
 backend** — all state lives in the browser, no database, no API server.
 
+== THE EVAL THAT WILL GRADE YOUR BUILD ==
+The grader is the FixtureBundle below. Every request will be made against
+your service in this exact order with these exact assertions. Build the
+contract that satisfies these requests verbatim; do not add fields beyond
+what they read; do not change DOM testids or attribute names.
+
+```json
+{{ grader_fixture }}
+```
+== END EVAL ==
+
 ## Stack & layout
 
 - **Vite + TypeScript** (strict mode, no `any` types). React is fine but

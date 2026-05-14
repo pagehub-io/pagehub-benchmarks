@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Theories — pagehub-benchmarks{% endblock %}
+{% block crumbs %} / theories{% endblock %}
+{% block content %}
+<h1>Theories</h1>
+<p class="muted">A theory states a hypothesis about LLM coding-harness behavior, attaches a baseline and a treatment benchmark, and lets the runs answer the question. Status is set by hand in the theory's markdown file after runs land — the site only renders the comparison.</p>
+
+{% if not theories %}
+<p class="muted">No theories declared yet. Drop a <code>theories/&lt;name&gt;.md</code> file with YAML frontmatter (<code>name</code>, <code>hypothesis</code>, <code>baseline</code>, <code>treatment</code>, <code>metrics</code>, <code>status</code>) and a markdown body.</p>
+{% else %}
+<table>
+<thead><tr>
+  <th>theory</th><th>hypothesis</th><th>baseline</th><th>treatment</th><th>status</th>
+  <th class="num">baseline runs</th><th class="num">treatment runs</th>
+</tr></thead>
+<tbody>
+{% for v in theories %}
+<tr>
+  <td><a href="{{ v.theory.slug }}.html"><code class="mono">{{ v.theory.name }}</code></a></td>
+  <td>{{ v.theory.hypothesis }}</td>
+  <td><a href="{{ rel }}benchmarks/{{ v.theory.baseline }}.html"><code class="mono">{{ v.theory.baseline }}</code></a></td>
+  <td><a href="{{ rel }}benchmarks/{{ v.theory.treatment }}.html"><code class="mono">{{ v.theory.treatment }}</code></a></td>
+  <td>
+    {% if v.theory.status == 'supported' %}<span class="pass">supported</span>
+    {% elif v.theory.status == 'refuted' %}<span class="fail">refuted</span>
+    {% elif v.theory.status == 'inconclusive' %}<span class="muted">inconclusive</span>
+    {% else %}<span class="muted">pending</span>{% endif %}
+  </td>
+  <td class="num">{{ v.baseline_run_count }}</td>
+  <td class="num">{{ v.treatment_run_count }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+{% endblock %}
