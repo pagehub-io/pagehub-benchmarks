@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eval-chess-frontend · claude-code claude-opus-4-7 — run</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav><a href="../index.html">pagehub-benchmarks</a> / <a href="../benchmarks/eval-chess-frontend.html">eval-chess-frontend</a> / run</nav>
+<h1>eval-chess-frontend — claude-code <span class="muted">claude-opus-4-7</span></h1>
+<p>
+<span class="pass">PASSED</span>  · attempt 2 of 5
+  · $30.2549 (computed)
+  · 1163s
+  · config <code class="mono">effort=xhigh</code>
+</p>
+
+<h2>Metrics</h2>
+<div class="cards">
+  <div class="card"><h3>Outcome</h3><dl>
+    <dt>passed</dt><dd><span class="pass">✓</span></dd>
+    <dt>attempts</dt><dd>2</dd>
+    <dt>max_attempts</dt><dd>5</dd>
+    <dt>started</dt><dd>2026-05-14T10:46:57.668188Z</dd>
+    <dt>finished</dt><dd>2026-05-14T11:06:27.649755Z</dd>
+  </dl></div>
+  <div class="card"><h3>Tokens</h3><dl>
+    <dt>input</dt><dd>150</dd>
+    <dt>output</dt><dd>62,033</dd>
+    <dt>cache</dt><dd>13,508,996</dd>
+    <dt>cost USD</dt><dd>$30.2549</dd>
+    <dt>wall time</dt><dd>1162.7s</dd>
+  </dl></div>
+  <div class="card"><h3>Target</h3><dl>
+    <dt>repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend">pagehub-io/eval-chess-frontend</a></dd>
+    <dt>start</dt><dd class="mono">empty</dd>
+    <dt>built sha</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend/commit/96d4cee0f5face17794b9ae586154fd1acbb1e04">96d4cee0f5fa</a></dd>
+    <dt>worktree</dt><dd class="mono" title="/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/eval-chess-frontend/claude-code__claude-opus-4-7__effort-xhigh__20260514T104656Z">claude-code__claude-opus-4-7__effort-xhigh__20260514T104656Z</dd>
+  </dl></div>
+</div>
+
+<h2>Built code</h2>
+<div class="cards"><div class="card"><dl>
+    <dt>branch</dt>
+    <dd>
+      <a href="https://github.com/pagehub-io/eval-chess-frontend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T10-46-57Z"><span class="mono">bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T10-46-57Z</span></a>
+ <span class="pass" title="also pushed to the target's default branch">★ default branch</span>    </dd>
+    <dt>commit</dt>
+    <dd><a href="https://github.com/pagehub-io/eval-chess-frontend/commit/96d4cee0f5face17794b9ae586154fd1acbb1e04" class="mono">96d4cee0f5fa</a></dd>
+    <dt>pushed at</dt><dd>2026-05-14T11:06:31.706720Z</dd>
+    <dt>browse repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend">pagehub-io/eval-chess-frontend</a></dd>
+</dl></div></div>
+
+<h2>Per-attempt breakdown</h2>
+<table>
+<thead><tr>
+  <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
+  <th class="num">wall s</th><th>grader passed?</th><th>grader failures</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="num">1</td>
+  <td class="num">99</td>
+  <td class="num">37,942</td>
+  <td class="num">659.6</td>
+  <td><span class="fail">✗</span></td>
+  <td>
+      <details class="failures"><summary>57 failure(s)</summary>
+        <ul><li class="mono">lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 400}</li><li class="mono">s1-castle-k-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-type-uci-e1g1 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-submit-e1g1 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-verify-fen-post-castle :: s1-k-castle-fen [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s1-castle-k-verify-fen-post-castle :: s1-k-castle-fen-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-type-uci-illegal-repeat :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-submit-illegal-repeat :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-verify-fen-still-post-castle :: s1-illegal-fen-unchanged-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s1-castle-k-verify-fen-still-post-castle :: s1-illegal-fen-unchanged [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s2-rights-q-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-type-uci-e1g1 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-submit-e1g1-rejected :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-verify-fen-unchanged :: s2-k-disallowed-fen-unchanged-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-verify-fen-unchanged :: s2-k-disallowed-fen-unchanged [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s2-rights-q-type-uci-e1c1 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-submit-e1c1 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-verify-fen-q-castled :: s2-q-castle-fen-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s2-rights-q-verify-fen-q-castled :: s2-q-castle-fen [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s3-en-passant-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s3-en-passant-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s3-en-passant-type-uci-e5d6 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s3-en-passant-submit-e5d6 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s3-en-passant-verify-fen :: s3-ep-fen [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4k3/8/3P4/8/8/8/8/4K3 b - - 0 2&#34;, &#34;observed&#34;: null}</li><li class="mono">s3-en-passant-verify-fen :: s3-ep-fen-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-type-uci-b7b8q :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-submit-b7b8q :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-verify-fen :: s4-promo-fen-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s4-promotion-q-verify-fen :: s4-promo-fen [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1Q6/8/8/8/4k3/8/8/4K3 b - - 0 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s5-pin-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s5-pin-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s5-pin-type-uci-e2c3 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s5-pin-submit-e2c3 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s5-pin-verify-fen-unchanged :: s5-pin-fen-unchanged [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;, &#34;observed&#34;: null}</li><li class="mono">s5-pin-verify-fen-unchanged :: s5-pin-fen-unchanged-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-type-uci-a1a8 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-submit-a1a8 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-verify-status :: s6-mate-status-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s6-mate-verify-status :: s6-mate-status [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;white_won&#34;, &#34;observed&#34;: null}</li><li class="mono">s7-stalemate-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s7-stalemate-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s7-stalemate-type-uci-f5f7 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s7-stalemate-submit-f5f7 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s7-stalemate-verify-status :: s7-stalemate-status [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;draw&#34;, &#34;observed&#34;: null}</li><li class="mono">s7-stalemate-verify-status :: s7-stalemate-status-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-type-fen :: type-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-apply :: click-apply-fen-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-type-uci-a1a2 :: type-uci-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-submit-a1a2 :: click-submit-ok [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-verify-status :: s8-fifty-status-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">s8-fifty-verify-status :: s8-fifty-status [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;draw&#34;, &#34;observed&#34;: null}</li></ul>
+      </details>
+  </td>
+</tr>
+<tr>
+  <td class="num">2</td>
+  <td class="num">51</td>
+  <td class="num">24,091</td>
+  <td class="num">503.1</td>
+  <td><span class="pass">✓</span></td>
+  <td>
+<span class="muted">none</span>  </td>
+</tr>
+</tbody>
+</table>
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Target repo: <a href="https://github.com/pagehub-io/eval-chess-frontend">https://github.com/pagehub-io/eval-chess-frontend</a></li>
+<li>Built code commit: <a href="https://github.com/pagehub-io/eval-chess-frontend/commit/96d4cee0f5face17794b9ae586154fd1acbb1e04">https://github.com/pagehub-io/eval-chess-frontend/commit/96d4cee0f5face17794b9ae586154fd1acbb1e04</a></li>  <li>Benchmark definition: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/benchmarks/eval-chess-frontend.yaml">benchmarks/eval-chess-frontend.yaml</a></li>
+  <li>Build prompt: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/prompts/eval-chess-frontend.md">prompts/eval-chess-frontend.md</a></li>
+  <li>Grader fixture bundle: <a href="https://github.com/pagehub-io/pagehub-evals/blob/main/fixtures/eval-chess-frontend.json">fixtures/eval-chess-frontend.json</a> (pagehub-evals)</li>
+  <li>Raw run record (JSON): <a href="../results/eval-chess-frontend/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T10-46-57Z.json">results/eval-chess-frontend/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T10-46-57Z.json</a></li>
+</ul>
+<footer>
+Generated by <code>tools/build_site.py</code> from <code>results/**/*.json</code>.
+<code>cost_usd</code> is a computed figure (summed tokens &times; <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/pricing.yaml">pricing.yaml</a>) — what a run would cost at API rates, not an actual bill (runs execute on the Claude CLI's subscription auth).
+</footer>
+</body>
+</html>
