@@ -38,6 +38,7 @@ STATIC_DIR = REPO_ROOT / "static"
 DEFAULT_RESULTS_DIR = REPO_ROOT / "results"
 DEFAULT_DOCS_DIR = REPO_ROOT / "docs"
 DEFAULT_BENCHMARKS_DIR = REPO_ROOT / "benchmarks"
+DEFAULT_THEORIES_DIR = REPO_ROOT / "theories"
 
 BENCHMARKS_REPO_URL = os.environ.get(
     "PAGEHUB_BENCHMARKS_REPO_URL", "https://github.com/pagehub-io/pagehub-benchmarks"
@@ -301,11 +302,16 @@ def _env() -> Environment:
     )
 
 
-def build(results_dir: Path | str | None = None, docs_dir: Path | str | None = None,
-          benchmarks_dir: Path | str | None = None) -> Path:
+def build(
+    results_dir: Path | str | None = None,
+    docs_dir: Path | str | None = None,
+    benchmarks_dir: Path | str | None = None,
+    theories_dir: Path | str | None = None,
+) -> Path:
     results_dir = Path(results_dir) if results_dir else DEFAULT_RESULTS_DIR
     docs_dir = Path(docs_dir) if docs_dir else DEFAULT_DOCS_DIR
     benchmarks_dir = Path(benchmarks_dir) if benchmarks_dir else DEFAULT_BENCHMARKS_DIR
+    theories_dir = Path(theories_dir) if theories_dir else DEFAULT_THEORIES_DIR
 
     runs, meta_cache = load_runs(results_dir, benchmarks_dir)
 
@@ -341,9 +347,21 @@ def build(results_dir: Path | str | None = None, docs_dir: Path | str | None = N
 
     common = {"repo_url": BENCHMARKS_REPO_URL}
 
+    # Load theories early so the home-page link counter ("theories (N)")
+    # can render before _render_theories writes the per-theory files.
+    from pagehub_benchmarks.theories import TheoryError as _TheoryError
+    from pagehub_benchmarks.theories import load_all_theories as _load_theories
+    try:
+        loaded_theories = _load_theories(theories_dir)
+    except _TheoryError as exc:
+        print(f"(theories disabled — {exc})")
+        loaded_theories = []
+
     index_path = docs_dir / "index.html"
     index_path.write_text(
-        env.get_template("index.html").render(rel="", runs=runs, benchmarks=benchmarks, **common)
+        env.get_template("index.html").render(
+            rel="", runs=runs, benchmarks=benchmarks, theories=loaded_theories, **common
+        )
     )
     written.add(index_path)
 
@@ -374,8 +392,126 @@ def build(results_dir: Path | str | None = None, docs_dir: Path | str | None = N
         shutil.copy2(r["results_src_path"], dst)
         written.add(dst)
 
+    _render_theories(env, docs_dir, loaded_theories, by_bench, common, written)
+
     _clean_orphans(docs_dir, written)
     return docs_dir
+
+
+def _render_theories(
+    env: Environment,
+    docs_dir: Path,
+    theories: list,
+    by_bench: dict[str, list[dict]],
+    common: dict,
+    written: set[Path],
+) -> None:
+    """Render the theory index + per-theory pages.
+
+    A theory ties a baseline benchmark to a treatment benchmark and shows a
+    side-by-side metric comparison. If either side has no runs yet, the
+    cells say "no runs yet" instead of trying to project from nothing.
+    """
+    if not theories:
+        # Don't create docs/theories/ at all if there are no theory files —
+        # the orphan sweep would just remove it anyway.
+        return
+
+    theory_index_tmpl = env.get_template("theory_index.html")
+    theory_tmpl = env.get_template("theory.html")
+    out_dir = docs_dir / "theories"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    views = []
+    for t in theories:
+        baseline_runs = by_bench.get(t.baseline, [])
+        treatment_runs = by_bench.get(t.treatment, [])
+        cells = _theory_cells(t.metrics, baseline_runs, treatment_runs)
+        views.append(
+            {
+                "theory": t,
+                "baseline_run_count": len(baseline_runs),
+                "treatment_run_count": len(treatment_runs),
+                "cells": cells,
+                "body_html": _md_to_html(t.body_markdown),
+                "baseline_runs": baseline_runs,
+                "treatment_runs": treatment_runs,
+            }
+        )
+
+    index_path = out_dir / "index.html"
+    index_path.write_text(theory_index_tmpl.render(rel="../", theories=views, **common))
+    written.add(index_path)
+
+    for v in views:
+        tpath = out_dir / f"{v['theory'].slug}.html"
+        tpath.write_text(theory_tmpl.render(rel="../", v=v, **common))
+        written.add(tpath)
+
+
+_METRIC_FORMATTERS = {
+    "cost_usd": lambda v: f"${float(v):.4f}",
+    "total_wall_time_seconds": lambda v: f"{float(v):.0f}s",
+    "total_input_tokens": lambda v: f"{int(v):,}",
+    "total_output_tokens": lambda v: f"{int(v):,}",
+    "total_cache_tokens": lambda v: f"{int(v):,}",
+    "attempts": lambda v: str(int(v)),
+    "max_attempts": lambda v: str(int(v)),
+    "passed": lambda v: "✓" if v else "✗",
+}
+
+
+def _format_metric(metric: str, value):  # noqa: ANN001, ANN201
+    fmt = _METRIC_FORMATTERS.get(metric)
+    try:
+        return fmt(value) if fmt else str(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _theory_cells(metrics: list[str], baseline_runs: list[dict], treatment_runs: list[dict]) -> list[dict]:
+    """Project each metric into a baseline-vs-treatment cell.
+
+    Strategy: use the *most recent* run on each side (``load_runs`` returns
+    newest-first). If a side has no run, render "no runs yet" — the
+    template still shows the row so a reader sees which metric the theory
+    cares about and which side is missing.
+    """
+    b_latest = baseline_runs[0] if baseline_runs else None
+    t_latest = treatment_runs[0] if treatment_runs else None
+    out: list[dict] = []
+    for m in metrics:
+        bv = b_latest.get(m) if b_latest else None
+        tv = t_latest.get(m) if t_latest else None
+        out.append(
+            {
+                "metric": m,
+                "baseline_display": _format_metric(m, bv) if b_latest is not None else "no runs yet",
+                "treatment_display": _format_metric(m, tv) if t_latest is not None else "no runs yet",
+                "baseline_value": bv,
+                "treatment_value": tv,
+            }
+        )
+    return out
+
+
+def _md_to_html(markdown: str) -> str:
+    """No external markdown lib — wrap the body in <pre> and trust the source.
+
+    The theory body is operator-authored markdown; rendering it raw in
+    ``<pre>`` keeps formatting predictable without dragging in a markdown
+    parser as a dependency. A future iteration can swap in ``markdown-it``
+    or similar if richer rendering becomes worth the dep weight.
+    """
+    return f'<div class="theory-body"><pre>{_escape_html(markdown)}</pre></div>'
+
+
+def _escape_html(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 def _clean_orphans(docs_dir: Path, written: set[Path]) -> None:
@@ -406,8 +542,13 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="tools.build_site", description="Build the static results site")
     p.add_argument("--results-dir", default=None)
     p.add_argument("--docs-dir", default=None)
+    p.add_argument("--theories-dir", default=None)
     args = p.parse_args(argv)
-    out = build(results_dir=args.results_dir, docs_dir=args.docs_dir)
+    out = build(
+        results_dir=args.results_dir,
+        docs_dir=args.docs_dir,
+        theories_dir=args.theories_dir,
+    )
     print(f"wrote site to {out}")
     return 0
 

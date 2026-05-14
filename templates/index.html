@@ -2,7 +2,7 @@
 {% block title %}pagehub-benchmarks — all runs{% endblock %}
 {% block content %}
 <h1>pagehub-benchmarks</h1>
-<p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="{{ repo_url }}">repo</a></p>
+<p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="{{ repo_url }}">repo</a>{% if theories %} · <a href="theories/index.html">theories</a> ({{ theories|length }}){% endif %}</p>
 
 {% if not runs %}
 <p class="muted">No runs recorded yet. Run <code>make run BENCHMARK=&lt;name&gt;</code> and the run record lands under <code>results/</code>.</p>

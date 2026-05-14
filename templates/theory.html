@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ v.theory.name }} — theory{% endblock %}
+{% block crumbs %} / <a href="index.html">theories</a> / {{ v.theory.name }}{% endblock %}
+{% block content %}
+<h1>{{ v.theory.name }}</h1>
+<p>
+  {% if v.theory.status == 'supported' %}<span class="pass">supported</span>
+  {% elif v.theory.status == 'refuted' %}<span class="fail">refuted</span>
+  {% elif v.theory.status == 'inconclusive' %}<span class="muted">inconclusive</span>
+  {% else %}<span class="muted">pending</span>{% endif %}
+  · baseline <a href="{{ rel }}benchmarks/{{ v.theory.baseline }}.html"><code class="mono">{{ v.theory.baseline }}</code></a>
+  ({{ v.baseline_run_count }} run{{ '' if v.baseline_run_count == 1 else 's' }})
+  · treatment <a href="{{ rel }}benchmarks/{{ v.theory.treatment }}.html"><code class="mono">{{ v.theory.treatment }}</code></a>
+  ({{ v.treatment_run_count }} run{{ '' if v.treatment_run_count == 1 else 's' }})
+</p>
+
+<h2>Hypothesis</h2>
+<p>{{ v.theory.hypothesis }}</p>
+
+<h2>Comparison (latest run on each side)</h2>
+<table>
+<thead><tr>
+  <th>metric</th><th>{{ v.theory.baseline }}</th><th>{{ v.theory.treatment }}</th>
+</tr></thead>
+<tbody>
+{% for c in v.cells %}
+<tr>
+  <td class="mono">{{ c.metric }}</td>
+  <td>{{ c.baseline_display }}</td>
+  <td>{{ c.treatment_display }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+{% if v.baseline_runs or v.treatment_runs %}
+<h2>Runs</h2>
+<table>
+<thead><tr><th>side</th><th>date</th><th>passed</th><th class="num">attempts</th><th class="num">cost</th><th class="num">wall s</th><th>links</th></tr></thead>
+<tbody>
+{% for r in v.baseline_runs %}
+<tr>
+  <td class="mono">baseline</td>
+  <td>{{ r.date_display }}</td>
+  <td>{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
+  <td class="num">{{ r.attempts_display }}</td>
+  <td class="num">${{ '%.4f' % r.cost_usd }}</td>
+  <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
+  <td><a href="{{ rel }}runs/{{ r.run_id }}.html">detail</a></td>
+</tr>
+{% endfor %}
+{% for r in v.treatment_runs %}
+<tr>
+  <td class="mono">treatment</td>
+  <td>{{ r.date_display }}</td>
+  <td>{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
+  <td class="num">{{ r.attempts_display }}</td>
+  <td class="num">${{ '%.4f' % r.cost_usd }}</td>
+  <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
+  <td><a href="{{ rel }}runs/{{ r.run_id }}.html">detail</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+
+<h2>Background &amp; expected outcome</h2>
+{{ v.body_html | safe }}
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Theory source: <a href="{{ repo_url }}/blob/main/theories/{{ v.theory.slug }}.md">theories/{{ v.theory.slug }}.md</a></li>
+  <li>Baseline benchmark: <a href="{{ rel }}benchmarks/{{ v.theory.baseline }}.html">{{ v.theory.baseline }}</a></li>
+  <li>Treatment benchmark: <a href="{{ rel }}benchmarks/{{ v.theory.treatment }}.html">{{ v.theory.treatment }}</a></li>
+</ul>
+{% endblock %}
