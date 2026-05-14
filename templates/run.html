@@ -57,6 +57,31 @@
 <p class="muted">No built-code push recorded for this run.</p>
 {% endif %}
 
+{% if r.template_var_rows %}
+<h2>Template vars</h2>
+<p class="muted">The variables that were substituted into the build prompt at render time. Auto-vars and any custom <code>template_vars</code> declared in the benchmark YAML. Click a row to expand a multi-line value.</p>
+<table class="tvars">
+<thead><tr><th>name</th><th>value</th><th class="num">bytes</th></tr></thead>
+<tbody>
+{% for v in r.template_var_rows %}
+<tr>
+  <td class="mono">{{ v.name }}</td>
+  <td>
+    {% if v.is_multiline %}
+      <details><summary class="muted">{% if v.is_json %}JSON{% else %}text{% endif %}, {{ v.byte_length }} bytes — show</summary>
+        <pre class="mono prompt-block">{{ v.value }}</pre>
+      </details>
+    {% else %}
+      <code class="mono">{{ v.value }}</code>
+    {% endif %}
+  </td>
+  <td class="num">{{ '{:,}'.format(v.byte_length) }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+
 <h2>Per-attempt breakdown</h2>
 <table>
 <thead><tr>
@@ -82,6 +107,20 @@
 {% endfor %}
 </tbody>
 </table>
+
+{% set has_rendered = r.per_attempt|selectattr('rendered_prompt')|list %}
+{% if has_rendered %}
+<h2>Rendered prompts (per attempt)</h2>
+<p class="muted">Attempt 1 carries the full rendered build prompt sent to the harness (with all <code>{{ '{{' }} … {{ '}}' }}</code> already substituted). Attempts 2+ carry the failure-summary follow-up the runner generated from the prior grader failures. Collapsed by default — these get long.</p>
+{% for a in r.per_attempt %}
+  {% if a.rendered_prompt %}
+  <details class="rendered-prompt">
+    <summary>Attempt {{ a.attempt }} — {{ a.rendered_prompt|length }} chars{% if a.attempt == 1 %} (build prompt){% else %} (retry follow-up){% endif %}</summary>
+    <pre class="mono prompt-block">{{ a.rendered_prompt }}</pre>
+  </details>
+  {% endif %}
+{% endfor %}
+{% endif %}
 
 <h2>Links</h2>
 <ul class="links">

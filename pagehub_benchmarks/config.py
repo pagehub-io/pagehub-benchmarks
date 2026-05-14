@@ -69,6 +69,11 @@ class BenchmarkSpec:
     max_attempts: int
     harnesses: list[HarnessSpec]
     source_path: Path
+    # Extra variables a benchmark can declare to feed its Jinja2 prompt
+    # template. Auto-vars (benchmark_name, target_repo, target_port,
+    # pagehub_evals_url, grader_fixture) are always available; this map
+    # supplements them. Reserved-name collisions are caught at render time.
+    template_vars: dict[str, str] = field(default_factory=dict)
 
     @property
     def build_prompt_path(self) -> Path:
@@ -125,6 +130,11 @@ def parse_benchmark(data: dict[str, Any], source_path: Path) -> BenchmarkSpec:
     if not isinstance(max_attempts, int) or max_attempts < 1:
         raise ConfigError(f"{where}: 'max_attempts' must be a positive int")
 
+    tv_raw = data.get("template_vars") or {}
+    if not isinstance(tv_raw, dict):
+        raise ConfigError(f"{where}: 'template_vars' must be a mapping")
+    template_vars = {str(k): str(v) for k, v in tv_raw.items()}
+
     return BenchmarkSpec(
         name=str(_require(data, "name", where)),
         description=str(data.get("description") or ""),
@@ -135,6 +145,7 @@ def parse_benchmark(data: dict[str, Any], source_path: Path) -> BenchmarkSpec:
         max_attempts=max_attempts,
         harnesses=harnesses,
         source_path=source_path,
+        template_vars=template_vars,
     )
 
 

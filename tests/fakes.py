@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from pagehub_benchmarks.config import BenchmarkSpec
 from pagehub_benchmarks.grader import GraderResult
 from pagehub_benchmarks.harnesses.base import AttemptResult, Harness
 from pagehub_benchmarks.runner.push import PushResult, github_https_url
@@ -81,6 +82,30 @@ def ar(
 
 def gr(passed: bool, failures: list[str] | None = None) -> GraderResult:
     return GraderResult(passed=passed, failures=list(failures or []))
+
+
+class FakeFixtureFetcher:
+    """Returns a scripted fixture body. Records each ``fetch(spec)`` call.
+
+    ``raise_with`` makes ``fetch`` raise that exception instead — used by the
+    "unresolved fixture" tests to exercise the renderer's error path.
+    """
+
+    def __init__(
+        self,
+        body: str = '{"version": 1, "collections": []}',
+        *,
+        raise_with: Exception | None = None,
+    ) -> None:
+        self.body = body
+        self._raise_with = raise_with
+        self.calls: list[BenchmarkSpec] = []
+
+    def fetch(self, spec: BenchmarkSpec) -> str:
+        self.calls.append(spec)
+        if self._raise_with is not None:
+            raise self._raise_with
+        return self.body
 
 
 class FakePusher:

@@ -31,7 +31,12 @@ from pagehub_benchmarks.config import (
 )
 from pagehub_benchmarks.grader import EvalsGrader, GraderResult
 from pagehub_benchmarks.harnesses import HARNESSES, Harness, get_harness
+from pagehub_benchmarks.runner.fixture_fetch import (
+    FixtureFetcher,
+    fixture_fetcher_from_env,
+)
 from pagehub_benchmarks.runner.pricing import cost_usd
+from pagehub_benchmarks.runner.prompt_render import RenderedPrompt, render_prompt
 from pagehub_benchmarks.runner.push import GitPusher, Pusher, branch_for
 from pagehub_benchmarks.runner.results import AttemptRecord, RunRecord, config_slug
 from pagehub_benchmarks.runner.workspace import (
@@ -105,6 +110,7 @@ def execute_benchmark_run(
     grader: GraderLike,
     worktree_dir: str | Path,
     pricing: dict[str, ModelPrice],
+    fixture_fetcher: FixtureFetcher,
     built_sha: str | None = None,
     service_factory: Callable[[], AbstractContextManager[Any]] | None = None,
     clock: Callable[[], datetime] = _utcnow,
@@ -114,7 +120,13 @@ def execute_benchmark_run(
         raise ConfigError(f"no pricing entry for model {model!r}")
     price = pricing[model]
     config = dict(harness_spec.config)
-    prompt = spec.read_prompt()
+    rendered: RenderedPrompt = render_prompt(spec, fetcher=fixture_fetcher)
+    if rendered.unused_vars:
+        print(
+            f"(prompt-render warning: declared template_vars not referenced "
+            f"in prompts/{spec.name}.md: {rendered.unused_vars})"
+        )
+    prompt = rendered.text
     max_attempts = spec.max_attempts
 
     grader.setup()
@@ -130,9 +142,11 @@ def execute_benchmark_run(
 
     for attempt_no in range(1, max_attempts + 1):
         if attempt_no == 1:
-            ar = harness.start_build(str(worktree_dir), prompt, model, config)
+            sent_prompt = prompt
+            ar = harness.start_build(str(worktree_dir), sent_prompt, model, config)
         else:
-            ar = harness.continue_build(session_handle, build_followup_prompt(last_failures))
+            sent_prompt = build_followup_prompt(last_failures)
+            ar = harness.continue_build(session_handle, sent_prompt)
         if ar.session_handle:
             session_handle = ar.session_handle
 
@@ -157,6 +171,7 @@ def execute_benchmark_run(
                 wall_time_seconds=round(ar.wall_time_seconds, 3),
                 grader_passed=gr.passed,
                 grader_failures=list(gr.failures),
+                rendered_prompt=sent_prompt,
             )
         )
         if gr.passed:
@@ -192,6 +207,8 @@ def execute_benchmark_run(
         cost_usd=cost,
         total_wall_time_seconds=round(total_wall, 3),
         per_attempt=per_attempt,
+        rendered_prompt=prompt,
+        template_vars=dict(rendered.template_vars),
     )
 
 
@@ -239,6 +256,7 @@ def run_benchmark(
     serve: bool = True,
     build_site: bool = True,
     pusher: Pusher | None = None,
+    fixture_fetcher: FixtureFetcher | None = None,
 ) -> list[Path]:
     spec = load_benchmark(name_or_path)
     if max_attempts is not None:
@@ -256,6 +274,7 @@ def run_benchmark(
     results_root = Path(results_dir) if results_dir else DEFAULT_RESULTS_DIR
     worktrees_root = Path(worktrees_dir) if worktrees_dir else DEFAULT_WORKTREES_DIR
     pusher = pusher if pusher is not None else GitPusher()
+    fetcher = fixture_fetcher if fixture_fetcher is not None else fixture_fetcher_from_env()
 
     written: list[Path] = []
     for h in selected:
@@ -278,6 +297,7 @@ def run_benchmark(
                 grader=grader,
                 worktree_dir=worktree,
                 pricing=pricing,
+                fixture_fetcher=fetcher,
                 service_factory=service_factory,
             )
         record.built_git_sha = capture_built_sha(worktree)

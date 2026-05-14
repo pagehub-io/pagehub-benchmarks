@@ -77,6 +77,44 @@ def test_malformed_benchmark_rejected(mutate, tmp_path):
         parse_benchmark(data, tmp_path / "x.yaml")
 
 
+def test_template_vars_default_empty_and_optional(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {"fixture_bundle": "fixtures/x.json", "collection": "x-rules"},
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+    }
+    spec = parse_benchmark(data, tmp_path / "x.yaml")
+    assert spec.template_vars == {}
+
+
+def test_template_vars_parsed_from_yaml(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {"fixture_bundle": "fixtures/x.json", "collection": "x-rules"},
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+        "template_vars": {"foo": "bar", "n": 42},
+    }
+    spec = parse_benchmark(data, tmp_path / "x.yaml")
+    assert spec.template_vars == {"foo": "bar", "n": "42"}  # values stringified
+
+
+def test_template_vars_must_be_mapping(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {"fixture_bundle": "fixtures/x.json", "collection": "x-rules"},
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+        "template_vars": ["not", "a", "mapping"],
+    }
+    with pytest.raises(ConfigError):
+        parse_benchmark(data, tmp_path / "x.yaml")
+
+
 def test_load_pricing_rejects_incomplete_model(tmp_path):
     p = tmp_path / "pricing.yaml"
     p.write_text("models:\n  m:\n    input: 1.0\n    output: 2.0\n")  # missing cache rates

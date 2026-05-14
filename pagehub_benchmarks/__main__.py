@@ -4,6 +4,10 @@
     python -m pagehub_benchmarks run <benchmark> [--harness H] [--model M]
         [--config k=v ...] [--max-attempts N] [--results-dir DIR]
         [--worktrees-dir DIR] [--no-serve] [--dry-run]
+    python -m pagehub_benchmarks render-prompt <benchmark>
+        Render <benchmark>'s build prompt (Jinja2 + fixture fetch over HTTP)
+        to stdout. For smoke-checking that {{ grader_fixture }} actually
+        substitutes without burning tokens on a real harness invocation.
 
 ``--dry-run`` sanity-checks YAML + prompt + grader wiring + pricing without
 calling the harness or pagehub-evals (the same check ``make run ... DRY_RUN=1``
@@ -77,6 +81,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_render_prompt(args: argparse.Namespace) -> int:
+    from pagehub_benchmarks.runner.fixture_fetch import fixture_fetcher_from_env
+    from pagehub_benchmarks.runner.prompt_render import render_prompt
+
+    spec = load_benchmark(args.benchmark)
+    fetcher = fixture_fetcher_from_env()
+    rendered = render_prompt(spec, fetcher=fetcher)
+    if rendered.unused_vars and not args.quiet:
+        print(
+            f"# (warning: template_vars declared but not referenced: {rendered.unused_vars})",
+            file=sys.stderr,
+        )
+    sys.stdout.write(rendered.text)
+    if not rendered.text.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
 def _cmd_site(args: argparse.Namespace) -> int:
     import sys
 
@@ -114,6 +136,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--results-dir", help="run records to read (default: results/)")
     s.add_argument("--docs-dir", help="output dir (default: docs/)")
     s.set_defaults(func=_cmd_site)
+
+    rp = sub.add_parser(
+        "render-prompt",
+        help="render a benchmark's Jinja2 build prompt to stdout (no harness call)",
+    )
+    rp.add_argument("benchmark", help="benchmark name (benchmarks/<name>.yaml) or a path")
+    rp.add_argument("--quiet", "-q", action="store_true", help="suppress the unused-vars warning on stderr")
+    rp.set_defaults(func=_cmd_render_prompt)
     return p
 
 
@@ -122,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (ConfigError, FileNotFoundError) as exc:
+        # FixtureFetchError and PromptRenderError subclass ConfigError, so
+        # they ride this same envelope (no need to list them explicitly).
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
