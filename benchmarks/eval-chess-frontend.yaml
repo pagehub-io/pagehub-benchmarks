@@ -1,0 +1,37 @@
+name: eval-chess-frontend
+description: >-
+  Build a pure-frontend chess web app (Vite + TypeScript + chess.js, no
+  backend) on port 8004 that exposes the DOM contract the grader binds
+  against; grade it via pagehub-browser against the pagehub-evals
+  "eval-chess-frontend" conformance battery.
+
+target_repo: git@github.com:pagehub-io/eval-chess-frontend.git
+target_start: empty
+build_prompt_file: prompts/eval-chess-frontend.md
+
+grader:
+  # The standalone pagehub-evals service (its docker-compose maps the API to
+  # :8002). Same as eval-chess-backend.
+  evals_base_url: http://localhost:8002
+  # Path within the pagehub-evals repo checkout (resolved relative to
+  # PAGEHUB_EVALS_REPO, default ~/github/pagehub-io/pagehub-evals).
+  fixture_bundle: fixtures/eval-chess-frontend.json
+  collection: eval-chess-frontend
+  env:
+    # pagehub-evals fires HTTP from inside its own docker container, so
+    # services on the HOST must be addressed via host.docker.internal —
+    # both the headless-browser service AND the frontend it will drive.
+    # The bundle's "chess-frontend-local" environment is PATCHed with these
+    # values at grade time, so a run can repoint either at a worktree-local
+    # deployment without editing the bundle.
+    pagehub-browser_url: http://host.docker.internal:4010
+    eval-chess-frontend_url: http://host.docker.internal:8004
+
+max_attempts: 5
+
+# The matrix: one run per entry.
+harnesses:
+  - harness: claude-code
+    model: claude-opus-4-7
+    config:
+      effort: xhigh
