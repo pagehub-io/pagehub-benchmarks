@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 import pagehub_benchmarks.runner.run as run_mod
-from tests.fakes import FakeGrader, FakeHarness, FakePusher, ar, gr
+from tests.fakes import FakeFixtureFetcher, FakeGrader, FakeHarness, FakePusher, ar, gr
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -78,6 +78,7 @@ def _run(tmp_path: Path, monkeypatch, *, harness, grader, pusher) -> dict:
         serve=False,
         build_site=False,
         pusher=pusher,
+        fixture_fetcher=FakeFixtureFetcher(),
     )
     assert len(written) == 1
     return json.loads(written[0].read_text())

@@ -142,6 +142,80 @@ def test_build_empty_is_fine(tmp_path: Path):
     assert "No runs recorded yet" in (docs / "index.html").read_text()
 
 
+def test_build_with_rendered_prompt_and_template_vars(tmp_path: Path):
+    """Run records carrying the new fields surface them on the run-detail page."""
+    run = dict(SAMPLE_RUN)
+    run.update(
+        {
+            "rendered_prompt": "Build eval-chess-frontend on port 8004.",
+            "template_vars": {
+                "benchmark_name": "eval-chess-frontend",
+                "target_repo": "git@github.com:pagehub-io/eval-chess-frontend.git",
+                "target_port": "8004",
+                "pagehub_evals_url": "http://localhost:8002",
+                "grader_fixture": json.dumps(
+                    {"version": 1, "collections": [{"name": "eval-chess-frontend", "items": []}]},
+                    indent=2,
+                ),
+            },
+            "per_attempt": [
+                dict(run["per_attempt"][0], rendered_prompt="Build eval-chess-frontend on port 8004."),
+                dict(run["per_attempt"][1], rendered_prompt="The conformance evals are still failing:\n\n- chess-07 failed\n\nFix the code..."),
+            ],
+        }
+    )
+    results = tmp_path / "results" / "eval-chess-frontend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(run)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    # Template-vars table renders, with each auto-var.
+    assert "Template vars" in run_html
+    assert "benchmark_name" in run_html
+    assert "target_port" in run_html
+    assert "grader_fixture" in run_html
+    # The multi-line fixture body lands inside a <details><pre> block.
+    assert "<details>" in run_html
+    assert "eval-chess-frontend" in run_html
+    # Rendered-prompt section appears with per-attempt details.
+    assert "Rendered prompts" in run_html
+    assert "Build eval-chess-frontend on port 8004." in run_html
+    assert "Fix the code" in run_html
+
+
+def test_build_without_rendered_prompt_fields_renders_gracefully(tmp_path: Path):
+    """Legacy records (no rendered_prompt / template_vars) MUST still render —
+    just without the new sections. This guarantees the eval-chess-backend +
+    eval-chess-frontend records already on main keep working post-merge."""
+    legacy = dict(SAMPLE_RUN)
+    # Belt-and-braces: ensure the fields are not present at all.
+    legacy.pop("rendered_prompt", None)
+    legacy.pop("template_vars", None)
+    # Per-attempt rows also have no rendered_prompt key.
+    legacy["per_attempt"] = [
+        {k: v for k, v in row.items() if k != "rendered_prompt"} for row in legacy["per_attempt"]
+    ]
+    results = tmp_path / "results" / "eval-chess-backend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(legacy)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    # New sections suppressed when the record carries no data for them.
+    assert "Template vars" not in run_html
+    assert "Rendered prompts" not in run_html
+    # But the rest of the page still rendered (metrics, per-attempt table, etc).
+    assert "Per-attempt breakdown" in run_html
+    assert "claude-opus-4-7" in run_html
+
+
 def test_build_removes_orphans_from_prior_run(tmp_path: Path):
     # Simulate the state after renaming a benchmark/run: docs/ contains
     # output paths from the *previous* build that the current build will

@@ -10,7 +10,7 @@ import pytest
 
 import pagehub_benchmarks.runner.run as run_mod
 from pagehub_benchmarks.config import REPO_ROOT
-from tests.fakes import FakeGrader, FakeHarness, FakePusher, ar, gr
+from tests.fakes import FakeFixtureFetcher, FakeGrader, FakeHarness, FakePusher, ar, gr
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -71,6 +71,7 @@ def test_run_benchmark_writes_record_and_commits(tmp_path: Path, monkeypatch):
         serve=False,
         build_site=False,
         pusher=FakePusher(),  # do not hit GitHub from CI
+        fixture_fetcher=FakeFixtureFetcher(),
     )
     assert len(written) == 1
     rec = json.loads(written[0].read_text())

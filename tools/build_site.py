@@ -90,6 +90,45 @@ def _fmt_date(iso: str) -> str:
         return iso or ""
 
 
+def _is_jsonish(value: str) -> bool:
+    """Cheap heuristic: does ``value`` look like JSON we should pretty-print?
+
+    Used by the template-vars table to decide between an inline ``<code>`` and
+    a collapsible ``<details><pre>``. We don't try to be clever — anything
+    that starts with ``{`` or ``[`` and parses as JSON gets the JSON
+    treatment.
+    """
+    s = value.lstrip()
+    if not s or s[0] not in "{[":
+        return False
+    try:
+        json.loads(value)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
+def _template_var_rows(template_vars: dict[str, str]) -> list[dict]:
+    """Project ``{name: value}`` into rows the run-detail template renders.
+
+    Each row carries presentational hints: whether the value is multi-line
+    (folds into a ``<details>``) and whether it parses as JSON (gets the
+    pretty-printed JSON branch). Single-line non-JSON values stay inline.
+    """
+    rows: list[dict] = []
+    for name in sorted(template_vars):
+        value = str(template_vars.get(name) or "")
+        multiline = "\n" in value or len(value) > 200
+        rows.append({
+            "name": name,
+            "value": value,
+            "is_multiline": multiline,
+            "is_json": _is_jsonish(value),
+            "byte_length": len(value.encode("utf-8")),
+        })
+    return rows
+
+
 # --------------------------------------------------------------------------
 # benchmark metadata (from benchmarks/<name>.yaml, best-effort)
 
@@ -214,6 +253,17 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         rec.setdefault("cost_usd", 0.0)
         rec.setdefault("total_wall_time_seconds", 0.0)
         rec.setdefault("per_attempt", [])
+        # Prompt-template snapshot — present on records from the Jinja2
+        # rendering feature onward; older records (eval-chess-backend run
+        # #1, eval-chess-frontend run #1) don't carry them and just render
+        # nothing in their "Template vars" / "Rendered prompt" sections.
+        rec.setdefault("rendered_prompt", "")
+        rec.setdefault("template_vars", {})
+        rec["template_var_rows"] = _template_var_rows(rec.get("template_vars") or {})
+        # Per-attempt rendered_prompt is also opt-in; default to empty string
+        # so the template can `{% if a.rendered_prompt %}` it.
+        for a in rec.get("per_attempt") or []:
+            a.setdefault("rendered_prompt", "")
         runs.append(rec)
     # newest first
     runs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)

@@ -57,6 +57,11 @@ class AttemptRecord:
     wall_time_seconds: float
     grader_passed: bool
     grader_failures: list[str] = field(default_factory=list)
+    # The prompt actually sent on THIS attempt. Attempt 1 carries the full
+    # rendered build prompt; attempts 2+ carry the failure-summary follow-up
+    # the runner generates from the prior grader failures. Empty string when
+    # the runner didn't capture it (older records).
+    rendered_prompt: str = ""
 
 
 @dataclass
@@ -86,6 +91,14 @@ class RunRecord:
     pushed_to_default_branch: bool = False
     pushed_at: str | None = None
     push_error: str | None = None
+    # Prompt-template snapshot of THIS run: the full text sent to the harness
+    # on attempt 1 (after Jinja2 substitution), plus the resolved variable
+    # map. ``grader_fixture`` in template_vars contains the full fetched
+    # bundle JSON — storage is cheap and round-trip-ability matters for
+    # answering "what did the harness see at build time?". Defaults preserve
+    # backward-compatibility with records written before this feature.
+    rendered_prompt: str = ""
+    template_vars: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

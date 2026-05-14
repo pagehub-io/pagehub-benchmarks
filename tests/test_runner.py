@@ -8,10 +8,10 @@ import pytest
 
 from pagehub_benchmarks.runner.run import build_followup_prompt, execute_benchmark_run
 from tests.conftest import TEST_PRICING
-from tests.fakes import FakeGrader, FakeHarness, ar, gr
+from tests.fakes import FakeFixtureFetcher, FakeGrader, FakeHarness, ar, gr
 
 
-def _run(spec, harness, grader, tmp_path, clock):
+def _run(spec, harness, grader, tmp_path, clock, *, fetcher=None):
     return execute_benchmark_run(
         spec=spec,
         harness_spec=spec.harnesses[0],
@@ -19,6 +19,7 @@ def _run(spec, harness, grader, tmp_path, clock):
         grader=grader,
         worktree_dir=tmp_path / "wt",
         pricing=TEST_PRICING,
+        fixture_fetcher=fetcher or FakeFixtureFetcher(),
         built_sha="deadbeef",
         clock=clock,
     )
@@ -102,6 +103,7 @@ def test_result_record_shape_round_trips(bench_spec, fixed_clock, tmp_path):
         "total_wall_time_seconds", "per_attempt",
         "pushed_branch", "pushed_branch_url", "pushed_commit",
         "pushed_to_default_branch", "pushed_at", "push_error",
+        "rendered_prompt", "template_vars",
     }
     assert set(loaded) == expected_keys
     assert loaded["benchmark"] == "demo"
@@ -118,6 +120,7 @@ def test_result_record_shape_round_trips(bench_spec, fixed_clock, tmp_path):
     assert set(row) == {
         "attempt", "input_tokens", "output_tokens", "cache_tokens",
         "wall_time_seconds", "grader_passed", "grader_failures",
+        "rendered_prompt",
     }
     assert row["attempt"] == 1
     assert row["input_tokens"] == 123
@@ -145,6 +148,7 @@ def test_service_factory_wraps_each_grade(bench_spec, fixed_clock, tmp_path):
         grader=grader,
         worktree_dir=tmp_path / "wt",
         pricing=TEST_PRICING,
+        fixture_fetcher=FakeFixtureFetcher(),
         service_factory=service,
         clock=fixed_clock,
     )
@@ -165,6 +169,7 @@ def test_unknown_model_is_an_error(bench_spec, fixed_clock, tmp_path):
             grader=grader,
             worktree_dir=tmp_path / "wt",
             pricing={},  # no entry for "test-model"
+            fixture_fetcher=FakeFixtureFetcher(),
             clock=fixed_clock,
         )
 
