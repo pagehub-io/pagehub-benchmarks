@@ -111,10 +111,12 @@ attributes off the board element. The contract:
 
 The grader (pagehub-evals, driven by pagehub-browser) will:
 
+{% raw %}
 1. `POST {{pagehub-browser_url}}/v1/sessions` — open a headless browser
    session.
 2. `POST .../navigate` body `{url: "{{eval-chess-frontend_url}}"}` —
    load your app.
+{% endraw %}
 3. For each rule: `POST .../type {locator: {strategy: "testid", value:
    "fen-input"}, text: "<FEN>"}` → `POST .../click {locator: {strategy:
    "testid", value: "apply-fen"}}` → `POST .../type {locator: {...,
