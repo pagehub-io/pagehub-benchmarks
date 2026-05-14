@@ -9,7 +9,7 @@
 <body>
 <nav><a href="index.html">pagehub-benchmarks</a></nav>
 <h1>pagehub-benchmarks</h1>
-<p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="https://github.com/pagehub-io/pagehub-benchmarks">repo</a></p>
+<p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="https://github.com/pagehub-io/pagehub-benchmarks">repo</a> · <a href="theories/index.html">theories</a> (1)</p>
 
 
 <h2>Benchmarks</h2>
@@ -34,6 +34,16 @@
       <dt>cheapest pass</dt><dd><a href="runs/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T10-46-57Z.html">$30.2549</a></dd>
     </dl>
   </div>
+  <div class="card">
+    <h3><a href="benchmarks/eval-chess-frontend-with-fixture.html">eval-chess-frontend-with-fixture</a></h3>
+    <dl>
+      <dt>runs</dt><dd>1</dd>
+      <dt>pass rate</dt><dd>1/1 (100%)</dd>
+      <dt>best attempts</dt><dd>1</dd>
+      <dt>median attempts</dt><dd>1</dd>
+      <dt>cheapest pass</dt><dd><a href="runs/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T14-20-19Z.html">$10.8020</a></dd>
+    </dl>
+  </div>
 </div>
 
 <h2>All runs</h2>
@@ -53,6 +63,21 @@
   <th>built</th>
 </tr></thead>
 <tbody>
+<tr>
+  <td><a href="benchmarks/eval-chess-frontend-with-fixture.html">eval-chess-frontend-with-fixture</a></td>
+  <td><a href="runs/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T14-20-19Z.html">claude-code</a></td>
+  <td>claude-opus-4-7</td>
+  <td class="mono">effort=xhigh</td>
+  <td data-v="2026-05-14T14:20:19.624300Z">2026-05-14 14:20 UTC</td>
+  <td class="num" data-v="1">1</td>
+  <td data-v="1"><span class="pass">✓</span></td>
+  <td class="num">50</td>
+  <td class="num">41,786</td>
+  <td class="num">$10.8020</td>
+  <td class="num">527</td>
+  <td>
+      <a href="https://github.com/pagehub-io/eval-chess-frontend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T14-20-19Z" class="mono" title="bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T14-20-19Z">2026-05-14T14-20-19Z</a>  </td>
+</tr>
 <tr>
   <td><a href="benchmarks/eval-chess-frontend.html">eval-chess-frontend</a></td>
   <td><a href="runs/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T10-46-57Z.html">claude-code</a></td>

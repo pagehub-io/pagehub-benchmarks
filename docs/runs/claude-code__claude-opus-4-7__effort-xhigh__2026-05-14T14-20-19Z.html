@@ -1,0 +1,2633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eval-chess-frontend-with-fixture · claude-code claude-opus-4-7 — run</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav><a href="../index.html">pagehub-benchmarks</a> / <a href="../benchmarks/eval-chess-frontend-with-fixture.html">eval-chess-frontend-with-fixture</a> / run</nav>
+<h1>eval-chess-frontend-with-fixture — claude-code <span class="muted">claude-opus-4-7</span></h1>
+<p>
+<span class="pass">PASSED</span>  · attempt 1 of 5
+  · $10.8020 (computed)
+  · 527s
+  · config <code class="mono">effort=xhigh</code>
+</p>
+
+<h2>Metrics</h2>
+<div class="cards">
+  <div class="card"><h3>Outcome</h3><dl>
+    <dt>passed</dt><dd><span class="pass">✓</span></dd>
+    <dt>attempts</dt><dd>1</dd>
+    <dt>max_attempts</dt><dd>5</dd>
+    <dt>started</dt><dd>2026-05-14T14:20:19.624300Z</dd>
+    <dt>finished</dt><dd>2026-05-14T14:29:11.002901Z</dd>
+  </dl></div>
+  <div class="card"><h3>Tokens</h3><dl>
+    <dt>input</dt><dd>50</dd>
+    <dt>output</dt><dd>41,786</dd>
+    <dt>cache</dt><dd>3,211,724</dd>
+    <dt>cost USD</dt><dd>$10.8020</dd>
+    <dt>wall time</dt><dd>527.3s</dd>
+  </dl></div>
+  <div class="card"><h3>Target</h3><dl>
+    <dt>repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend">pagehub-io/eval-chess-frontend</a></dd>
+    <dt>start</dt><dd class="mono">empty</dd>
+    <dt>built sha</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend/commit/9c9dd76d7a615bccd8b08071ee5d2178bd7574d0">9c9dd76d7a61</a></dd>
+    <dt>worktree</dt><dd class="mono" title="/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/eval-chess-frontend-with-fixture/claude-code__claude-opus-4-7__effort-xhigh__20260514T142019Z">claude-code__claude-opus-4-7__effort-xhigh__20260514T142019Z</dd>
+  </dl></div>
+</div>
+
+<h2>Built code</h2>
+<div class="cards"><div class="card"><dl>
+    <dt>branch</dt>
+    <dd>
+      <a href="https://github.com/pagehub-io/eval-chess-frontend/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T14-20-19Z"><span class="mono">bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-14T14-20-19Z</span></a>
+    </dd>
+    <dt>commit</dt>
+    <dd><a href="https://github.com/pagehub-io/eval-chess-frontend/commit/9c9dd76d7a615bccd8b08071ee5d2178bd7574d0" class="mono">9c9dd76d7a61</a></dd>
+    <dt>pushed at</dt><dd>2026-05-14T14:29:13.225106Z</dd>
+    <dt>browse repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-frontend">pagehub-io/eval-chess-frontend</a></dd>
+</dl></div></div>
+
+<h2>Template vars</h2>
+<p class="muted">The variables that were substituted into the build prompt at render time. Auto-vars and any custom <code>template_vars</code> declared in the benchmark YAML. Click a row to expand a multi-line value.</p>
+<table class="tvars">
+<thead><tr><th>name</th><th>value</th><th class="num">bytes</th></tr></thead>
+<tbody>
+<tr>
+  <td class="mono">benchmark_name</td>
+  <td>
+      <code class="mono">eval-chess-frontend-with-fixture</code>
+  </td>
+  <td class="num">32</td>
+</tr>
+<tr>
+  <td class="mono">grader_fixture</td>
+  <td>
+      <details><summary class="muted">JSON, 28624 bytes — show</summary>
+        <pre class="mono prompt-block">{
+  &#34;collections&#34;: [
+    {
+      &#34;description&#34;: &#34;Chess rule-conformance battery for the eval-chess-frontend pure-frontend chess web app (Vite + TS + chess.js, exposed DOM contract). Each rule is a sequence of pagehub-browser calls (type fen-input, click apply-fen, type uci-input, click submit-move, get-attribute data-fen / data-status off [data-testid=\&#34;board\&#34;]). Covers: legal move accepted (data-fen changes); illegal-given-position rejected (data-fen UNCHANGED); kingside castling; queenside castling; castling rights respected (no-K-right -&gt; e1g1 rejected); en passant capture; promotion to queen; pinned piece cannot move; checkmate -&gt; data-status=\&#34;white_won\&#34;; stalemate -&gt; data-status=\&#34;draw\&#34;; 50-move rule (halfmove 99 -&gt; non-pawn non-capture -&gt; data-status=\&#34;draw\&#34;). All FENs python-chess-derived; terminal assertions are claim-aware. Dropped (tight on the 50-item collection cap; documented here so future readers know what is NOT covered): threefold repetition (8 setup moves = ~20 requests, blew the cap); underpromotion to N/R/B (engine-identical to queen for the rule-conformance check); castle-through-check and move-into-check as separate scenarios (same underlying rule as pin: a move that leaves the own king in check is rejected, exercised by S5).&#34;,
+      &#34;items&#34;: [
+        &#34;lifecycle-01-create-session&#34;,
+        &#34;lifecycle-02-navigate&#34;,
+        &#34;s1-castle-k-type-fen&#34;,
+        &#34;s1-castle-k-apply&#34;,
+        &#34;s1-castle-k-type-uci-e1g1&#34;,
+        &#34;s1-castle-k-submit-e1g1&#34;,
+        &#34;s1-castle-k-verify-fen-post-castle&#34;,
+        &#34;s1-castle-k-type-uci-illegal-repeat&#34;,
+        &#34;s1-castle-k-submit-illegal-repeat&#34;,
+        &#34;s1-castle-k-verify-fen-still-post-castle&#34;,
+        &#34;s2-rights-q-type-fen&#34;,
+        &#34;s2-rights-q-apply&#34;,
+        &#34;s2-rights-q-type-uci-e1g1&#34;,
+        &#34;s2-rights-q-submit-e1g1-rejected&#34;,
+        &#34;s2-rights-q-verify-fen-unchanged&#34;,
+        &#34;s2-rights-q-type-uci-e1c1&#34;,
+        &#34;s2-rights-q-submit-e1c1&#34;,
+        &#34;s2-rights-q-verify-fen-q-castled&#34;,
+        &#34;s3-en-passant-type-fen&#34;,
+        &#34;s3-en-passant-apply&#34;,
+        &#34;s3-en-passant-type-uci-e5d6&#34;,
+        &#34;s3-en-passant-submit-e5d6&#34;,
+        &#34;s3-en-passant-verify-fen&#34;,
+        &#34;s4-promotion-q-type-fen&#34;,
+        &#34;s4-promotion-q-apply&#34;,
+        &#34;s4-promotion-q-type-uci-b7b8q&#34;,
+        &#34;s4-promotion-q-submit-b7b8q&#34;,
+        &#34;s4-promotion-q-verify-fen&#34;,
+        &#34;s5-pin-type-fen&#34;,
+        &#34;s5-pin-apply&#34;,
+        &#34;s5-pin-type-uci-e2c3&#34;,
+        &#34;s5-pin-submit-e2c3&#34;,
+        &#34;s5-pin-verify-fen-unchanged&#34;,
+        &#34;s6-mate-type-fen&#34;,
+        &#34;s6-mate-apply&#34;,
+        &#34;s6-mate-type-uci-a1a8&#34;,
+        &#34;s6-mate-submit-a1a8&#34;,
+        &#34;s6-mate-verify-status&#34;,
+        &#34;s7-stalemate-type-fen&#34;,
+        &#34;s7-stalemate-apply&#34;,
+        &#34;s7-stalemate-type-uci-f5f7&#34;,
+        &#34;s7-stalemate-submit-f5f7&#34;,
+        &#34;s7-stalemate-verify-status&#34;,
+        &#34;s8-fifty-type-fen&#34;,
+        &#34;s8-fifty-apply&#34;,
+        &#34;s8-fifty-type-uci-a1a2&#34;,
+        &#34;s8-fifty-submit-a1a2&#34;,
+        &#34;s8-fifty-verify-status&#34;,
+        &#34;lifecycle-99-delete-session&#34;
+      ],
+      &#34;name&#34;: &#34;eval-chess-frontend&#34;
+    }
+  ],
+  &#34;environments&#34;: [
+    {
+      &#34;name&#34;: &#34;chess-frontend-local&#34;,
+      &#34;secrets&#34;: {},
+      &#34;variables&#34;: {
+        &#34;eval-chess-frontend_url&#34;: &#34;http://localhost:8004&#34;,
+        &#34;pagehub-browser_url&#34;: &#34;http://localhost:4010&#34;
+      }
+    }
+  ],
+  &#34;requests&#34;: [
+    {
+      &#34;body&#34;: {
+        &#34;headless&#34;: true
+      },
+      &#34;capture&#34;: {
+        &#34;SID&#34;: &#34;$.session_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 201
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-session-201&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-01-create-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-chess-frontend_url}}&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;navigate-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-02-navigate&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-uci-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-submit-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s1-k-castle-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s1-k-castle-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-verify-fen-post-castle&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-uci-illegal-repeat&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-submit-illegal-repeat&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s1-illegal-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s1-illegal-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-verify-fen-still-post-castle&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-uci-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-submit-e1g1-rejected&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s2-k-disallowed-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s2-k-disallowed-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-verify-fen-unchanged&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1c1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-uci-e1c1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-submit-e1c1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s2-q-castle-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s2-q-castle-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-verify-fen-q-castled&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e5d6&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-type-uci-e5d6&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-submit-e5d6&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s3-ep-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/3P4/8/8/8/8/4K3 b - - 0 2&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s3-ep-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-verify-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;8/1P6/8/8/4k3/8/8/4K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;b7b8q&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-type-uci-b7b8q&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-submit-b7b8q&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s4-promo-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1Q6/8/8/8/4k3/8/8/4K3 b - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s4-promo-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-verify-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e2c3&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-type-uci-e2c3&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-submit-e2c3&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s5-pin-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s5-pin-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-verify-fen-unchanged&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;a1a8&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-type-uci-a1a8&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-submit-a1a8&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s6-mate-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white_won&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s6-mate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;7k/8/6K1/5Q2/8/8/8/8 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;f5f7&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-type-uci-f5f7&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-submit-f5f7&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s7-stalemate-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s7-stalemate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4k3/8/8/8/8/8/8/R3K3 w - - 99 60&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;a1a2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-type-uci-a1a2&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-submit-a1a2&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s8-fifty-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s8-fifty-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 204
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;delete-session-204&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;DELETE&#34;,
+      &#34;name&#34;: &#34;lifecycle-99-delete-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}&#34;
+    }
+  ],
+  &#34;version&#34;: 1
+}</pre>
+      </details>
+  </td>
+  <td class="num">28,624</td>
+</tr>
+<tr>
+  <td class="mono">pagehub_evals_url</td>
+  <td>
+      <code class="mono">http://localhost:8002</code>
+  </td>
+  <td class="num">21</td>
+</tr>
+<tr>
+  <td class="mono">target_port</td>
+  <td>
+      <code class="mono">8004</code>
+  </td>
+  <td class="num">4</td>
+</tr>
+<tr>
+  <td class="mono">target_repo</td>
+  <td>
+      <code class="mono">git@github.com:pagehub-io/eval-chess-frontend.git</code>
+  </td>
+  <td class="num">49</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Per-attempt breakdown</h2>
+<table>
+<thead><tr>
+  <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
+  <th class="num">wall s</th><th>grader passed?</th><th>grader failures</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="num">1</td>
+  <td class="num">50</td>
+  <td class="num">41,786</td>
+  <td class="num">527.3</td>
+  <td><span class="pass">✓</span></td>
+  <td>
+<span class="muted">none</span>  </td>
+</tr>
+</tbody>
+</table>
+
+<h2>Rendered prompts (per attempt)</h2>
+<p class="muted">Attempt 1 carries the full rendered build prompt sent to the harness (with all <code>{{ … }}</code> already substituted). Attempts 2+ carry the failure-summary follow-up the runner generated from the prior grader failures. Collapsed by default — these get long.</p>
+  <details class="rendered-prompt">
+    <summary>Attempt 1 — 36025 chars (build prompt)</summary>
+    <pre class="mono prompt-block">Build a chess web app as a **pure-frontend** TypeScript application backed
+by the `chess.js` library for rule enforcement. It runs on **port 8004**
+(port 8003 is reserved for eval-chess-backend; pick 8004). There is **no
+backend** — all state lives in the browser, no database, no API server.
+
+== THE EVAL THAT WILL GRADE YOUR BUILD ==
+The grader is the FixtureBundle below. Every request will be made against
+your service in this exact order with these exact assertions. Build the
+contract that satisfies these requests verbatim; do not add fields beyond
+what they read; do not change DOM testids or attribute names.
+
+```json
+{
+  &#34;collections&#34;: [
+    {
+      &#34;description&#34;: &#34;Chess rule-conformance battery for the eval-chess-frontend pure-frontend chess web app (Vite + TS + chess.js, exposed DOM contract). Each rule is a sequence of pagehub-browser calls (type fen-input, click apply-fen, type uci-input, click submit-move, get-attribute data-fen / data-status off [data-testid=\&#34;board\&#34;]). Covers: legal move accepted (data-fen changes); illegal-given-position rejected (data-fen UNCHANGED); kingside castling; queenside castling; castling rights respected (no-K-right -&gt; e1g1 rejected); en passant capture; promotion to queen; pinned piece cannot move; checkmate -&gt; data-status=\&#34;white_won\&#34;; stalemate -&gt; data-status=\&#34;draw\&#34;; 50-move rule (halfmove 99 -&gt; non-pawn non-capture -&gt; data-status=\&#34;draw\&#34;). All FENs python-chess-derived; terminal assertions are claim-aware. Dropped (tight on the 50-item collection cap; documented here so future readers know what is NOT covered): threefold repetition (8 setup moves = ~20 requests, blew the cap); underpromotion to N/R/B (engine-identical to queen for the rule-conformance check); castle-through-check and move-into-check as separate scenarios (same underlying rule as pin: a move that leaves the own king in check is rejected, exercised by S5).&#34;,
+      &#34;items&#34;: [
+        &#34;lifecycle-01-create-session&#34;,
+        &#34;lifecycle-02-navigate&#34;,
+        &#34;s1-castle-k-type-fen&#34;,
+        &#34;s1-castle-k-apply&#34;,
+        &#34;s1-castle-k-type-uci-e1g1&#34;,
+        &#34;s1-castle-k-submit-e1g1&#34;,
+        &#34;s1-castle-k-verify-fen-post-castle&#34;,
+        &#34;s1-castle-k-type-uci-illegal-repeat&#34;,
+        &#34;s1-castle-k-submit-illegal-repeat&#34;,
+        &#34;s1-castle-k-verify-fen-still-post-castle&#34;,
+        &#34;s2-rights-q-type-fen&#34;,
+        &#34;s2-rights-q-apply&#34;,
+        &#34;s2-rights-q-type-uci-e1g1&#34;,
+        &#34;s2-rights-q-submit-e1g1-rejected&#34;,
+        &#34;s2-rights-q-verify-fen-unchanged&#34;,
+        &#34;s2-rights-q-type-uci-e1c1&#34;,
+        &#34;s2-rights-q-submit-e1c1&#34;,
+        &#34;s2-rights-q-verify-fen-q-castled&#34;,
+        &#34;s3-en-passant-type-fen&#34;,
+        &#34;s3-en-passant-apply&#34;,
+        &#34;s3-en-passant-type-uci-e5d6&#34;,
+        &#34;s3-en-passant-submit-e5d6&#34;,
+        &#34;s3-en-passant-verify-fen&#34;,
+        &#34;s4-promotion-q-type-fen&#34;,
+        &#34;s4-promotion-q-apply&#34;,
+        &#34;s4-promotion-q-type-uci-b7b8q&#34;,
+        &#34;s4-promotion-q-submit-b7b8q&#34;,
+        &#34;s4-promotion-q-verify-fen&#34;,
+        &#34;s5-pin-type-fen&#34;,
+        &#34;s5-pin-apply&#34;,
+        &#34;s5-pin-type-uci-e2c3&#34;,
+        &#34;s5-pin-submit-e2c3&#34;,
+        &#34;s5-pin-verify-fen-unchanged&#34;,
+        &#34;s6-mate-type-fen&#34;,
+        &#34;s6-mate-apply&#34;,
+        &#34;s6-mate-type-uci-a1a8&#34;,
+        &#34;s6-mate-submit-a1a8&#34;,
+        &#34;s6-mate-verify-status&#34;,
+        &#34;s7-stalemate-type-fen&#34;,
+        &#34;s7-stalemate-apply&#34;,
+        &#34;s7-stalemate-type-uci-f5f7&#34;,
+        &#34;s7-stalemate-submit-f5f7&#34;,
+        &#34;s7-stalemate-verify-status&#34;,
+        &#34;s8-fifty-type-fen&#34;,
+        &#34;s8-fifty-apply&#34;,
+        &#34;s8-fifty-type-uci-a1a2&#34;,
+        &#34;s8-fifty-submit-a1a2&#34;,
+        &#34;s8-fifty-verify-status&#34;,
+        &#34;lifecycle-99-delete-session&#34;
+      ],
+      &#34;name&#34;: &#34;eval-chess-frontend&#34;
+    }
+  ],
+  &#34;environments&#34;: [
+    {
+      &#34;name&#34;: &#34;chess-frontend-local&#34;,
+      &#34;secrets&#34;: {},
+      &#34;variables&#34;: {
+        &#34;eval-chess-frontend_url&#34;: &#34;http://localhost:8004&#34;,
+        &#34;pagehub-browser_url&#34;: &#34;http://localhost:4010&#34;
+      }
+    }
+  ],
+  &#34;requests&#34;: [
+    {
+      &#34;body&#34;: {
+        &#34;headless&#34;: true
+      },
+      &#34;capture&#34;: {
+        &#34;SID&#34;: &#34;$.session_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 201
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-session-201&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-01-create-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-chess-frontend_url}}&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;navigate-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-02-navigate&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-uci-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-submit-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s1-k-castle-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s1-k-castle-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-verify-fen-post-castle&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-type-uci-illegal-repeat&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-submit-illegal-repeat&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s1-illegal-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s1-illegal-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s1-castle-k-verify-fen-still-post-castle&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-uci-e1g1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-submit-e1g1-rejected&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s2-k-disallowed-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s2-k-disallowed-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-verify-fen-unchanged&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e1c1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-type-uci-e1c1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-submit-e1c1&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s2-q-castle-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s2-q-castle-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s2-rights-q-verify-fen-q-castled&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e5d6&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-type-uci-e5d6&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-submit-e5d6&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s3-ep-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/3P4/8/8/8/8/4K3 b - - 0 2&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s3-ep-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s3-en-passant-verify-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;8/1P6/8/8/4k3/8/8/4K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;b7b8q&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-type-uci-b7b8q&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-submit-b7b8q&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s4-promo-fen-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1Q6/8/8/8/4k3/8/8/4K3 b - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s4-promo-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s4-promotion-q-verify-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;e2c3&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-type-uci-e2c3&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-submit-e2c3&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-fen&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s5-pin-fen-unchanged-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s5-pin-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s5-pin-verify-fen-unchanged&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;a1a8&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-type-uci-a1a8&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-submit-a1a8&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s6-mate-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white_won&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s6-mate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s6-mate-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;7k/8/6K1/5Q2/8/8/8/8 w - - 0 1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;f5f7&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-type-uci-f5f7&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-submit-f5f7&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s7-stalemate-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s7-stalemate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s7-stalemate-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;fen-input&#34;
+        },
+        &#34;text&#34;: &#34;4k3/8/8/8/8/8/8/R3K3 w - - 99 60&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-type-fen&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;apply-fen&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-apply-fen-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-apply&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;clear&#34;: true,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;uci-input&#34;
+        },
+        &#34;text&#34;: &#34;a1a2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;type-uci-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-type-uci-a1a2&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/type&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;submit-move&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;click-submit-ok&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-submit-a1a2&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-status&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;board&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;s8-fifty-status-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;s8-fifty-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;s8-fifty-verify-status&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 204
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;delete-session-204&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;DELETE&#34;,
+      &#34;name&#34;: &#34;lifecycle-99-delete-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}&#34;
+    }
+  ],
+  &#34;version&#34;: 1
+}
+```
+== END EVAL ==
+
+## Stack &amp; layout
+
+- **Vite + TypeScript** (strict mode, no `any` types). React is fine but
+  not required — any framework or vanilla TS is OK as long as the DOM
+  contract below is met.
+- `chess.js` for legal-move generation and rule enforcement (don&#39;t roll
+  your own chess engine — `chess.js` already encodes every rule we grade).
+- A `Makefile` with `make up` (serve the app on `:8004`) and `make test`
+  (run any unit tests you write).
+- A `docker-compose.yml` that runs the app on `:8004`.
+- A `package.json` with the build/serve scripts.
+
+## The DOM contract (load-bearing — the grader binds to it exactly)
+
+The grader is **pagehub-browser-driven**: it loads the page, types into
+inputs by `data-testid`, clicks buttons by `data-testid`, and reads
+attributes off the board element. The contract:
+
+```
+&lt;div data-testid=&#34;board&#34;
+     data-fen=&#34;&lt;current FEN&gt;&#34;
+     data-turn=&#34;white|black&#34;
+     data-status=&#34;in_progress|white_won|black_won|draw&#34;
+     data-move-count=&#34;&lt;int, count of legal moves accepted so far&gt;&#34;
+     data-last-move=&#34;&lt;uci of the most recent legal move, or empty string&gt;&#34;
+     data-move-history=&#34;&lt;space-separated UCIs, or empty string&gt;&#34;
+&gt;
+  ...rendered board (squares, pieces — any visual style is fine)...
+&lt;/div&gt;
+
+&lt;input  data-testid=&#34;fen-input&#34; /&gt;
+&lt;button data-testid=&#34;apply-fen&#34;&gt;Set Position&lt;/button&gt;
+&lt;input  data-testid=&#34;uci-input&#34; /&gt;
+&lt;button data-testid=&#34;submit-move&#34;&gt;Submit&lt;/button&gt;
+&lt;button data-testid=&#34;reset-startpos&#34;&gt;Reset&lt;/button&gt;
+```
+
+**Behavior of the action buttons:**
+
+- `apply-fen` (click) — read the value out of `fen-input`, validate it
+  with `chess.js`, and if valid load it as the current position. If
+  invalid, leave `data-fen` (and all sibling attributes) unchanged.
+- `submit-move` (click) — read the value out of `uci-input`, parse it as
+  a UCI move, and attempt to play it. Three outcomes, in order:
+  1. **legal in the current position** — apply the move; update
+     `data-fen` to `chess.js`&#39;s post-move FEN, advance `data-turn`,
+     re-derive `data-status` (see below), append the UCI to
+     `data-move-history`, increment `data-move-count`, set
+     `data-last-move` to the move&#39;s UCI.
+  2. **parses as UCI but is illegal in the current position** (pinned
+     piece, leaves own king in check, castling through check, no piece
+     on the from-square, wrong-color piece, etc.) — **do nothing**:
+     `data-fen` stays exactly as it was, ditto every sibling attribute.
+     No exception thrown, no banner, just no state change.
+  3. **doesn&#39;t parse as UCI** (garbage input) — same as (2): do nothing.
+- `reset-startpos` (click) — reset to the standard starting position
+  (`rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`),
+  clear `data-move-history` (empty string), `data-last-move` (empty
+  string), `data-move-count` (`&#34;0&#34;`), `data-status` (`&#34;in_progress&#34;`),
+  `data-turn` (`&#34;white&#34;`).
+
+## Notes on semantics (use `chess.js` for all of this)
+
+- **`data-fen`** must be the FEN string `chess.js` itself emits
+  (`game.fen()`) — including castling rights, en passant square,
+  halfmove clock, and fullmove number. The grader compares it to a
+  python-chess-derived FEN; both libraries emit the same canonical form,
+  so as long as you don&#39;t post-process the FEN string, they match.
+- **`data-turn`** is `&#34;white&#34;` when it is White to move, `&#34;black&#34;`
+  otherwise. Derive it from the board, don&#39;t track it separately.
+- **`data-status`**:
+  - `&#34;in_progress&#34;` while the game is ongoing
+  - `&#34;white_won&#34;` / `&#34;black_won&#34;` on checkmate (winner is the color
+    that just moved)
+  - `&#34;draw&#34;` on stalemate, the 50-move rule, threefold repetition,
+    insufficient material, or any other claim-aware draw
+    (`chess.js`&#39;s `isDraw()` covers this — call it after every move)
+  - On a terminal position the status MUST be terminal **immediately
+    after the move that triggered it**, not on the next move.
+- **Promotion** moves carry the promotion piece **in the UCI string** —
+  `&#34;e7e8q&#34;`, `&#34;e7e8n&#34;`, `&#34;e7e8r&#34;`, `&#34;e7e8b&#34;`. No promotion picker popup;
+  parse the 5th character as the promotion piece. Underpromotion must
+  work too. (`chess.js`&#39;s `move({from, to, promotion})` handles this if
+  you split the UCI; the grader will type `&#34;e7e8q&#34;` etc. into
+  `uci-input` and expect `submit-move` to play it directly.)
+- **An illegal move never mutates state.** Test your code by loading a
+  pinned-piece FEN, submitting the illegal move, and reading `data-fen`
+  back — it must equal the pre-submit FEN. This is the single most
+  common bug in chess UIs; the grader has multiple cases hitting it.
+- **`apply-fen` on a bad FEN never mutates state either.** Same
+  invariant — if `chess.js`&#39;s FEN validator rejects it, leave the
+  board where it was.
+
+## What the grader will do (so you can mentally simulate it)
+
+The grader (pagehub-evals, driven by pagehub-browser) will:
+
+
+1. `POST {{pagehub-browser_url}}/v1/sessions` — open a headless browser
+   session.
+2. `POST .../navigate` body `{url: &#34;{{eval-chess-frontend_url}}&#34;}` —
+   load your app.
+
+3. For each rule: `POST .../type {locator: {strategy: &#34;testid&#34;, value:
+   &#34;fen-input&#34;}, text: &#34;&lt;FEN&gt;&#34;}` → `POST .../click {locator: {strategy:
+   &#34;testid&#34;, value: &#34;apply-fen&#34;}}` → `POST .../type {locator: {...,
+   value: &#34;uci-input&#34;}, text: &#34;&lt;uci&gt;&#34;}` → `POST .../click {locator: {...,
+   value: &#34;submit-move&#34;}}` → `POST .../get-attribute {locator: {...,
+   value: &#34;board&#34;}, attribute: &#34;data-fen&#34; | &#34;data-status&#34;}` and assert
+   `$.text` of the response equals the expected value.
+4. `DELETE .../sessions/&lt;sid&gt;` — tear down.
+
+The grader does NOT use the per-square click affordances (no
+`data-testid=&#34;square-e2&#34;` etc. is required by the eval); you can include
+them for ergonomics but the grader exclusively uses `uci-input` +
+`submit-move`. This keeps request counts down and removes flakiness.
+
+## Rules the grader exercises
+
+(Each is its own sequence — your job is just to make each one pass.)
+
+- Legal move accepted (`data-fen` changes to the post-move FEN).
+- Illegal-given-position rejected (`data-fen` UNCHANGED).
+- Kingside castling.
+- Queenside castling.
+- Castling rights respected (no K-right in the FEN → `e1g1` rejected).
+- En passant capture.
+- Promotion to queen.
+- Pinned piece cannot move (a knight pinned to its king by an enemy
+  rook on the same file, attempting to move sideways → rejected,
+  `data-fen` unchanged).
+- Checkmate → `data-status` terminal (`&#34;white_won&#34;` for a white-mates
+  case, `&#34;black_won&#34;` for black).
+- Stalemate → `data-status == &#34;draw&#34;`.
+- 50-move rule (load a FEN with halfmove clock at 99, play a non-pawn,
+  non-capture move → halfmove ticks to 100 → `data-status == &#34;draw&#34;`).
+
+Use `chess.js` for everything — it already implements claim-aware draw
+detection.
+
+Build it, get any tests you write passing — that is all.</pre>
+  </details>
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Target repo: <a href="https://github.com/pagehub-io/eval-chess-frontend">https://github.com/pagehub-io/eval-chess-frontend</a></li>
+<li>Built code commit: <a href="https://github.com/pagehub-io/eval-chess-frontend/commit/9c9dd76d7a615bccd8b08071ee5d2178bd7574d0">https://github.com/pagehub-io/eval-chess-frontend/commit/9c9dd76d7a615bccd8b08071ee5d2178bd7574d0</a></li>  <li>Benchmark definition: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/benchmarks/eval-chess-frontend-with-fixture.yaml">benchmarks/eval-chess-frontend-with-fixture.yaml</a></li>
+  <li>Build prompt: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/prompts/eval-chess-frontend-with-fixture.md">prompts/eval-chess-frontend-with-fixture.md</a></li>
+  <li>Grader fixture bundle: <a href="https://github.com/pagehub-io/pagehub-evals/blob/main/fixtures/eval-chess-frontend.json">fixtures/eval-chess-frontend.json</a> (pagehub-evals)</li>
+  <li>Raw run record (JSON): <a href="../results/eval-chess-frontend-with-fixture/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T14-20-19Z.json">results/eval-chess-frontend-with-fixture/claude-code__claude-opus-4-7__effort-xhigh__2026-05-14T14-20-19Z.json</a></li>
+</ul>
+<footer>
+Generated by <code>tools/build_site.py</code> from <code>results/**/*.json</code>.
+<code>cost_usd</code> is a computed figure (summed tokens &times; <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/pricing.yaml">pricing.yaml</a>) — what a run would cost at API rates, not an actual bill (runs execute on the Claude CLI's subscription auth).
+</footer>
+</body>
+</html>
