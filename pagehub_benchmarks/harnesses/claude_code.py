@@ -9,14 +9,26 @@ Invokes the ``claude`` CLI headlessly:
 
 Both run with ``cwd`` set to the worktree. Timing uses a monotonic clock.
 
-**Auth.** Runs use the ``claude`` CLI's *existing logged-in auth* (a Claude
-subscription) — flat-rate, not metered API billing. This adapter explicitly
-**unsets ``ANTHROPIC_API_KEY``** in the subprocess environment so a stray env
-key can't divert the run onto metered API billing; the CLI falls back to its
-stored OAuth/subscription credentials. If ``claude -p`` errors with "not
-logged in", the CLI's credentials aren't reachable from the subprocess — fix
-that (``claude login``), don't set an API key. The ``cost_usd`` in a run
-record is a *computed* figure (tokens × ``pricing.yaml``), not an API bill.
+**Auth — default path (Claude subscription).** Runs use the ``claude`` CLI's
+*existing logged-in auth* (a Claude subscription) — flat-rate, not metered API
+billing. This adapter explicitly **unsets ``ANTHROPIC_API_KEY``** in the
+subprocess environment so a stray env key can't divert the run onto metered
+API billing; the CLI falls back to its stored OAuth/subscription credentials.
+If ``claude -p`` errors with "not logged in", the CLI's credentials aren't
+reachable from the subprocess — fix that (``claude login``), don't set an API
+key. The ``cost_usd`` in a run record is a *computed* figure (tokens ×
+``pricing.yaml``), not an API bill.
+
+**Auth — gateway path.** When the harness config carries a ``gateway`` block
+(``{url, auth_token_env}``), the adapter sets ``ANTHROPIC_BASE_URL=<url>`` and
+``ANTHROPIC_AUTH_TOKEN=<value of env var named by auth_token_env>`` in the
+subprocess env (default env-var name: ``GATEWAY_AUTH_TOKEN``). The actual key
+value is read from the runner's process env at dispatch — never baked into the
+YAML, never written to the run record. ``--model`` is passed through verbatim
+to ``claude -p`` and on to the gateway, which routes by model-name prefix.
+``ANTHROPIC_API_KEY`` is still stripped — we use ``AUTH_TOKEN``, not
+``API_KEY``, and the CLI's Max-subscription auth must not bleed through into a
+gateway-routed run.
 
 **Effort.** ``config["effort"]`` (one of low/medium/high/xhigh/max) is passed
 through as ``--effort <effort>``.
@@ -37,6 +49,7 @@ from typing import Any
 from pagehub_benchmarks.harnesses.base import AttemptResult, Harness
 
 DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
+DEFAULT_GATEWAY_AUTH_TOKEN_ENV = "GATEWAY_AUTH_TOKEN"
 _VALID_EFFORT = {"low", "medium", "high", "xhigh", "max"}
 
 
@@ -44,18 +57,62 @@ class HarnessError(RuntimeError):
     """The harness invocation failed (non-zero exit, timeout, or unparsable output)."""
 
 
-def _subprocess_env() -> dict[str, str]:
-    """A copy of the current env with ``ANTHROPIC_API_KEY`` removed.
+def _subprocess_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """A copy of the current env with ``ANTHROPIC_API_KEY`` removed, plus any
+    ``extra`` overlay merged on top.
 
     Headless ``claude`` runs under the CLI's stored subscription auth
     (flat-rate). An ``ANTHROPIC_API_KEY`` in the environment would divert it
     onto metered API billing — so we drop it. (If the CLI's credentials aren't
     reachable, ``claude -p`` will say "not logged in" — that's the signal to
     re-auth, not to set a key.)
+
+    ``extra`` is how the gateway path injects ``ANTHROPIC_BASE_URL`` +
+    ``ANTHROPIC_AUTH_TOKEN``. When ``extra`` is empty/None, behavior is
+    identical to the no-gateway path.
     """
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)
+    if extra:
+        env.update(extra)
     return env
+
+
+def _gateway_env_overlay(config: dict[str, Any] | None) -> dict[str, str]:
+    """Translate a ``gateway: {url, auth_token_env}`` config block into the
+    env-var overlay that points ``claude -p`` at the gateway.
+
+    Returns ``{}`` (no overlay) when the block is absent — that's the
+    subscription/default path.
+
+    Raises :class:`HarnessError` when the block is present but malformed
+    (no ``url``, or the named auth-token env var isn't set in the runner's
+    process env). The auth token's *value* is never logged or echoed.
+    """
+    gw = (config or {}).get("gateway")
+    if gw is None:
+        return {}
+    if not isinstance(gw, dict):
+        raise HarnessError(
+            f"harness config 'gateway' must be a mapping, got {type(gw).__name__}"
+        )
+    url = str(gw.get("url") or "").strip()
+    if not url:
+        raise HarnessError("harness config 'gateway' is missing required 'url'")
+    auth_env = str(gw.get("auth_token_env") or DEFAULT_GATEWAY_AUTH_TOKEN_ENV).strip()
+    if not auth_env:
+        raise HarnessError("harness config 'gateway.auth_token_env' must be a non-empty string")
+    token = os.environ.get(auth_env, "")
+    if not token:
+        raise HarnessError(
+            f"gateway auth token env var {auth_env!r} is unset in the runner's "
+            "environment (set it before invoking, or set ANTHROPIC_AUTH_TOKEN "
+            "via a different env-var name in gateway.auth_token_env)"
+        )
+    return {
+        "ANTHROPIC_BASE_URL": url,
+        "ANTHROPIC_AUTH_TOKEN": token,
+    }
 
 
 def _build_timeout() -> int:
@@ -107,11 +164,14 @@ class ClaudeCodeHarness(Harness):
         # Remembered from start_build so continue_build resumes in the same
         # directory. (One harness instance per run — see Harness docstring.)
         self._worktree_dir: str | None = None
+        # Env overlay (gateway routing, if configured). Set in start_build,
+        # reused by every continue_build on this run.
+        self._env_overlay: dict[str, str] = {}
 
     # -- helpers ---------------------------------------------------------
 
     def _run(self, cmd: list[str], cwd: str) -> AttemptResult:
-        env = _subprocess_env()
+        env = _subprocess_env(self._env_overlay)
         started = time.monotonic()
         try:
             proc = subprocess.run(  # noqa: S603 — args are constructed, not shell
@@ -158,6 +218,7 @@ class ClaudeCodeHarness(Harness):
         config: dict[str, Any],
     ) -> AttemptResult:
         self._worktree_dir = worktree_dir
+        self._env_overlay = _gateway_env_overlay(config)
         cmd = [
             "claude",
             "-p",

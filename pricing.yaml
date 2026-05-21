@@ -1,13 +1,27 @@
-# Per-model Anthropic API pricing — USD per 1,000,000 tokens.
+# Per-model API pricing — USD per 1,000,000 tokens.
 #
-# `input` / `output` are the standard per-token rates. `cache_write` is the
-# 5-minute prompt-cache write rate (1.25x input). `cache_read` is the cache-hit
-# read rate (0.1x input). `cost_usd` in a run record is recomputed from this
-# table over the run's summed token counts — change a rate here, re-derive.
+# `input` / `output` are the standard per-token rates (REQUIRED). `cache_write`
+# is the prompt-cache write rate (Anthropic: 1.25x input over a 5-minute TTL).
+# `cache_read` is the cache-hit read rate. OpenAI lists a single "cached input"
+# rate; we record it under `cache_read` (no separate write rate) and leave
+# `cache_write: 0` so a write contributes nothing — OpenAI doesn't charge for
+# writes separately, only discounts subsequent reads.
 #
-# To add a model: drop in a new key with the same four fields.
+# Providers without a prompt-cache concept (xAI / Grok) omit both cache fields
+# (or set them to null). The loader treats missing/null cache rates as 0.0; the
+# cost_usd computation in `runner.pricing` multiplies cache tokens by 0 and so
+# adds nothing.
+#
+# `cost_usd` in a run record is recomputed from this table over the run's
+# summed token counts — change a rate here, re-derive.
+#
+# To add a model: drop in a new key with the same fields (cache_* optional).
 
 models:
+
+  # --- Anthropic (claude-code's native subscription path, and the gateway's
+  # "translate Anthropic protocol to <other>" upstreams). Published rates.
+
   claude-opus-4-7:
     input: 15.00
     output: 75.00
@@ -25,3 +39,63 @@ models:
     output: 5.00
     cache_write: 1.25
     cache_read: 0.10
+
+  # --- OpenAI GPT-5 family — published rates as of 2026-05.
+  # IDs match what `GET /v1/models` returns (verified at authoring time with
+  # a real key). OpenAI's "cached input" is a discount on subsequent reads,
+  # not a separate write charge; we record it under `cache_read` and leave
+  # `cache_write` at 0.
+  # gpt-5-pro has NO cached-input discount published — cache fields zero.
+
+  gpt-5:
+    input: 1.25
+    output: 10.00
+    cache_write: 0
+    cache_read: 0.125
+
+  gpt-5-pro:
+    input: 15.00
+    output: 120.00
+    cache_write: 0
+    cache_read: 0
+
+  gpt-5-mini:
+    input: 0.25
+    output: 2.00
+    cache_write: 0
+    cache_read: 0.025
+
+  gpt-5-nano:
+    input: 0.05
+    output: 0.40
+    cache_write: 0
+    cache_read: 0.005
+
+  gpt-5-codex:
+    input: 1.25
+    output: 10.00
+    cache_write: 0
+    cache_read: 0.125
+
+  # Current-generation GPT-5.5 (released 2026-04-23). Higher price, larger
+  # context. gpt-5.5-pro has no cached-input discount.
+  gpt-5.5:
+    input: 5.00
+    output: 30.00
+    cache_write: 0
+    cache_read: 0.50
+
+  gpt-5.5-pro:
+    input: 30.00
+    output: 180.00
+    cache_write: 0
+    cache_read: 0
+
+  # --- xAI Grok — published rates as of 2026-05. No prompt-cache concept in
+  # the public pricing, so both cache fields are null (=> 0 contribution).
+
+  grok-4:
+    input: 3.00
+    output: 15.00
+    cache_write: null
+    cache_read: null

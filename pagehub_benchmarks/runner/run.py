@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
@@ -98,6 +100,34 @@ def _health_url(spec: BenchmarkSpec) -> str | None:
     return None
 
 
+def _gateway_url_from(harness_spec: HarnessSpec) -> str | None:
+    """The gateway base URL declared in the harness's ``config.gateway.url``,
+    or ``None`` when no gateway is configured."""
+    gw = (harness_spec.config or {}).get("gateway")
+    if not isinstance(gw, dict):
+        return None
+    url = str(gw.get("url") or "").strip().rstrip("/")
+    return url or None
+
+
+def _probe_provider_model(gateway_url: str | None) -> str | None:
+    """Best-effort: GET ``<gateway_url>/health`` and return its
+    ``default_model`` field — the id the gateway will translate to on its
+    upstream call. Returns ``None`` when no gateway is in play or any step
+    fails; this is a documentation aid, not a correctness signal.
+    """
+    base = (gateway_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    try:
+        with urllib.request.urlopen(f"{base}/health", timeout=2) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
+    value = data.get("default_model") if isinstance(data, dict) else None
+    return str(value) if value else None
+
+
 # --------------------------------------------------------------------------
 # the pure core
 
@@ -114,6 +144,7 @@ def execute_benchmark_run(
     built_sha: str | None = None,
     service_factory: Callable[[], AbstractContextManager[Any]] | None = None,
     clock: Callable[[], datetime] = _utcnow,
+    provider_model: str | None = None,
 ) -> RunRecord:
     model = harness_spec.model
     if model not in pricing:
@@ -209,6 +240,7 @@ def execute_benchmark_run(
         per_attempt=per_attempt,
         rendered_prompt=prompt,
         template_vars=dict(rendered.template_vars),
+        provider_model=provider_model,
     )
 
 
@@ -299,6 +331,7 @@ def run_benchmark(
                 pricing=pricing,
                 fixture_fetcher=fetcher,
                 service_factory=service_factory,
+                provider_model=_probe_provider_model(_gateway_url_from(h)),
             )
         record.built_git_sha = capture_built_sha(worktree)
         _push_built_tree(record, h, spec, worktree, pusher)

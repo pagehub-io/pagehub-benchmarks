@@ -43,3 +43,7 @@ harnesses:
     model: claude-opus-4-7
     config:
       effort: xhigh
+  - harness: claude-code
+    model: claude-haiku-4-5
+    config:
+      effort: xhigh

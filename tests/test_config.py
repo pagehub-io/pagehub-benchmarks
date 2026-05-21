@@ -115,8 +115,35 @@ def test_template_vars_must_be_mapping(tmp_path):
         parse_benchmark(data, tmp_path / "x.yaml")
 
 
-def test_load_pricing_rejects_incomplete_model(tmp_path):
+def test_load_pricing_rejects_missing_required_input_or_output(tmp_path):
+    # input/output are required (every provider charges for those).
     p = tmp_path / "pricing.yaml"
-    p.write_text("models:\n  m:\n    input: 1.0\n    output: 2.0\n")  # missing cache rates
+    p.write_text("models:\n  m:\n    input: 1.0\n")  # missing 'output'
     with pytest.raises(ConfigError):
         load_pricing(p)
+
+
+def test_load_pricing_treats_missing_cache_rates_as_zero(tmp_path):
+    # Providers without a prompt-cache concept (xAI/Grok) omit the cache
+    # fields entirely; null/absent => 0.0, the cost computation contributes
+    # nothing for cache tokens. (Anthropic + OpenAI still set them.)
+    p = tmp_path / "pricing.yaml"
+    p.write_text("models:\n  grok-4:\n    input: 3.0\n    output: 15.0\n")
+    table = load_pricing(p)
+    assert table["grok-4"].input == 3.0
+    assert table["grok-4"].output == 15.0
+    assert table["grok-4"].cache_write == 0.0
+    assert table["grok-4"].cache_read == 0.0
+
+
+def test_load_pricing_accepts_null_cache_rates(tmp_path):
+    # Explicit null is the documented "no prompt-cache" signal.
+    p = tmp_path / "pricing.yaml"
+    p.write_text(
+        "models:\n  grok-4:\n"
+        "    input: 3.0\n    output: 15.0\n"
+        "    cache_write: null\n    cache_read: null\n"
+    )
+    table = load_pricing(p)
+    assert table["grok-4"].cache_write == 0.0
+    assert table["grok-4"].cache_read == 0.0
