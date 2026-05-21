@@ -99,6 +99,13 @@ class RunRecord:
     # backward-compatibility with records written before this feature.
     rendered_prompt: str = ""
     template_vars: dict[str, str] = field(default_factory=dict)
+    # The actual backend model the harness's traffic landed on. When the
+    # harness routes through an Anthropic-compatible gateway (e.g.
+    # pagehub-llm-gateway translating claude-* ids to a Grok backend),
+    # ``model`` records the id passed to the harness; ``provider_model``
+    # records the id the gateway sent upstream. ``None`` when no gateway
+    # is in play or the probe failed.
+    provider_model: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

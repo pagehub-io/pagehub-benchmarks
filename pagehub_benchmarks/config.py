@@ -187,15 +187,27 @@ def load_pricing(path: Path | None = None) -> dict[str, ModelPrice]:
     for model, rates in models_raw.items():
         if not isinstance(rates, dict):
             raise ConfigError(f"{path}: models.{model} must be a mapping")
+        # ``input`` and ``output`` are required (every provider charges for those).
+        # ``cache_write`` / ``cache_read`` default to 0.0 when omitted or null —
+        # providers without a prompt-cache concept (xAI/Grok at the time of
+        # writing) get a "no cache" zero contribution to cost_usd. Anthropic +
+        # OpenAI list non-zero rates here.
         try:
             out[str(model)] = ModelPrice(
                 input=float(rates["input"]),
                 output=float(rates["output"]),
-                cache_write=float(rates["cache_write"]),
-                cache_read=float(rates["cache_read"]),
+                cache_write=_optional_rate(rates.get("cache_write")),
+                cache_read=_optional_rate(rates.get("cache_read")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ConfigError(
-                f"{path}: models.{model} needs numeric input/output/cache_write/cache_read"
+                f"{path}: models.{model} needs numeric input/output "
+                "(cache_write/cache_read are optional; null/absent => 0.0)"
             ) from exc
     return out
+
+
+def _optional_rate(value: Any) -> float:
+    if value is None:
+        return 0.0
+    return float(value)
