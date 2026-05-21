@@ -1,0 +1,43 @@
+name: eval-chess-frontend-with-fixture-via-openai
+description: >-
+  Cross-provider sibling of eval-chess-frontend-with-fixture. Same target
+  repo, same grader, same prompt (the {{ grader_fixture }}-injecting one),
+  same max_attempts — only the harness routing differs: claude-code is
+  pointed at pagehub-llm-gateway via ANTHROPIC_BASE_URL, and the model id
+  is an OpenAI GPT-5 family one that the gateway translates upstream.
+  Paired with eval-chess-frontend-with-fixture.yaml under the
+  cross-model-comparison theory.
+
+target_repo: git@github.com:pagehub-io/eval-chess-frontend.git
+target_start: empty
+build_prompt_file: prompts/eval-chess-frontend-with-fixture.md
+
+grader:
+  # Identical to eval-chess-frontend-with-fixture — the grader has no idea
+  # which model wrote the code under test.
+  evals_base_url: http://localhost:8002
+  fixture_bundle: fixtures/eval-chess-frontend.json
+  collection: eval-chess-frontend
+  env:
+    eval-chess-frontend_url: http://host.docker.internal:8004
+    pagehub-browser_url:     http://host.docker.internal:4010
+
+max_attempts: 5
+
+# One run. Model picked per the brief: highest-tier tool-use-capable GPT-5
+# family member returned by OpenAI /v1/models at authoring time. Preference
+# order was gpt-5-pro > gpt-5 > gpt-5-mini; gpt-5-pro is present and is the
+# state-of-the-art reasoning tier we want for the cross-model A/B vs Opus.
+#
+# The `gateway` block tells the claude-code harness to set
+# ANTHROPIC_BASE_URL=<url> and ANTHROPIC_AUTH_TOKEN=$<auth_token_env> in the
+# subprocess env. The model id is passed through verbatim to `claude -p`;
+# pagehub-llm-gateway routes by prefix (gpt-* -> OpenAI). The token VALUE
+# is read from the runner's process env at dispatch — never recorded.
+harnesses:
+  - harness: claude-code
+    model: gpt-5-pro
+    config:
+      gateway:
+        url: http://localhost:4011
+        auth_token_env: GATEWAY_AUTH_TOKEN
