@@ -178,3 +178,29 @@ The next obvious follow-up is the same experiment on
 `eval-chess-backend` (more rules, larger fixture) to test whether the
 effect scales with eval surface-area. Filed as a future theory rather
 than a refinement of this one.
+
+## Third data point: `eval-game-hoppers` (pending run)
+
+The third treatment-side row is `benchmarks/eval-game-hoppers.yaml`
+(`claude-code` / `claude-opus-4-7` / `effort=xhigh`) — same harness +
+model + effort as the canonical treatment row in the baseline table
+above, fresh build target (a single-tap "hopper" web game; see the
+benchmark for the 5-pillar DOM contract). It carries the
+fixture-in-prompt prompt shape — the build prompt
+(`prompts/eval-game-hoppers.md`) injects `{{ grader_fixture }}`
+verbatim and the runner fetches the bytes from
+`GET /v1/fixtures/eval-game-hoppers` at render time.
+
+There is **no paired no-fixture baseline benchmark** for this target:
+the chess-frontend pair already established the baseline-vs-treatment
+delta; this row is a *replication on a fresh target* to ask "does the
+attempt-1-PASS behavior generalize beyond the chess DOM contract?"
+A target with five orthogonal DOM-contract pillars (instant restart,
+shareable score, creator-friendly difficulty, zero install friction,
+payment via ads) is a tougher exercise than chess's single-board
+contract, so this row also probes whether the effect scales when the
+fixture has to cover more independent assertions.
+
+Hypothesis carries over from the canonical row: fixture-in-prompt
+reduces attempts and total tokens vs an unprompted equivalent. Outcome
+will be appended after Gavin kicks off the run.
