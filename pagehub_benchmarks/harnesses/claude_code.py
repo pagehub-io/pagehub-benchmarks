@@ -148,6 +148,38 @@ def _parse_cli_json(stdout: str) -> dict[str, Any]:
 
 
 def _usage_from(data: dict[str, Any]) -> tuple[int, int, int, int]:
+    """Extract (input, output, cache_creation, cache_read) token counts.
+
+    Newer Claude Code CLI builds (≥ Opus 4.7) dispatch sub-tasks to a
+    secondary model (e.g. Haiku 4.5 as a routing agent) and surface those
+    tokens *only* under ``modelUsage`` — the top-level ``usage`` field
+    captures the primary model's slice. If we read top-level ``usage``
+    alone, the sub-agent's tokens vanish and recomputed cost is artificially
+    low. (We saw exactly this on the Opus 4.7 / effort=high run: 12 input +
+    132 output reported, but the CLI billed for additional Haiku traffic
+    invisible to us.)
+
+    Resolution: when ``modelUsage`` is present (a mapping of model-id ->
+    per-model usage block, camelCase keys), sum across all entries. Otherwise
+    fall back to the top-level ``usage`` (snake_case keys) for the legacy
+    shape.
+
+    Caveat: summed tokens are priced at the matrix row's model rate — i.e.
+    a Haiku sub-agent's 100 input tokens get charged at Opus rates in our
+    ``cost_usd``. Acceptable approximation; the alternative is per-sub-model
+    pricing, which means weighting the per-row price table by ``modelUsage``.
+    """
+    model_usage = data.get("modelUsage")
+    if isinstance(model_usage, dict) and model_usage:
+        in_tok = out_tok = cache_create = cache_read = 0
+        for per_model in model_usage.values():
+            if not isinstance(per_model, dict):
+                continue
+            in_tok += int(per_model.get("inputTokens", 0) or 0)
+            out_tok += int(per_model.get("outputTokens", 0) or 0)
+            cache_create += int(per_model.get("cacheCreationInputTokens", 0) or 0)
+            cache_read += int(per_model.get("cacheReadInputTokens", 0) or 0)
+        return (in_tok, out_tok, cache_create, cache_read)
     usage = data.get("usage") or {}
     return (
         int(usage.get("input_tokens", 0) or 0),
