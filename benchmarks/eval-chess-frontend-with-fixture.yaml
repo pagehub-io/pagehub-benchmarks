@@ -66,6 +66,16 @@ harnesses:
     model: claude-sonnet-4-5
     config:
       effort: xhigh
+  # Sonnet 4.6 at low effort. Counterpart to the sonnet-4-5/xhigh row: same
+  # family, half-version newer, but explicitly LOW reasoning budget — the
+  # closest the CLI exposes to "thinking off" (the CLI couples thinking to
+  # effort, so `effort: low` is the proxy). Tests whether the fixture-injecting
+  # prompt is enough on its own without heavy reasoning, and whether the
+  # half-version bump from 4.5 → 4.6 compensates for the effort drop.
+  - harness: claude-code
+    model: claude-sonnet-4-6
+    config:
+      effort: low
   # Frontier OpenAI reasoning model the current gateway can actually reach.
   # Pro tier (gpt-5.5-pro / gpt-5-pro) needs OpenAI's /v1/responses endpoint
   # and the gateway only speaks /v1/chat/completions today — once that lands
