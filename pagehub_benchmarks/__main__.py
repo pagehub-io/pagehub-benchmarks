@@ -70,6 +70,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         args.benchmark,
         harness=args.harness,
         model=args.model,
+        effort=args.effort,
         config_overrides=_parse_config_overrides(args.config),
         max_attempts=args.max_attempts,
         results_dir=args.results_dir,
@@ -123,6 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("benchmark", help="benchmark name (benchmarks/<name>.yaml) or a path")
     r.add_argument("--harness", help="only this harness from the matrix")
     r.add_argument("--model", help="only this model from the matrix")
+    r.add_argument(
+        "--effort",
+        help="only matrix rows whose config.effort equals this (low|medium|high|xhigh|max)",
+    )
     r.add_argument("--config", action="append", metavar="k=v", help="override a config key (repeatable)")
     r.add_argument("--max-attempts", type=int, help="override max_attempts")
     r.add_argument("--results-dir", help="where to write run records (default: results/)")
