@@ -301,6 +301,54 @@ def test_continue_build_reuses_gateway_overlay_from_start_build(monkeypatch, tmp
     assert "ANTHROPIC_API_KEY" not in captured["env"]
 
 
+def test_continue_build_passes_model_from_start_build(monkeypatch, tmp_path):
+    """``claude -p --resume`` does NOT carry the model selection from the
+    resumed session — the CLI falls back to its stored default (typically
+    claude-opus-4-7). For a gateway-routed run that defaults claude-* to a
+    400 ("not handled by any registered provider"). The harness must replay
+    ``--model <model>`` on every continue_build with what start_build was
+    handed. Caught a real bug on a gpt-5.5 / gateway run that 400ed on
+    attempt 2 because --model was missing."""
+    captured = _install_fake_subprocess(monkeypatch)
+
+    h = ClaudeCodeHarness()
+    h.start_build(str(tmp_path), "p1", "claude-sonnet-4-6", {"effort": "high"})
+    captured.clear()
+    h.continue_build("sess-fake", "p2")
+
+    cmd = captured["cmd"]
+    assert "--model" in cmd
+    assert cmd[cmd.index("--model") + 1] == "claude-sonnet-4-6"
+    assert "--resume" in cmd
+    assert cmd[cmd.index("--resume") + 1] == "sess-fake"
+
+
+def test_continue_build_replays_gpt_model_id_for_gateway_runs(monkeypatch, tmp_path):
+    """Same fix viewed from the gateway side: when the YAML asks for a
+    non-Anthropic model id (gpt-*, grok-*), continue_build must pass that
+    same id through verbatim. Without it the second attempt 400s at the
+    gateway with 'model claude-opus-4-7 not handled by any registered
+    provider'."""
+    monkeypatch.setenv("GATEWAY_AUTH_TOKEN", "tk")
+    captured = _install_fake_subprocess(monkeypatch)
+
+    h = ClaudeCodeHarness()
+    h.start_build(str(tmp_path), "p1", "gpt-5.5", {"gateway": {"url": "http://gw:4011"}})
+    captured.clear()
+    h.continue_build("sess-fake", "p2")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--model") + 1] == "gpt-5.5"
+
+
+def test_continue_build_without_start_build_raises():
+    """Belt-and-braces — the new guard rejects continue_build when start_build
+    was never called (no remembered model)."""
+    h = ClaudeCodeHarness()
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build("sess", "p")
+
+
 def test_start_build_with_malformed_gateway_block_raises(monkeypatch, tmp_path):
     # Don't even reach the subprocess if the config is broken — fail loudly.
     monkeypatch.delenv("GATEWAY_AUTH_TOKEN", raising=False)

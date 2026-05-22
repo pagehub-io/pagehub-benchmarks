@@ -199,6 +199,15 @@ class ClaudeCodeHarness(Harness):
         # Env overlay (gateway routing, if configured). Set in start_build,
         # reused by every continue_build on this run.
         self._env_overlay: dict[str, str] = {}
+        # The model id passed to start_build, replayed on every continue_build.
+        # ``claude -p --resume`` does NOT carry the model selection from the
+        # resumed session — the CLI falls back to its stored default (typically
+        # claude-opus-4-7), which a gateway-routed run can't service: the
+        # gateway routes by model-name prefix, so a stray claude-* on attempt 2
+        # 400s with "model not handled by any registered provider". Even on
+        # the native subscription path this is safer than letting the CLI's
+        # default leak into a continuation.
+        self._model: str | None = None
 
     # -- helpers ---------------------------------------------------------
 
@@ -251,6 +260,7 @@ class ClaudeCodeHarness(Harness):
     ) -> AttemptResult:
         self._worktree_dir = worktree_dir
         self._env_overlay = _gateway_env_overlay(config)
+        self._model = model
         cmd = [
             "claude",
             "-p",
@@ -277,12 +287,16 @@ class ClaudeCodeHarness(Harness):
     ) -> AttemptResult:
         if not self._worktree_dir:
             raise HarnessError("continue_build called before start_build")
+        if not self._model:
+            raise HarnessError("continue_build called before start_build (no model remembered)")
         cmd = [
             "claude",
             "-p",
             followup_prompt,
             "--resume",
             session_handle,
+            "--model",
+            self._model,
             "--output-format",
             "json",
             "--dangerously-skip-permissions",
