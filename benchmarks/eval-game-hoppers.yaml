@@ -1,0 +1,68 @@
+name: eval-game-hoppers
+description: >-
+  Build a pure-frontend single-tap "hopper" web game (inspired by Crossy
+  Road / Frogger but legally distant from both — pick a non-amphibian
+  species, no frog, no lily-pads). Serves on port 8005 (8003/8004 are
+  eval-chess-{backend,frontend}; 4010/4011 are pagehub-browser /
+  pagehub-llm-gateway). Graded via pagehub-browser against the
+  pagehub-evals "eval-game-hoppers" 5-pillar conformance battery. The
+  build prompt injects the grader fixture bundle directly via
+  {{ grader_fixture }} (treatment variant under the
+  eval-fixture-injection theory).
+
+target_repo: git@github.com:pagehub-io/eval-game-hoppers.git
+target_start: empty
+build_prompt_file: prompts/eval-game-hoppers.md
+
+grader:
+  # The standalone pagehub-evals service (its docker-compose maps the API
+  # to :8002). Same as eval-chess-{backend,frontend}.
+  evals_base_url: http://localhost:8002
+  # Path within the pagehub-evals repo checkout (resolved relative to
+  # PAGEHUB_EVALS_REPO, default ~/github/pagehub-io/pagehub-evals).
+  fixture_bundle: fixtures/eval-game-hoppers.json
+  collection: eval-game-hoppers
+  env:
+    # pagehub-evals fires HTTP from inside its own docker container, so
+    # services on the HOST must be addressed via host.docker.internal —
+    # both the headless-browser service AND the frontend it will drive.
+    # The bundle's "hoppers-local" environment is PATCHed with these
+    # values at grade time, so a run can repoint either at a worktree-
+    # local deployment without editing the bundle.
+    #
+    # Order matters: the runner's readiness probe (run.py::_health_url)
+    # picks the FIRST *_url here and waits for <localhost>/health to
+    # answer. That MUST be the built service we're grading (port 8005),
+    # NOT pagehub-browser (already up on :4010 -> would short-circuit
+    # the probe and start grading before `make up` is even ready).
+    eval-game-hoppers_url: http://host.docker.internal:8005
+    pagehub-browser_url:   http://host.docker.internal:4010
+  # Wait for the rendered game-root element before grading. Same
+  # rationale as eval-chess-frontend's `board` testid wait: Vite returns
+  # 200 the moment it binds, well before React/JS hydrates, so without
+  # a DOM-level readiness signal the grader's first request races
+  # first-paint and the run cascades on testid-404s that look like
+  # model failure.
+  ready_testid: game-root
+
+# Pre-flight (Gavin kicks off the run after all three PRs land):
+#   1. pagehub-evals running on :8002  (make up in pagehub-evals/)
+#   2. pagehub-browser running on :4010  (make up in pagehub-browser/)
+#   3. (optional) PAGEHUB_EVALS_REPO env var if pagehub-evals checkout
+#      is not at ~/github/pagehub-io/pagehub-evals
+# The runner brings the freshly-built eval-game-hoppers app up on :8005
+# itself via the target repo's `make up`.
+
+max_attempts: 5
+
+# Single-row matrix — Max-subscription path, no gateway. The
+# claude-opus-4-7 / xhigh / fixture-in-prompt row is the third data
+# point under the eval-fixture-injection theory (after
+# eval-chess-frontend-with-fixture's Opus 4.7 / xhigh row). The
+# GPT-5-via-gateway sibling row lands in the parallel
+# benchmarks-gateway-openai work, not here.
+harnesses:
+  - harness: claude-code
+    model: claude-opus-4-7
+    config:
+      effort: xhigh
