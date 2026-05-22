@@ -31,7 +31,9 @@ def test_parse_cli_json_empty_raises():
         _parse_cli_json("   ")
 
 
-def test_usage_from():
+def test_usage_from_legacy_usage_shape():
+    # Older CLI builds (and gateway-routed responses) report only the
+    # top-level snake_case ``usage`` block.
     data = {
         "usage": {
             "input_tokens": 100,
@@ -43,6 +45,88 @@ def test_usage_from():
     assert _usage_from(data) == (100, 20, 300, 400)
     # missing usage -> all zeros
     assert _usage_from({}) == (0, 0, 0, 0)
+
+
+def test_usage_from_sums_modelUsage_when_present():
+    # Newer CLI builds dispatch sub-tasks to a routing agent (e.g. Haiku 4.5
+    # invoked from within an Opus 4.7 run). The top-level ``usage`` field
+    # captures only the primary model's slice; ``modelUsage`` carries the
+    # complete per-sub-model breakdown. We sum across all entries so the
+    # sub-agent's tokens are visible to cost computation. (Real shape from a
+    # 2026-05-22 Opus 4.7 smoke; numbers shrunk for the test.)
+    data = {
+        "usage": {  # primary-only slice — would under-count
+            "input_tokens": 6,
+            "output_tokens": 6,
+            "cache_creation_input_tokens": 100,
+            "cache_read_input_tokens": 200,
+        },
+        "modelUsage": {
+            "claude-haiku-4-5-20251001": {
+                "inputTokens": 440,
+                "outputTokens": 12,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+            },
+            "claude-opus-4-7": {
+                "inputTokens": 6,
+                "outputTokens": 6,
+                "cacheReadInputTokens": 200,
+                "cacheCreationInputTokens": 100,
+            },
+        },
+    }
+    assert _usage_from(data) == (446, 18, 100, 200)
+
+
+def test_usage_from_modelUsage_takes_precedence_over_top_level_usage():
+    # The two are not redundant — modelUsage is the complete picture, top-level
+    # ``usage`` is only the primary model's slice. When both are present, sum
+    # the modelUsage entries.
+    data = {
+        "usage": {
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        },
+        "modelUsage": {
+            "claude-opus-4-7": {
+                "inputTokens": 50,
+                "outputTokens": 25,
+                "cacheReadInputTokens": 10,
+                "cacheCreationInputTokens": 5,
+            },
+        },
+    }
+    assert _usage_from(data) == (50, 25, 5, 10)
+
+
+def test_usage_from_empty_modelUsage_falls_back_to_top_level():
+    # An empty modelUsage dict shouldn't suppress the top-level usage —
+    # otherwise a malformed response could zero out a run silently.
+    data = {
+        "usage": {
+            "input_tokens": 7,
+            "output_tokens": 3,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        },
+        "modelUsage": {},
+    }
+    assert _usage_from(data) == (7, 3, 0, 0)
+
+
+def test_usage_from_skips_non_dict_modelUsage_entries():
+    # Tolerant of garbage values in modelUsage entries (defensive: a future
+    # CLI shape change shouldn't crash us).
+    data = {
+        "modelUsage": {
+            "claude-opus-4-7": {"inputTokens": 10, "outputTokens": 5},
+            "garbage-entry": "not a dict",
+        },
+    }
+    assert _usage_from(data) == (10, 5, 0, 0)
 
 
 def test_subprocess_env_strips_anthropic_api_key(monkeypatch):
