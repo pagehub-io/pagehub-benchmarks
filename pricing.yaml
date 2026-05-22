@@ -22,11 +22,28 @@ models:
   # --- Anthropic (claude-code's native subscription path, and the gateway's
   # "translate Anthropic protocol to <other>" upstreams). Published rates.
 
+  # Opus 4.5 / 4.6 / 4.7 are all priced at the new $5 / $25 tier per
+  # platform.claude.com/docs/en/docs/about-claude/pricing as of 2026-05.
+  # (Opus 4.1 and earlier were the old $15 / $75 tier — deprecated.) Opus 4.7
+  # uses a new tokenizer that can use ~35% more tokens for the same text, so
+  # cost_usd is not directly comparable to 4.6/4.5 on the same prompt.
   claude-opus-4-7:
-    input: 15.00
-    output: 75.00
-    cache_write: 18.75
-    cache_read: 1.50
+    input: 5.00
+    output: 25.00
+    cache_write: 6.25
+    cache_read: 0.50
+
+  claude-opus-4-6:
+    input: 5.00
+    output: 25.00
+    cache_write: 6.25
+    cache_read: 0.50
+
+  claude-opus-4-5:
+    input: 5.00
+    output: 25.00
+    cache_write: 6.25
+    cache_read: 0.50
 
   claude-sonnet-4-6:
     input: 3.00
