@@ -11,7 +11,6 @@ service.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from pagehub_benchmarks.runner.workspace import wait_for_dom_ready
 
