@@ -49,6 +49,77 @@ def test_grader_defaults_and_fixture_path(monkeypatch, tmp_path):
     assert spec.max_attempts == 5  # default
     assert spec.target_start == "empty"  # default
     assert spec.grader.fixture_bundle_path == tmp_path / "fixtures" / "x.json"
+    # DOM readiness probe is opt-in — absent when not declared.
+    assert spec.grader.ready_testid is None
+    assert spec.grader.ready_timeout_seconds == 60.0
+
+
+def test_grader_ready_testid_round_trips(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {
+            "fixture_bundle": "fixtures/x.json",
+            "collection": "x-rules",
+            "ready_testid": "board",
+            "ready_timeout_seconds": 30,
+        },
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+    }
+    spec = parse_benchmark(data, tmp_path / "x.yaml")
+    assert spec.grader.ready_testid == "board"
+    assert spec.grader.ready_timeout_seconds == 30.0
+
+
+def test_grader_empty_ready_testid_normalizes_to_none(tmp_path):
+    # An empty-string ready_testid is the same as omitting it — easier to land
+    # in YAML when authors quote the field but mean "no probe".
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {
+            "fixture_bundle": "fixtures/x.json",
+            "collection": "x-rules",
+            "ready_testid": "  ",
+        },
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+    }
+    spec = parse_benchmark(data, tmp_path / "x.yaml")
+    assert spec.grader.ready_testid is None
+
+
+def test_grader_invalid_ready_testid_type_raises(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {
+            "fixture_bundle": "fixtures/x.json",
+            "collection": "x-rules",
+            "ready_testid": ["not", "a", "string"],
+        },
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+    }
+    with pytest.raises(ConfigError, match="ready_testid"):
+        parse_benchmark(data, tmp_path / "x.yaml")
+
+
+def test_grader_invalid_ready_timeout_raises(tmp_path):
+    data = {
+        "name": "x",
+        "target_repo": "git@github.com:e/x.git",
+        "build_prompt_file": "prompts/x.md",
+        "grader": {
+            "fixture_bundle": "fixtures/x.json",
+            "collection": "x-rules",
+            "ready_timeout_seconds": -5,
+        },
+        "harnesses": [{"harness": "claude-code", "model": "claude-opus-4-7"}],
+    }
+    with pytest.raises(ConfigError, match="ready_timeout_seconds"):
+        parse_benchmark(data, tmp_path / "x.yaml")
 
 
 @pytest.mark.parametrize(

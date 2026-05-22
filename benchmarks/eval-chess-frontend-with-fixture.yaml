@@ -33,6 +33,14 @@ grader:
     # probe and start grading before `make up` is even ready).
     eval-chess-frontend_url: http://host.docker.internal:8004
     pagehub-browser_url:     http://host.docker.internal:4010
+  # Stronger readiness signal than the HTTP /health probe (Vite returns 200
+  # the moment it binds, well before React hydrates). Before grading starts,
+  # the runner polls pagehub-browser until [data-testid="board"] is visible
+  # on the SUT. Without this, multiple models (Opus baseline attempt 1,
+  # Sonnet 4.5/xhigh, gpt-5.5 attempt 1) hit a uniform 56-failure cascade of
+  # testid-404s that looked like model failure but was actually first-paint
+  # racing the grader's first request.
+  ready_testid: board
 
 max_attempts: 5
 

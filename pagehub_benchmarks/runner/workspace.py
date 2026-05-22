@@ -29,7 +29,7 @@ import shutil
 import signal
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import httpx
@@ -142,14 +142,108 @@ def _kill_group(proc: subprocess.Popen) -> None:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
+def wait_for_dom_ready(
+    *,
+    browser_base_url: str,
+    sut_url: str,
+    testid: str,
+    timeout_s: float,
+    client: httpx.Client | None = None,
+) -> bool:
+    """Poll pagehub-browser until ``data-testid=<testid>`` is visible at ``sut_url``.
+
+    Stronger readiness signal than the HTTP /health probe: an SPA's Vite dev
+    server returns 200 on any path the moment it binds, but React may not have
+    hydrated for several seconds after. The grader's first request firing
+    against an un-rendered DOM produces a 56-failure cascade of testid-404s
+    that looks like model failure but is SUT timing.
+
+    Per-poll loop: open a pagehub-browser session, navigate to ``sut_url``,
+    issue ``wait-for`` on the testid, close the session. Repeats with backoff
+    until either the testid materializes (returns ``True``) or the outer
+    ``timeout_s`` budget trips (returns ``False`` with a warning — grading
+    proceeds; the grader will produce real failures if the testid is
+    genuinely missing).
+
+    ``browser_base_url`` is the URL the *runner* (running on the host) uses
+    to reach pagehub-browser — e.g. ``http://localhost:4010``. ``sut_url`` is
+    the URL pagehub-browser (running inside its own docker container) uses to
+    reach the SUT — e.g. ``http://host.docker.internal:8004``. Same string
+    under different perspectives; the caller resolves which is which.
+
+    ``client`` is injectable for tests (``httpx.MockTransport``); production
+    callers leave it ``None`` and the function builds its own.
+    """
+    deadline = time.monotonic() + timeout_s
+    last_err: str | None = None
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(base_url=browser_base_url, timeout=15.0)
+    try:
+        attempt = 0
+        while time.monotonic() < deadline:
+            attempt += 1
+            remaining_ms = max(1000, int((deadline - time.monotonic()) * 1000))
+            step_timeout = min(15000, remaining_ms)
+            session_id: str | None = None
+            try:
+                resp = client.post("/v1/sessions", json={})
+                resp.raise_for_status()
+                session_id = str(resp.json().get("id") or "")
+                if not session_id:
+                    raise httpx.HTTPError("pagehub-browser session response had no 'id'")
+                nav = client.post(
+                    f"/v1/sessions/{session_id}/navigate",
+                    json={"url": sut_url, "wait_until": "load", "timeout": step_timeout},
+                )
+                nav.raise_for_status()
+                wf = client.post(
+                    f"/v1/sessions/{session_id}/wait-for",
+                    json={
+                        "locator": {"strategy": "testid", "value": testid},
+                        "state": "visible",
+                        "timeout": step_timeout,
+                    },
+                )
+                if wf.status_code == 200:
+                    return True
+                last_err = f"wait-for returned {wf.status_code}: {wf.text[:200]}"
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                last_err = f"{type(exc).__name__}: {exc}"
+            finally:
+                if session_id:
+                    with contextlib.suppress(httpx.HTTPError):
+                        client.delete(f"/v1/sessions/{session_id}")
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(1.0)
+    finally:
+        if owns_client:
+            client.close()
+    print(
+        f"(warning: DOM readiness probe timed out after {timeout_s:.0f}s — "
+        f"testid={testid!r} never visible at {sut_url}; last error: {last_err}; "
+        "grading will proceed and may show legitimate model failures)"
+    )
+    return False
+
+
 @contextlib.contextmanager
 def run_service(
     worktree: str | Path,
     health_url: str | None,
     *,
     startup_timeout_s: float = 300.0,
+    dom_ready_probe: Callable[[], bool] | None = None,
 ) -> Iterator[None]:
-    """Best-effort: bring the built service up, yield, tear it down."""
+    """Best-effort: bring the built service up, yield, tear it down.
+
+    ``dom_ready_probe`` is an optional zero-arg callable invoked AFTER the
+    HTTP health probe succeeds, BEFORE yielding. Used to thread a DOM-level
+    readiness check (see :func:`wait_for_dom_ready`) without leaking
+    pagehub-browser awareness into this module. A probe that raises is
+    suppressed (warning logged); a probe that returns is treated as success.
+    """
     worktree = Path(worktree)
     up, down = _resolve_up_down(worktree)
     if up is None:
@@ -166,6 +260,9 @@ def run_service(
     try:
         if health_url:
             _wait_for(health_url, startup_timeout_s, proc)
+        if dom_ready_probe is not None:
+            with contextlib.suppress(Exception):
+                dom_ready_probe()
         yield
     finally:
         _kill_group(proc)
