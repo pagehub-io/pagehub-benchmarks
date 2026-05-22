@@ -24,10 +24,11 @@ grader:
 
 max_attempts: 5
 
-# One run. Model picked per the brief: highest-tier tool-use-capable GPT-5
-# family member returned by OpenAI /v1/models at authoring time. Preference
-# order was gpt-5-pro > gpt-5 > gpt-5-mini; gpt-5-pro is present and is the
-# state-of-the-art reasoning tier we want for the cross-model A/B vs Opus.
+# One run. Highest-tier tool-use-capable OpenAI reasoning model in /v1/models
+# at authoring time: gpt-5.5-pro (released 2026-04-23, the current frontier
+# pro tier). The original gpt-5-pro is a generation behind — gpt-5.5-pro is
+# the right apples-to-apples vs Claude Opus 4.7 / effort xhigh for the
+# cross-model comparison.
 #
 # The `gateway` block tells the claude-code harness to set
 # ANTHROPIC_BASE_URL=<url> and ANTHROPIC_AUTH_TOKEN=$<auth_token_env> in the
@@ -36,7 +37,7 @@ max_attempts: 5
 # is read from the runner's process env at dispatch — never recorded.
 harnesses:
   - harness: claude-code
-    model: gpt-5-pro
+    model: gpt-5.5-pro
     config:
       gateway:
         url: http://localhost:4011

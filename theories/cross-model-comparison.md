@@ -1,7 +1,7 @@
 ---
 name: cross-model-comparison
 hypothesis: >-
-  A state-of-the-art OpenAI reasoning model (gpt-5-pro, via
+  A state-of-the-art OpenAI reasoning model (gpt-5.5-pro, via
   pagehub-llm-gateway) given the same fixture-injecting build prompt as
   Claude Opus 4.7 converges in a similar number of attempts and within
   a similar token / wall-time budget — i.e. the eval-fixture-injection
@@ -40,16 +40,17 @@ The gateway translates the Anthropic-compatible `/v1/messages` protocol
 (what `claude -p` speaks) into OpenAI's `/v1/responses` upstream, so the
 harness invocation is bit-for-bit identical to the baseline run except
 for two env vars (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`) and the
-`--model` arg (`gpt-5-pro` vs `claude-opus-4-7`).
+`--model` arg (`gpt-5.5-pro` vs `claude-opus-4-7`).
 
-**Why gpt-5-pro?** It's the highest-tier reasoning model OpenAI's
-`/v1/models` currently exposes (verified at authoring time). The
-preference order from the brief was `gpt-5-pro > gpt-5 > gpt-5-mini`;
-the pro tier is the closest analogue to Claude Opus 4.7 / effort xhigh
-in terms of "the strongest reasoning model the provider sells at the
-endpoint." Pricing is comparable: $15/$120 per Mtok (gpt-5-pro) vs
-$15/$75 per Mtok (claude-opus-4-7) — same input rate, output is 1.6×
-on OpenAI.
+**Why gpt-5.5-pro?** It's the highest-tier reasoning model OpenAI's
+`/v1/models` currently exposes (released 2026-04-23, verified at
+authoring time against the live `/v1/models` list). The pro tier is
+the closest analogue to Claude Opus 4.7 / effort xhigh in terms of
+"the strongest reasoning model the provider sells at the endpoint."
+Pricing is asymmetric: $30/$180 per Mtok (gpt-5.5-pro) vs $15/$75 per
+Mtok (claude-opus-4-7) — OpenAI is 2× the input rate and 2.4× the
+output rate. Neither has a published cached-input discount at the pro
+tier, so cache traffic doesn't tilt the comparison.
 
 ## What would change our mind
 
@@ -57,12 +58,12 @@ on OpenAI.
   same order-of-magnitude on attempts, tokens, and wall-time as the
   Opus run (rough rule of thumb: within 2× on each numeric metric).
   That's the "models are not far apart on this task" outcome.
-- **Refuted (Opus dominant)** if gpt-5-pro fails the benchmark
+- **Refuted (Opus dominant)** if gpt-5.5-pro fails the benchmark
   outright (no PASS in 5 attempts) while Opus passed on attempt 1, OR
   costs >5× more tokens / wall-time for the same outcome. Plausible
   failure mode: the OpenAI model overruns on tool-use planning or
   fails to follow the prompt's explicit DOM-contract section.
-- **Refuted (GPT dominant)** symmetric — gpt-5-pro passes faster /
+- **Refuted (GPT dominant)** symmetric — gpt-5.5-pro passes faster /
   cheaper than Opus by >2×. Less interesting for the "are they close"
   question, but still tells us something about the cross-provider gap
   on this surface.
@@ -71,18 +72,16 @@ on OpenAI.
 
 ## Expected outcome
 
-Prior: **gpt-5-pro passes on attempt 1**, similar to Opus on the
+Prior: **gpt-5.5-pro passes on attempt 1**, similar to Opus on the
 fixture-injecting prompt. Both models are reasoning-tier, and the
 prompt itself encodes the contract that fixed the Opus run on
 attempt 1; the bottleneck shouldn't be model capability but
 prompt-following. Token counts should be in the same order of
-magnitude, but cache tokens will differ qualitatively — OpenAI's
-"cached input" is a single discounted-read rate (no separate write
-charge), while Anthropic has explicit cache writes priced at 1.25×
-input. So `total_cache_tokens` (the headline number in the run
-record) is not directly comparable across providers and we should
-read it side-by-side with `cost_usd`, which normalizes by the
-per-Mtok rate table.
+magnitude. Cache traffic between providers isn't directly
+comparable — Anthropic has explicit cache writes priced at 1.25×
+input and cache reads at 0.1×, while gpt-5.5-pro publishes no
+cached-input discount at all — so the right side-by-side comparison
+is `cost_usd`, which normalizes by the per-Mtok rate table.
 
 ## How to test
 
