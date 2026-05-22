@@ -45,6 +45,7 @@ from pagehub_benchmarks.runner.workspace import (
     capture_built_sha,
     prepare_worktree,
     run_service,
+    wait_for_dom_ready,
 )
 
 DEFAULT_RESULTS_DIR = REPO_ROOT / "results"
@@ -91,6 +92,9 @@ def _local_probe_url(url: str) -> str:
     return url.replace("host.docker.internal", "localhost").replace("host.containers.internal", "localhost")
 
 
+_BROWSER_ENV_KEY = "pagehub-browser_url"
+
+
 def _health_url(spec: BenchmarkSpec) -> str | None:
     """Best-effort: derive a (host-side) health URL from a ``*_url`` entry in grader.env."""
     for value in spec.grader.env.values():
@@ -98,6 +102,61 @@ def _health_url(spec: BenchmarkSpec) -> str | None:
         if v.startswith(("http://", "https://")):
             return f"{_local_probe_url(v)}/health"
     return None
+
+
+def _sut_url_for_browser(spec: BenchmarkSpec) -> str | None:
+    """The SUT URL as pagehub-browser (running inside its own container)
+    should navigate to it — i.e. ``host.docker.internal`` preserved. Picks
+    the first ``*_url`` entry in ``grader.env`` whose key is NOT
+    ``pagehub-browser_url`` (that one points at the browser itself, not the
+    SUT). Returns ``None`` if no such entry exists."""
+    for key, value in spec.grader.env.items():
+        if key == _BROWSER_ENV_KEY:
+            continue
+        v = str(value).rstrip("/")
+        if v.startswith(("http://", "https://")):
+            return v
+    return None
+
+
+def _browser_base_url_from_host(spec: BenchmarkSpec) -> str | None:
+    """The pagehub-browser base URL as the *runner* (on the host) sees it —
+    ``host.docker.internal`` → ``localhost``. Returns ``None`` if the YAML
+    doesn't declare a ``pagehub-browser_url`` entry."""
+    value = spec.grader.env.get(_BROWSER_ENV_KEY)
+    if not value:
+        return None
+    v = str(value).rstrip("/")
+    if not v.startswith(("http://", "https://")):
+        return None
+    return _local_probe_url(v)
+
+
+def _build_dom_ready_probe(spec: BenchmarkSpec) -> Callable[[], bool] | None:
+    """Construct the per-attempt DOM readiness probe, or ``None`` if the
+    benchmark's grader spec doesn't declare ``ready_testid`` (preserving
+    the legacy HTTP-only health probe behavior for older benchmarks)."""
+    testid = spec.grader.ready_testid
+    if not testid:
+        return None
+    browser_url = _browser_base_url_from_host(spec)
+    sut_url = _sut_url_for_browser(spec)
+    if not (browser_url and sut_url):
+        # ready_testid set but we can't resolve URLs — silently fall back to
+        # the HTTP-only probe rather than failing the run. Warn so it's not
+        # silent.
+        print(
+            f"(warning: grader.ready_testid={testid!r} declared but couldn't "
+            f"resolve browser+SUT URLs from grader.env; skipping DOM probe)"
+        )
+        return None
+    timeout = spec.grader.ready_timeout_seconds
+    return lambda: wait_for_dom_ready(
+        browser_base_url=browser_url,
+        sut_url=sut_url,
+        testid=testid,
+        timeout_s=timeout,
+    )
 
 
 def _gateway_url_from(harness_spec: HarnessSpec) -> str | None:
@@ -329,8 +388,15 @@ def run_benchmark(
             spec.grader.collection,
             spec.grader.env,
         ) as grader:
+            dom_ready = _build_dom_ready_probe(spec)
             service_factory = (
-                (lambda wt=worktree: run_service(wt, _health_url(spec))) if serve else None
+                (
+                    lambda wt=worktree, dr=dom_ready: run_service(
+                        wt, _health_url(spec), dom_ready_probe=dr
+                    )
+                )
+                if serve
+                else None
             )
             record = execute_benchmark_run(
                 spec=spec,

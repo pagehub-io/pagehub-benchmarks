@@ -32,6 +32,9 @@ grader:
     # probe and start grading before `make up` is even ready).
     eval-chess-frontend_url: http://host.docker.internal:8004
     pagehub-browser_url:     http://host.docker.internal:4010
+  # Wait for the rendered board element before grading. See the matching
+  # comment in eval-chess-frontend-with-fixture.yaml.
+  ready_testid: board
 
 max_attempts: 5
 

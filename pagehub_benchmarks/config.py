@@ -52,6 +52,17 @@ class GraderSpec:
     fixture_bundle: str  # path within the pagehub-evals repo
     collection: str
     env: dict[str, str] = field(default_factory=dict)
+    # Optional stronger readiness check before grading starts. When set, the
+    # runner polls pagehub-browser until the named data-testid is visible on
+    # the SUT before declaring "ready to grade". Necessary for SPAs whose
+    # HTTP /health returns 200 the moment Vite starts (well before React has
+    # hydrated). Without this, the first grader request can fire against an
+    # un-rendered shell, producing a cryptic 56-failure cascade of testid-404s
+    # that look like model failure but are actually SUT timing.
+    # When ``None`` (default), no DOM probe runs — the existing HTTP /health
+    # probe is the only readiness signal, matching prior behavior.
+    ready_testid: str | None = None
+    ready_timeout_seconds: float = 60.0
 
     @property
     def fixture_bundle_path(self) -> Path:
@@ -104,11 +115,27 @@ def parse_benchmark(data: dict[str, Any], source_path: Path) -> BenchmarkSpec:
     grader_raw = _require(data, "grader", where)
     if not isinstance(grader_raw, dict):
         raise ConfigError(f"{where}: 'grader' must be a mapping")
+    ready_testid_raw = grader_raw.get("ready_testid")
+    if ready_testid_raw is not None and not isinstance(ready_testid_raw, str):
+        raise ConfigError(f"{where}:grader: 'ready_testid' must be a string")
+    ready_testid = (ready_testid_raw or "").strip() or None
+    ready_timeout_raw = grader_raw.get("ready_timeout_seconds", 60.0)
+    try:
+        ready_timeout = float(ready_timeout_raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            f"{where}:grader: 'ready_timeout_seconds' must be numeric"
+        ) from exc
+    if ready_timeout <= 0:
+        raise ConfigError(f"{where}:grader: 'ready_timeout_seconds' must be > 0")
+
     grader = GraderSpec(
         evals_base_url=str(grader_raw.get("evals_base_url") or DEFAULT_EVALS_BASE_URL).rstrip("/"),
         fixture_bundle=str(_require(grader_raw, "fixture_bundle", f"{where}:grader")),
         collection=str(_require(grader_raw, "collection", f"{where}:grader")),
         env={str(k): str(v) for k, v in (grader_raw.get("env") or {}).items()},
+        ready_testid=ready_testid,
+        ready_timeout_seconds=ready_timeout,
     )
 
     harnesses_raw = _require(data, "harnesses", where)
