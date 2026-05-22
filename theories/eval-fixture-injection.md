@@ -99,9 +99,20 @@ margin:
 | attempts | 2 | **1** | −1 (−50%) |
 | total_output_tokens | 62,033 | **41,786** | −20,247 (−33%) |
 | total_cache_tokens | 13,508,996 | **3,211,724** | −10,297,272 (−76%) |
-| cost_usd | $30.25 | **$10.80** | −$19.45 (−64%) |
+| cost_usd | $30.25 *(†)* | **$10.80** *(†)* | −$19.45 (−64%) |
 | total_wall_time_seconds | 1,163 (19m 23s) | **527 (8m 47s)** | −636 s (−55%) |
 | passed | ✓ | ✓ | unchanged |
+
+*(†) Both `cost_usd` figures were computed at the then-current
+`pricing.yaml` Opus rate of $15 / $75 per Mtok. Anthropic has since
+clarified that Opus 4.5+ is priced at $5 / $25 per Mtok, with the old
+$15 / $75 tier applying only to Opus 4.1 and earlier (now deprecated).
+The recorded JSON values are frozen at write time, so the baseline /
+treatment numbers above remain accurate to what was computed; the
+actual Anthropic bill for these two runs was roughly **$10.08 / $3.60**,
+or about 1/3 of the figures shown. The `delta` percentages are
+unchanged — both sides were rated at the same (wrong) rate, so the
+ratio survives.*
 
 The strongest signal is **`attempts`**: the treatment passed on
 attempt 1, exactly the prediction. Attempt 1 of the baseline failed
@@ -126,6 +137,42 @@ lucky draw — but the deltas are large enough that the *direction* is
 qualitatively clear. A multi-run replication (e.g. five trials each
 side) would tighten the bounds, but is not needed to settle this
 binary question.
+
+## Additional data points (2026-05-22)
+
+Six more treatment runs landed on 2026-05-22, all on
+`eval-chess-frontend-with-fixture` (i.e. the same prompt as the
+treatment row in the table above), at the corrected Opus pricing.
+These are not part of the baseline-vs-treatment comparison this
+theory was filed against — every one of them is a treatment-side run
+— but they're useful context for "how reliably does the
+fixture-injecting prompt PASS across models / efforts?"
+
+| harness row | outcome | attempts | wall | cost_usd |
+| --- | --- | ---: | ---: | ---: |
+| `claude-opus-4-5` / medium | **FAIL** | 5/5 | 17m | $5.52 |
+| `claude-opus-4-5` / high | PASS | 3/5 | 9m | $2.74 |
+| `claude-opus-4-6` / high | PASS | 3/5 | 11m | $3.03 |
+| `claude-opus-4-7` / high | PASS | 2/5 | 11m | $0.11 *(‡)* |
+| `claude-sonnet-4-5` / xhigh | **FAIL** | 5/5 | 19m | $4.66 |
+| `claude-sonnet-4-6` / low | PASS | 5/5 | 36m | $5.48 |
+
+*(‡) Recorded \$0.11 is an under-count. The Opus 4.7 CLI dispatches
+some sub-tasks to Haiku 4.5 as an internal routing agent; tokens for
+those sub-agent calls live only in the response's `modelUsage` block
+and were not summed by the harness at the time of this run. Fixed in
+a subsequent commit — future Opus 4.7 runs will reflect the correct
+sum. The original Opus baseline + treatment runs at the top of this
+page predate the routing-agent behavior and are unaffected.)*
+
+**What these add to the theory.** The fixture-in-prompt effect is *not*
+uniformly strong across models. Opus 4.5 at `medium` effort failed
+outright (5/5), and Sonnet 4.5 at `xhigh` effort also failed (5/5,
+same 56 testid-404 errors on every attempt — never adapted its DOM
+contract). So the "fixture injection helps" claim is best read as
+"helps the model that's already capable of following a long structured
+prompt, *given enough effort budget*." It's not a magic bullet that
+lifts weaker rows.
 
 The next obvious follow-up is the same experiment on
 `eval-chess-backend` (more rules, larger fixture) to test whether the
