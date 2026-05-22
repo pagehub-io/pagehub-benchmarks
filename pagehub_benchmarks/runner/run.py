@@ -252,6 +252,7 @@ def _select_harnesses(
     spec: BenchmarkSpec,
     harness: str | None,
     model: str | None,
+    effort: str | None,
     config_overrides: dict[str, Any] | None,
 ) -> list[HarnessSpec]:
     out: list[HarnessSpec] = []
@@ -260,12 +261,20 @@ def _select_harnesses(
             continue
         if model is not None and h.model != model:
             continue
+        # ``effort`` filters by the row's ``config.effort`` value. The matrix may
+        # carry multiple rows for the same (harness, model) differing only in
+        # effort (e.g. an Opus sweep at medium / high / xhigh); --effort picks
+        # exactly one. Distinct from ``config_overrides``, which *mutates* the
+        # selected rows' config.
+        if effort is not None and (h.config or {}).get("effort") != effort:
+            continue
         if config_overrides:
             h = dataclasses.replace(h, config={**h.config, **config_overrides})
         out.append(h)
     if not out:
         raise ConfigError(
-            f"no harness in {spec.name!r} matched harness={harness!r} model={model!r}"
+            f"no harness in {spec.name!r} matched "
+            f"harness={harness!r} model={model!r} effort={effort!r}"
         )
     return out
 
@@ -281,6 +290,7 @@ def run_benchmark(
     *,
     harness: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
     config_overrides: dict[str, Any] | None = None,
     max_attempts: int | None = None,
     results_dir: str | Path | None = None,
@@ -296,7 +306,7 @@ def run_benchmark(
     spec.read_prompt()  # fail fast on a missing/empty prompt
 
     pricing = load_pricing()
-    selected = _select_harnesses(spec, harness, model, config_overrides)
+    selected = _select_harnesses(spec, harness, model, effort, config_overrides)
     for h in selected:
         if h.model not in pricing:
             raise ConfigError(
