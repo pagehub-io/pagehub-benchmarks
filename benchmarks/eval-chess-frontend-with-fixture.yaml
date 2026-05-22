@@ -57,6 +57,27 @@ harnesses:
     model: claude-haiku-4-5
     config:
       effort: xhigh
+  # Opus effort sweep — does effort level matter on the fixture-injecting prompt?
+  # The baseline run (claude-opus-4-7 / xhigh on the original $15/$75 pricing)
+  # PASSed on attempt 2. These rows test (a) older Opus generations at lower
+  # effort levels, and (b) the half-version bumps. All four Opus 4.5+ models
+  # share pricing ($5/$25), so cost deltas reflect token-usage deltas only.
+  - harness: claude-code
+    model: claude-opus-4-5
+    config:
+      effort: medium
+  - harness: claude-code
+    model: claude-opus-4-5
+    config:
+      effort: high
+  - harness: claude-code
+    model: claude-opus-4-6
+    config:
+      effort: high
+  - harness: claude-code
+    model: claude-opus-4-7
+    config:
+      effort: high
   # Sonnet 4.5 (with effort=xhigh -> extended thinking). Third-party agentic-coding
   # benchmarks score Grok 4.3 at roughly Sonnet 4.5 / thinking level, so this row
   # also serves as a *proxy* for what a Grok run would cost — multiply this run's

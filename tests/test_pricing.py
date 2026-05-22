@@ -31,8 +31,9 @@ def test_shipped_pricing_table_loads_and_has_opus():
     table = load_pricing()
     assert "claude-opus-4-7" in table
     opus = table["claude-opus-4-7"]
-    # current Anthropic Opus rates
-    assert opus.input == 15.0
-    assert opus.output == 75.0
-    assert opus.cache_write == 18.75
-    assert opus.cache_read == 1.5
+    # Current Anthropic Opus 4.5+ tier ($5 / $25 per Mtok). The old $15 / $75
+    # tier is Opus 4.1 and earlier (deprecated). See pricing.yaml header.
+    assert opus.input == 5.0
+    assert opus.output == 25.0
+    assert opus.cache_write == 6.25
+    assert opus.cache_read == 0.5
