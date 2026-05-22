@@ -36,8 +36,18 @@ grader:
 
 max_attempts: 5
 
-# The matrix: one run per entry. Identical to eval-chess-frontend so the
-# theory's baseline-vs-treatment comparison varies only on the prompt.
+# The matrix: one run per entry. Rows 1–2 (native Anthropic, no gateway)
+# back the eval-fixture-injection theory's baseline-vs-treatment comparison
+# against eval-chess-frontend.yaml — the prompt is the only thing that
+# varies between the two benchmarks. Rows 3+ route through
+# pagehub-llm-gateway (Anthropic-API-compatible) at a non-Anthropic
+# upstream; the model id passes through verbatim and the gateway routes
+# by prefix (gpt-* -> OpenAI, grok-* -> xAI). The `gateway` block makes
+# the claude-code harness export ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
+# into the `claude -p` subprocess env; the token value is read from the
+# runner's process env at dispatch and never written to YAML or the run
+# record. Cross-provider rows need the gateway service up locally (default
+# :4011) with OPENAI_API_KEY / XAI_API_KEY in its env.
 harnesses:
   - harness: claude-code
     model: claude-opus-4-7
@@ -47,3 +57,13 @@ harnesses:
     model: claude-haiku-4-5
     config:
       effort: xhigh
+  # Frontier OpenAI reasoning model the current gateway can actually reach.
+  # Pro tier (gpt-5.5-pro / gpt-5-pro) needs OpenAI's /v1/responses endpoint
+  # and the gateway only speaks /v1/chat/completions today — once that lands
+  # in pagehub-llm-gateway this is a one-line swap to a pro id.
+  - harness: claude-code
+    model: gpt-5.5
+    config:
+      gateway:
+        url: http://localhost:4011
+        auth_token_env: GATEWAY_AUTH_TOKEN
