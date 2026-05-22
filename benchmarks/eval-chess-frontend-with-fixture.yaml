@@ -57,6 +57,15 @@ harnesses:
     model: claude-haiku-4-5
     config:
       effort: xhigh
+  # Sonnet 4.5 (with effort=xhigh -> extended thinking). Third-party agentic-coding
+  # benchmarks score Grok 4.3 at roughly Sonnet 4.5 / thinking level, so this row
+  # also serves as a *proxy* for what a Grok run would cost — multiply this run's
+  # input_tokens by grok-4.3's $1.25/MTok and output_tokens by $2.50/MTok to get
+  # a back-of-envelope Grok cost projection without spending xAI tokens.
+  - harness: claude-code
+    model: claude-sonnet-4-5
+    config:
+      effort: xhigh
   # Frontier OpenAI reasoning model the current gateway can actually reach.
   # Pro tier (gpt-5.5-pro / gpt-5-pro) needs OpenAI's /v1/responses endpoint
   # and the gateway only speaks /v1/chat/completions today — once that lands
