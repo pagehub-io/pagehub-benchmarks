@@ -36,6 +36,13 @@ grader:
     # NOT pagehub-browser (already up on :4010 -> would short-circuit
     # the probe and start grading before `make up` is even ready).
     eval-game-hoppers_url: http://host.docker.internal:8005
+    # The runner ALSO POSTs to pagehub-browser's /v1/admin/reset-sessions
+    # before each attempt — kills the MAX_SESSIONS capacity cascade we saw
+    # on the 2026-05-22 chess-frontend sweep (a leaked-sessions backlog
+    # 503s every subsequent /v1/sessions call). The Bearer token comes
+    # from the runner's environment: PAGEHUB_BROWSER_ADMIN_TOKEN. Unset →
+    # the call is skipped with a warning (no-op fallback for older
+    # pagehub-browser deploys that predate the admin endpoint).
     pagehub-browser_url:   http://host.docker.internal:4010
   # Wait for the rendered game-root element before grading. Same
   # rationale as eval-chess-frontend's `board` testid wait: Vite returns
