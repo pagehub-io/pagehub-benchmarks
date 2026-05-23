@@ -120,10 +120,50 @@ def test_result_record_shape_round_trips(bench_spec, fixed_clock, tmp_path):
     assert set(row) == {
         "attempt", "input_tokens", "output_tokens", "cache_tokens",
         "wall_time_seconds", "grader_passed", "grader_failures",
-        "rendered_prompt",
+        "rendered_prompt", "raw",
     }
     assert row["attempt"] == 1
     assert row["input_tokens"] == 123
+
+
+def test_raw_claude_json_is_persisted_per_attempt(bench_spec, fixed_clock, tmp_path):
+    """Each AttemptRecord carries the full harness response object verbatim,
+    so a future usage-parsing bug can be back-filled without re-running."""
+    raw1 = {
+        "session_id": "abc-123",
+        "is_error": False,
+        "result": "done",
+        "total_cost_usd": 0.42,
+        "usage": {"input_tokens": 7, "output_tokens": 11},
+        "modelUsage": {
+            "claude-opus-4-7": {
+                "inputTokens": 7,
+                "outputTokens": 11,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 0,
+            },
+            "claude-haiku-4-5": {
+                "inputTokens": 200,
+                "outputTokens": 30,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 0,
+            },
+        },
+    }
+    raw2 = {"session_id": "abc-123", "is_error": False, "result": "fixed"}
+    harness = FakeHarness([ar(raw=raw1), ar(raw=raw2)])
+    grader = FakeGrader([gr(False, ["x"]), gr(True)])
+    rec = _run(bench_spec, harness, grader, tmp_path, fixed_clock)
+
+    assert len(rec.per_attempt) == 2
+    # raw preserved verbatim (incl. modelUsage with the sub-agent slice)
+    assert rec.per_attempt[0].raw == raw1
+    assert rec.per_attempt[1].raw == raw2
+    # round-trips through JSON
+    out = rec.write(tmp_path / "results")
+    loaded = json.loads(out.read_text())
+    assert loaded["per_attempt"][0]["raw"] == raw1
+    assert loaded["per_attempt"][1]["raw"] == raw2
 
 
 def test_service_factory_wraps_each_grade(bench_spec, fixed_clock, tmp_path):

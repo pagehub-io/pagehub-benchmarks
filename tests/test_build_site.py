@@ -187,6 +187,43 @@ def test_build_with_rendered_prompt_and_template_vars(tmp_path: Path):
     assert "Fix the code" in run_html
 
 
+def test_build_renders_raw_claude_json_block_per_attempt(tmp_path: Path):
+    """Run records carrying per-attempt ``raw`` (the verbatim claude -p JSON)
+    surface it under a collapsible details block on the run page."""
+    run = dict(SAMPLE_RUN)
+    raw_for_a1 = {
+        "session_id": "sess-1",
+        "is_error": False,
+        "result": "ok",
+        "total_cost_usd": 1.23,
+        "modelUsage": {
+            "claude-opus-4-7": {"inputTokens": 1, "outputTokens": 2},
+            "claude-haiku-4-5": {"inputTokens": 200, "outputTokens": 30},
+        },
+    }
+    run["per_attempt"] = [
+        dict(run["per_attempt"][0], raw=raw_for_a1),
+        dict(run["per_attempt"][1], raw={}),
+    ]
+    results = tmp_path / "results" / "eval-chess-frontend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(run)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    assert "Raw harness JSON" in run_html
+    # The first attempt's raw payload is rendered (collapsed by default).
+    assert "claude-haiku-4-5" in run_html
+    assert "inputTokens" in run_html and "200" in run_html
+    # JSON quotes are HTML-escaped under autoescape (either &#34; or &quot;).
+    assert "&#34;modelUsage&#34;" in run_html or "&quot;modelUsage&quot;" in run_html
+    # Only attempts with non-empty raw render a block.
+    assert run_html.count("raw JSON (") == 1
+
+
 def test_build_without_rendered_prompt_fields_renders_gracefully(tmp_path: Path):
     """Legacy records (no rendered_prompt / template_vars) MUST still render —
     just without the new sections. This guarantees the eval-chess-backend +
@@ -195,9 +232,10 @@ def test_build_without_rendered_prompt_fields_renders_gracefully(tmp_path: Path)
     # Belt-and-braces: ensure the fields are not present at all.
     legacy.pop("rendered_prompt", None)
     legacy.pop("template_vars", None)
-    # Per-attempt rows also have no rendered_prompt key.
+    # Per-attempt rows also have no rendered_prompt / raw keys.
     legacy["per_attempt"] = [
-        {k: v for k, v in row.items() if k != "rendered_prompt"} for row in legacy["per_attempt"]
+        {k: v for k, v in row.items() if k not in ("rendered_prompt", "raw")}
+        for row in legacy["per_attempt"]
     ]
     results = tmp_path / "results" / "eval-chess-backend"
     results.mkdir(parents=True)
@@ -211,6 +249,7 @@ def test_build_without_rendered_prompt_fields_renders_gracefully(tmp_path: Path)
     # New sections suppressed when the record carries no data for them.
     assert "Template vars" not in run_html
     assert "Rendered prompts" not in run_html
+    assert "Raw harness JSON" not in run_html
     # But the rest of the page still rendered (metrics, per-attempt table, etc).
     assert "Per-attempt breakdown" in run_html
     assert "claude-opus-4-7" in run_html

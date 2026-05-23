@@ -262,6 +262,7 @@ def execute_benchmark_run(
                 grader_passed=gr.passed,
                 grader_failures=list(gr.failures),
                 rendered_prompt=sent_prompt,
+                raw=dict(ar.raw) if ar.raw else {},
             )
         )
         if gr.passed:

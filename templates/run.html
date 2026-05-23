@@ -108,6 +108,20 @@
 </tbody>
 </table>
 
+{% set has_raw = r.per_attempt|selectattr('raw_pretty')|list %}
+{% if has_raw %}
+<h2>Raw harness JSON (per attempt)</h2>
+<p class="muted">The full <code>claude -p --output-format json</code> response captured for each attempt — <code>modelUsage</code>, <code>usage</code>, <code>total_cost_usd</code>, <code>session_id</code>, etc. Preserved verbatim so usage-parsing bugs can be back-filled without re-running. Older records (before this feature) won't have it.</p>
+{% for a in r.per_attempt %}
+  {% if a.raw_pretty %}
+  <details class="raw-json">
+    <summary>Attempt {{ a.attempt }} — raw JSON ({{ a.raw_pretty|length }} chars)</summary>
+    <pre class="mono prompt-block">{{ a.raw_pretty }}</pre>
+  </details>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
 {% set has_rendered = r.per_attempt|selectattr('rendered_prompt')|list %}
 {% if has_rendered %}
 <h2>Rendered prompts (per attempt)</h2>

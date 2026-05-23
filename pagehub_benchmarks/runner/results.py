@@ -62,6 +62,13 @@ class AttemptRecord:
     # the runner generates from the prior grader failures. Empty string when
     # the runner didn't capture it (older records).
     rendered_prompt: str = ""
+    # The full JSON the headless harness returned for this attempt
+    # (``claude -p --output-format json``: ``modelUsage``, ``usage``,
+    # ``total_cost_usd``, ``session_id``, etc.) preserved verbatim. Cheap
+    # back-fill insurance: when a usage-parsing bug surfaces (cf. PR #17
+    # ``modelUsage`` fix) we can recompute totals from ``raw`` instead of
+    # re-running. Empty dict on older records.
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
