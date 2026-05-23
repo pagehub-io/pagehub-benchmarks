@@ -1,0 +1,2771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eval-game-hoppers · claude-code claude-opus-4-7 — run</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav><a href="../index.html">pagehub-benchmarks</a> / <a href="../benchmarks/eval-game-hoppers.html">eval-game-hoppers</a> / run</nav>
+<h1>eval-game-hoppers — claude-code <span class="muted">claude-opus-4-7</span></h1>
+<p>
+<span class="pass">PASSED</span>  · attempt 4 of 5
+  · $8.3200 (computed)
+  · 1334s
+  · config <code class="mono">effort=xhigh</code>
+</p>
+
+<h2>Metrics</h2>
+<div class="cards">
+  <div class="card"><h3>Outcome</h3><dl>
+    <dt>passed</dt><dd><span class="pass">✓</span></dd>
+    <dt>attempts</dt><dd>4</dd>
+    <dt>max_attempts</dt><dd>5</dd>
+    <dt>started</dt><dd>2026-05-23T19:58:57.172228Z</dd>
+    <dt>finished</dt><dd>2026-05-23T20:25:21.202618Z</dd>
+  </dl></div>
+  <div class="card"><h3>Tokens</h3><dl>
+    <dt>input</dt><dd>13,059</dd>
+    <dt>output</dt><dd>84,500</dd>
+    <dt>cache</dt><dd>8,521,288</dd>
+    <dt>cost USD</dt><dd>$8.3200</dd>
+    <dt>wall time</dt><dd>1334.2s</dd>
+  </dl></div>
+  <div class="card"><h3>Target</h3><dl>
+    <dt>repo</dt><dd><a href="https://github.com/pagehub-io/eval-game-hoppers">pagehub-io/eval-game-hoppers</a></dd>
+    <dt>start</dt><dd class="mono">empty</dd>
+    <dt>built sha</dt><dd><a href="https://github.com/pagehub-io/eval-game-hoppers/commit/6330f917d072e6c11bfc158c88f494585d07a0e7">6330f917d072</a></dd>
+    <dt>worktree</dt><dd class="mono" title="/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/eval-game-hoppers/claude-code__claude-opus-4-7__effort-xhigh__20260523T195856Z">claude-code__claude-opus-4-7__effort-xhigh__20260523T195856Z</dd>
+  </dl></div>
+</div>
+
+<h2>Built code</h2>
+<div class="cards"><div class="card"><dl>
+    <dt>branch</dt>
+    <dd>
+      <a href="https://github.com/pagehub-io/eval-game-hoppers/tree/bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-23T19-58-57Z"><span class="mono">bench/claude-code/claude-opus-4-7/effort-xhigh/2026-05-23T19-58-57Z</span></a>
+ <span class="pass" title="also pushed to the target's default branch">★ default branch</span>    </dd>
+    <dt>commit</dt>
+    <dd><a href="https://github.com/pagehub-io/eval-game-hoppers/commit/6330f917d072e6c11bfc158c88f494585d07a0e7" class="mono">6330f917d072</a></dd>
+    <dt>pushed at</dt><dd>2026-05-23T20:25:24.909755Z</dd>
+    <dt>browse repo</dt><dd><a href="https://github.com/pagehub-io/eval-game-hoppers">pagehub-io/eval-game-hoppers</a></dd>
+</dl></div></div>
+
+<h2>Template vars</h2>
+<p class="muted">The variables that were substituted into the build prompt at render time. Auto-vars and any custom <code>template_vars</code> declared in the benchmark YAML. Click a row to expand a multi-line value.</p>
+<table class="tvars">
+<thead><tr><th>name</th><th>value</th><th class="num">bytes</th></tr></thead>
+<tbody>
+<tr>
+  <td class="mono">benchmark_name</td>
+  <td>
+      <code class="mono">eval-game-hoppers</code>
+  </td>
+  <td class="num">17</td>
+</tr>
+<tr>
+  <td class="mono">grader_fixture</td>
+  <td>
+      <details><summary class="muted">JSON, 25025 bytes — show</summary>
+        <pre class="mono prompt-block">{
+  &#34;collections&#34;: [
+    {
+      &#34;description&#34;: &#34;Single-tap hopper-game conformance battery for the eval-game-hoppers web app. Drives the game through pagehub-browser and asserts the 5-pillar DOM contract: (1) instant restart, (2) shareable score, (3) content-creator-friendly difficulty, (4) zero install friction, (5) payment via ads — plus gameplay-shape asserts: player species ∈ {kangaroo, rabbit, grasshopper, flea, jerboa} (frog is explicitly forbidden to keep us legally distant from Frogger), data-current-lane increments on tap, deterministic playthrough. Deterministic mode: the grader loads ?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6 — in this mode lanes do not scroll, no obstacles spawn, each tap advances exactly one lane, and game-over fires after 6 successful taps. The ground-truth simulator (in the platform seed file) is trivial under these params: expected data-current-lane after N taps = N. After die-after fires, the grader exercises pillar 2 (share-url contains score=6 and seed=hop-test-001), pillar 5 (interstitial ad slot + dismiss), then pillar 1 (tap on game-root flips state back to playing, score resets to 0). Finally, the grader visits the share URL with a fresh navigate to assert the shared-score-banner renders. Items numbered ~35; well under the 50-item collection cap.&#34;,
+      &#34;items&#34;: [
+        &#34;lifecycle-01-create-session&#34;,
+        &#34;lifecycle-02-navigate&#34;,
+        &#34;p4-zero-install-state-playing&#34;,
+        &#34;p4-no-password-inputs&#34;,
+        &#34;p4-no-email-inputs&#34;,
+        &#34;p4-no-signin-testids&#34;,
+        &#34;p4-no-signup-testids&#34;,
+        &#34;p4-no-login-testids&#34;,
+        &#34;gshape-player-species-allowlisted&#34;,
+        &#34;gshape-initial-current-lane&#34;,
+        &#34;gshape-initial-score&#34;,
+        &#34;p3-difficulty-active-echo&#34;,
+        &#34;p5-ad-slot-banner-exists&#34;,
+        &#34;tap-1-click&#34;,
+        &#34;tap-1-lane-check&#34;,
+        &#34;tap-2-click&#34;,
+        &#34;tap-2-lane-check&#34;,
+        &#34;tap-3-click&#34;,
+        &#34;tap-3-lane-check&#34;,
+        &#34;tap-4-click&#34;,
+        &#34;tap-4-lane-check&#34;,
+        &#34;tap-5-click&#34;,
+        &#34;tap-5-lane-check&#34;,
+        &#34;tap-6-click&#34;,
+        &#34;tap-6-lane-check&#34;,
+        &#34;tap-6-game-state-game-over&#34;,
+        &#34;p2-share-url-contains-score&#34;,
+        &#34;p2-share-url-contains-seed&#34;,
+        &#34;p5-ad-slot-interstitial-exists&#34;,
+        &#34;p5-ad-close-click&#34;,
+        &#34;p1-restart-tap&#34;,
+        &#34;p1-restart-state-playing&#34;,
+        &#34;p1-restart-current-lane-zero&#34;,
+        &#34;p1-restart-score-zero&#34;,
+        &#34;p2-visit-share-url&#34;,
+        &#34;p2-shared-score-banner-visible&#34;,
+        &#34;lifecycle-99-delete-session&#34;
+      ],
+      &#34;name&#34;: &#34;eval-game-hoppers&#34;
+    }
+  ],
+  &#34;environments&#34;: [
+    {
+      &#34;name&#34;: &#34;hoppers-local&#34;,
+      &#34;secrets&#34;: {},
+      &#34;variables&#34;: {
+        &#34;eval-game-hoppers_url&#34;: &#34;http://host.docker.internal:8005&#34;,
+        &#34;pagehub-browser_url&#34;: &#34;http://host.docker.internal:4010&#34;
+      }
+    }
+  ],
+  &#34;requests&#34;: [
+    {
+      &#34;body&#34;: {
+        &#34;headless&#34;: true
+      },
+      &#34;capture&#34;: {
+        &#34;SID&#34;: &#34;$.session_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 201
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-session-201&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-01-create-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-game-hoppers_url}}/?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;navigate-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-02-navigate&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-zero-install-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;playing&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-zero-install-state-playing&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-zero-install-state-playing&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;input[type=&#39;password&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-password-inputs-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-password-inputs-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-password-inputs&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;input[type=&#39;email&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-email-inputs-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-email-inputs-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-email-inputs&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;sign-in&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signin-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signin-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-signin-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;sign-up&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signup-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signup-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-signup-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;login&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-login-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-login-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-login-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid=&#39;player&#39;][data-hopper-species=&#39;kangaroo&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;rabbit&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;grasshopper&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;flea&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;jerboa&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-species-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-species-one-of-five&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-player-species-allowlisted&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-current-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-current-lane-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-initial-current-lane&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;score&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-score-text-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-score-text-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-initial-score&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;difficulty-active&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p3-difficulty-active-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p3-difficulty-active-echo&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p3-difficulty-active-echo&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-slot-banner&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-banner-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-banner-count-1&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-slot-banner-exists&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-1-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-lane-one&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-1-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-2-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;2&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-lane-two&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-2-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-3-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;3&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-lane-three&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-3-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-4-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-lane-four&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-4-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-5-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;5&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-lane-five&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-5-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;6&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-lane-six&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-game-over-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;game-over&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-game-over-state&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-game-state-game-over&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-url&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;share-url&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-share-url-score-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;score=6&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-share-url-contains-score-6&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-share-url-contains-score&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-url&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;share-url&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-share-url-seed-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;seed=hop-test-001&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-share-url-contains-seed-hop-test-001&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-share-url-contains-seed&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-slot-interstitial&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-interstitial-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-interstitial-count-1&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-slot-interstitial-exists&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-close&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-close-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-close-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-tap-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-tap&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-state-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;playing&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-state-playing&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-state-playing&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-lane-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-current-lane-zero&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;score&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-score-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-score-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-score-zero&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-game-hoppers_url}}/?score=6&amp;seed=hop-test-001&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-visit-share-url-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-visit-share-url&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;shared-score-banner&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-shared-banner-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;6&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-shared-banner-shows-score&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-shared-score-banner-visible&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 204
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;delete-session-204&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;DELETE&#34;,
+      &#34;name&#34;: &#34;lifecycle-99-delete-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}&#34;
+    }
+  ],
+  &#34;version&#34;: 1
+}</pre>
+      </details>
+  </td>
+  <td class="num">25,025</td>
+</tr>
+<tr>
+  <td class="mono">pagehub_evals_url</td>
+  <td>
+      <code class="mono">http://localhost:8002</code>
+  </td>
+  <td class="num">21</td>
+</tr>
+<tr>
+  <td class="mono">target_port</td>
+  <td>
+      <code class="mono">8005</code>
+  </td>
+  <td class="num">4</td>
+</tr>
+<tr>
+  <td class="mono">target_repo</td>
+  <td>
+      <code class="mono">git@github.com:pagehub-io/eval-game-hoppers.git</code>
+  </td>
+  <td class="num">47</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Per-attempt breakdown</h2>
+<table>
+<thead><tr>
+  <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
+  <th class="num">wall s</th><th>grader passed?</th><th>grader failures</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="num">1</td>
+  <td class="num">13,012</td>
+  <td class="num">57,893</td>
+  <td class="num">823.7</td>
+  <td><span class="fail">✗</span></td>
+  <td>
+      <details class="failures"><summary>98 failure(s)</summary>
+        <ul><li class="mono">lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}</li><li class="mono">lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}</li><li class="mono">p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}</li></ul>
+      </details>
+  </td>
+</tr>
+<tr>
+  <td class="num">2</td>
+  <td class="num">16</td>
+  <td class="num">9,239</td>
+  <td class="num">141.3</td>
+  <td><span class="fail">✗</span></td>
+  <td>
+      <details class="failures"><summary>98 failure(s)</summary>
+        <ul><li class="mono">lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}</li><li class="mono">lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}</li><li class="mono">p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}</li></ul>
+      </details>
+  </td>
+</tr>
+<tr>
+  <td class="num">3</td>
+  <td class="num">9</td>
+  <td class="num">3,036</td>
+  <td class="num">59.3</td>
+  <td><span class="fail">✗</span></td>
+  <td>
+      <details class="failures"><summary>98 failure(s)</summary>
+        <ul><li class="mono">lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}</li><li class="mono">lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}</li><li class="mono">p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}</li><li class="mono">tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}</li><li class="mono">p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}</li><li class="mono">p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}</li><li class="mono">p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}</li><li class="mono">p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}</li><li class="mono">p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}</li><li class="mono">lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]</li><li class="mono">lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}</li></ul>
+      </details>
+  </td>
+</tr>
+<tr>
+  <td class="num">4</td>
+  <td class="num">22</td>
+  <td class="num">14,332</td>
+  <td class="num">309.8</td>
+  <td><span class="pass">✓</span></td>
+  <td>
+<span class="muted">none</span>  </td>
+</tr>
+</tbody>
+</table>
+
+<h2>Rendered prompts (per attempt)</h2>
+<p class="muted">Attempt 1 carries the full rendered build prompt sent to the harness (with all <code>{{ … }}</code> already substituted). Attempts 2+ carry the failure-summary follow-up the runner generated from the prior grader failures. Collapsed by default — these get long.</p>
+  <details class="rendered-prompt">
+    <summary>Attempt 1 — 38155 chars (build prompt)</summary>
+    <pre class="mono prompt-block">Build a **single-tap hopper web game** as a pure-frontend TypeScript
+application. It runs on **port 8005** (port 8003 is reserved for
+eval-chess-backend, 8004 for eval-chess-frontend; pick 8005). No backend
+— all state lives in the browser, no database, no API server, no auth.
+
+== THE EVAL THAT WILL GRADE YOUR BUILD ==
+The grader is the FixtureBundle below. Every request will be made
+against your service in this exact order with these exact assertions.
+Build the contract that satisfies these requests verbatim; do not add
+fields beyond what they read; do not change DOM testids or attribute
+names.
+
+```json
+{
+  &#34;collections&#34;: [
+    {
+      &#34;description&#34;: &#34;Single-tap hopper-game conformance battery for the eval-game-hoppers web app. Drives the game through pagehub-browser and asserts the 5-pillar DOM contract: (1) instant restart, (2) shareable score, (3) content-creator-friendly difficulty, (4) zero install friction, (5) payment via ads — plus gameplay-shape asserts: player species ∈ {kangaroo, rabbit, grasshopper, flea, jerboa} (frog is explicitly forbidden to keep us legally distant from Frogger), data-current-lane increments on tap, deterministic playthrough. Deterministic mode: the grader loads ?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6 — in this mode lanes do not scroll, no obstacles spawn, each tap advances exactly one lane, and game-over fires after 6 successful taps. The ground-truth simulator (in the platform seed file) is trivial under these params: expected data-current-lane after N taps = N. After die-after fires, the grader exercises pillar 2 (share-url contains score=6 and seed=hop-test-001), pillar 5 (interstitial ad slot + dismiss), then pillar 1 (tap on game-root flips state back to playing, score resets to 0). Finally, the grader visits the share URL with a fresh navigate to assert the shared-score-banner renders. Items numbered ~35; well under the 50-item collection cap.&#34;,
+      &#34;items&#34;: [
+        &#34;lifecycle-01-create-session&#34;,
+        &#34;lifecycle-02-navigate&#34;,
+        &#34;p4-zero-install-state-playing&#34;,
+        &#34;p4-no-password-inputs&#34;,
+        &#34;p4-no-email-inputs&#34;,
+        &#34;p4-no-signin-testids&#34;,
+        &#34;p4-no-signup-testids&#34;,
+        &#34;p4-no-login-testids&#34;,
+        &#34;gshape-player-species-allowlisted&#34;,
+        &#34;gshape-initial-current-lane&#34;,
+        &#34;gshape-initial-score&#34;,
+        &#34;p3-difficulty-active-echo&#34;,
+        &#34;p5-ad-slot-banner-exists&#34;,
+        &#34;tap-1-click&#34;,
+        &#34;tap-1-lane-check&#34;,
+        &#34;tap-2-click&#34;,
+        &#34;tap-2-lane-check&#34;,
+        &#34;tap-3-click&#34;,
+        &#34;tap-3-lane-check&#34;,
+        &#34;tap-4-click&#34;,
+        &#34;tap-4-lane-check&#34;,
+        &#34;tap-5-click&#34;,
+        &#34;tap-5-lane-check&#34;,
+        &#34;tap-6-click&#34;,
+        &#34;tap-6-lane-check&#34;,
+        &#34;tap-6-game-state-game-over&#34;,
+        &#34;p2-share-url-contains-score&#34;,
+        &#34;p2-share-url-contains-seed&#34;,
+        &#34;p5-ad-slot-interstitial-exists&#34;,
+        &#34;p5-ad-close-click&#34;,
+        &#34;p1-restart-tap&#34;,
+        &#34;p1-restart-state-playing&#34;,
+        &#34;p1-restart-current-lane-zero&#34;,
+        &#34;p1-restart-score-zero&#34;,
+        &#34;p2-visit-share-url&#34;,
+        &#34;p2-shared-score-banner-visible&#34;,
+        &#34;lifecycle-99-delete-session&#34;
+      ],
+      &#34;name&#34;: &#34;eval-game-hoppers&#34;
+    }
+  ],
+  &#34;environments&#34;: [
+    {
+      &#34;name&#34;: &#34;hoppers-local&#34;,
+      &#34;secrets&#34;: {},
+      &#34;variables&#34;: {
+        &#34;eval-game-hoppers_url&#34;: &#34;http://host.docker.internal:8005&#34;,
+        &#34;pagehub-browser_url&#34;: &#34;http://host.docker.internal:4010&#34;
+      }
+    }
+  ],
+  &#34;requests&#34;: [
+    {
+      &#34;body&#34;: {
+        &#34;headless&#34;: true
+      },
+      &#34;capture&#34;: {
+        &#34;SID&#34;: &#34;$.session_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 201
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-session-201&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-01-create-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-game-hoppers_url}}/?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;navigate-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;lifecycle-02-navigate&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-zero-install-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;playing&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-zero-install-state-playing&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-zero-install-state-playing&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;input[type=&#39;password&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-password-inputs-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-password-inputs-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-password-inputs&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;input[type=&#39;email&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-email-inputs-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-email-inputs-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-email-inputs&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;sign-in&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signin-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signin-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-signin-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;sign-up&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signup-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-signup-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-signup-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid*=&#39;login&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-login-testids-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 0,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p4-no-login-testids-count-0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p4-no-login-testids&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;css&#34;,
+          &#34;value&#34;: &#34;[data-testid=&#39;player&#39;][data-hopper-species=&#39;kangaroo&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;rabbit&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;grasshopper&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;flea&#39;], [data-testid=&#39;player&#39;][data-hopper-species=&#39;jerboa&#39;]&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-species-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-species-one-of-five&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-player-species-allowlisted&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-current-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-current-lane-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-initial-current-lane&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;score&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;gshape-score-text-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;gshape-score-text-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;gshape-initial-score&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;difficulty-active&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p3-difficulty-active-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p3-difficulty-active-echo&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p3-difficulty-active-echo&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-slot-banner&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-banner-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-banner-count-1&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-slot-banner-exists&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-1-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-1-lane-one&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-1-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-2-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;2&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-2-lane-two&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-2-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-3-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;3&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-3-lane-three&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-3-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-4-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-4-lane-four&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-4-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-5-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;5&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-5-lane-five&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-5-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-click-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;6&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-lane-six&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-lane-check&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-game-over-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;game-over&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;tap-6-game-over-state&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;tap-6-game-state-game-over&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-url&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;share-url&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-share-url-score-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;score=6&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-share-url-contains-score-6&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-share-url-contains-score&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-url&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;share-url&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-share-url-seed-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;seed=hop-test-001&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-share-url-contains-seed-hop-test-001&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-share-url-contains-seed&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-slot-interstitial&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-interstitial-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 1,
+            &#34;path&#34;: &#34;$.count&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-interstitial-count-1&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-slot-interstitial-exists&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/find&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;ad-close&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p5-ad-close-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p5-ad-close-click&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-tap-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-tap&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/click&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-game-state&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;game-root&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-state-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;playing&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-state-playing&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-state-playing&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;attribute&#34;: &#34;data-current-lane&#34;,
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;player&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-lane-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-lane-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-current-lane-zero&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-attribute&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;score&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-score-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;0&#34;,
+            &#34;path&#34;: &#34;$.text&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;p1-restart-score-zero&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p1-restart-score-zero&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;url&#34;: &#34;{{eval-game-hoppers_url}}/?score=6&amp;seed=hop-test-001&#34;,
+        &#34;wait_until&#34;: &#34;networkidle&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-visit-share-url-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-visit-share-url&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/navigate&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;locator&#34;: {
+          &#34;strategy&#34;: &#34;testid&#34;,
+          &#34;value&#34;: &#34;shared-score-banner&#34;
+        }
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;p2-shared-banner-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;6&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;p2-shared-banner-shows-score&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;p2-shared-score-banner-visible&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}/get-text&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 204
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;delete-session-204&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;DELETE&#34;,
+      &#34;name&#34;: &#34;lifecycle-99-delete-session&#34;,
+      &#34;url&#34;: &#34;{{pagehub-browser_url}}/v1/sessions/{{SID}}&#34;
+    }
+  ],
+  &#34;version&#34;: 1
+}
+```
+== END EVAL ==
+
+## The game
+
+Inspired by Crossy Road and Frogger, **not a clone of either**. The
+player is a &#34;hopper&#34; that auto-faces forward. Gameplay:
+
+- Lane-hopping endless game. The playfield scrolls; the player advances
+  forward one lane per tap.
+- **Single-tap input**: a tap (mouse click / touch) **anywhere** on
+  `[data-testid=&#34;game-root&#34;]`, OR a click on a dedicated
+  `[data-testid=&#34;hop&#34;]` zone, OR pressing Space on desktop, all do
+  exactly the same thing: hop forward one lane. No other input. No
+  swipes, no arrow keys, no D-pad.
+- Lanes scroll left or right with obstacles themed to the species.
+  Mis-time the hop → collide / fall → game over.
+- **Score = number of lanes successfully crossed since start.**
+- Game over → instant restart on the next tap (no menu, no dialog
+  blocking the restart).
+
+### Species (PICK ONE — and explicitly NOT a frog)
+
+The hopper species the grader will accept must be **exactly one of**:
+
+| species      | setting               | obstacles / hazards                                   |
+|--------------|-----------------------|-------------------------------------------------------|
+| kangaroo     | outback desert        | jeeps in road lanes, drying riverbeds as gaps         |
+| rabbit       | suburban street       | cars + bikes in road lanes, storm drains as gaps      |
+| grasshopper  | lawn                  | lawnmower blades + sprinklers + gardener sandals      |
+| flea         | a row of dogs in a park (each dog = one &#34;lane&#34;) | hopping between scratching dogs |
+| jerboa       | sand dunes            | sand-snakes + camel feet + dune-edge falls            |
+
+**Hard guardrail — DO NOT BUILD A FROG GAME.** No frog. No toad. No
+amphibian. No lily-pads. No &#34;crossing the road to reach a swamp.&#34; This
+is a Frogger-distant build deliberately; we don&#39;t want the legal
+similarity. Pick one of the five species above and theme the entire
+build around it.
+
+You also need to write the chosen species into `[data-testid=&#34;player&#34;]`
+as `data-hopper-species=&#34;&lt;species&gt;&#34;`. The grader asserts this is one
+of the five names above with a CSS allowlist; a frog will fail the
+fixture outright.
+
+The README in eval-game-hoppers documents which species this build
+picked, so the next build can pick a different one.
+
+## The 5 pillars — DOM contract (load-bearing — the grader binds to it)
+
+The grader is **pagehub-browser-driven**: it loads the page, clicks /
+types by `data-testid`, calls `find` with CSS selectors to assert
+counts, and reads attributes off elements.
+
+### Pillar 1 — Instant restart
+
+```
+&lt;div data-testid=&#34;game-root&#34; data-game-state=&#34;playing|game-over&#34;&gt; ... &lt;/div&gt;
+&lt;div data-testid=&#34;game-state&#34;&gt;playing|game-over&lt;/div&gt;      &lt;!-- text matches data-game-state --&gt;
+&lt;div data-testid=&#34;restart-hint&#34;&gt;Tap to restart&lt;/div&gt;       &lt;!-- optional UX cue; not load-bearing --&gt;
+```
+
+- `data-game-state` on `[data-testid=&#34;game-root&#34;]` is the **single
+  source of truth** for game state. It reads **exactly** `&#34;playing&#34;`
+  or `&#34;game-over&#34;` — no other values. No `&#34;menu&#34;`, no `&#34;paused&#34;`, no
+  `&#34;ready&#34;`.
+- `[data-testid=&#34;game-state&#34;]` is a separate element whose **text
+  content** mirrors that value (`&#34;playing&#34;` or `&#34;game-over&#34;`). The
+  grader may read either; keep them in sync.
+- After game-over, **any** tap / click on `[data-testid=&#34;game-root&#34;]`
+  flips `data-game-state` back to `&#34;playing&#34;` within 200 ms, the score
+  resets to `0`, the player snaps back to `data-current-lane=&#34;0&#34;`.
+- `[data-testid=&#34;restart-hint&#34;]` MAY show &#34;Tap to restart&#34; or similar
+  — purely for UX. The grader does not assert on it.
+
+### Pillar 2 — Shareable score
+
+```
+&lt;a data-testid=&#34;share-url&#34; data-url=&#34;https://&lt;host&gt;/?score=&lt;N&gt;&amp;seed=&lt;S&gt;&#34;&gt;Share&lt;/a&gt;
+&lt;div data-testid=&#34;shared-score-banner&#34;&gt;You scored 6 on seed hop-test-001&lt;/div&gt;
+&lt;button data-testid=&#34;play&#34;&gt;Play&lt;/button&gt;
+```
+
+- On game-over, `[data-testid=&#34;share-url&#34;]` carries the full
+  shareable URL in its **`data-url` attribute** (NOT just `href`; the
+  grader reads `data-url` so there&#39;s no ambiguity about anchor
+  semantics). Shape: `https://&lt;host&gt;/?score=&lt;N&gt;&amp;seed=&lt;S&gt;` where N is
+  the score just achieved and S is the seed used for that run.
+- Visiting that URL in a **fresh navigate** (no auto-play) renders
+  `[data-testid=&#34;shared-score-banner&#34;]` whose **text content includes
+  the score** (the grader greps for the score digit in the banner&#39;s
+  text). A `[data-testid=&#34;play&#34;]` button starts a fresh run with the
+  same seed.
+- The URL must be **copy-paste-shareable** — no auth, no JS-only
+  state, no fragment that breaks on copy.
+
+### Pillar 3 — Content-creator-friendly difficulty
+
+URL params override defaults:
+
+| param          | default | effect                                                         |
+|----------------|---------|----------------------------------------------------------------|
+| `?lane-speed`  | `1.0`   | multiplier on lane scroll speed                                |
+| `?lane-density`| `0.5`   | fraction of lane cells that spawn an obstacle                  |
+| `?seed`        | random RFC-friendly token (e.g. `hop-9f2a`) | RNG seed for lane layout / obstacle placement |
+
+- `[data-testid=&#34;difficulty-active&#34;]` reads back the active values as
+  text content, exact format:
+
+  ```
+  lane-speed=&lt;value&gt;|lane-density=&lt;value&gt;|seed=&lt;value&gt;
+  ```
+
+  using the **literal URL-param values verbatim** (no float
+  re-formatting). So `?lane-speed=0&amp;lane-density=0&amp;seed=hop-test-001`
+  yields `&#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;`. The
+  grader parses this string with that pipe-separated format.
+
+- `?creator=1` reveals `[data-testid=&#34;creator-panel&#34;]` containing
+  sliders that two-way-bind to `lane-speed` and `lane-density`.
+  Changing a slider updates the URL hash; a reload preserves the
+  values. (The fixture does not assert this; the prompt requires it.)
+
+### Pillar 4 — Zero install friction
+
+- Page load → `[data-game-state]` reaches `&#34;playing&#34;` within 2 s. No
+  modal, no dialog, no permission prompt, no &#34;install&#34; card, no
+  cookie banner — nothing to dismiss before the game starts.
+- The DOM contains **zero** elements matching any of the
+  auth-shaped selectors (the grader asserts `count == 0` on each):
+  - `[data-testid*=&#34;sign-in&#34;]`
+  - `[data-testid*=&#34;sign-up&#34;]`
+  - `[data-testid*=&#34;login&#34;]`
+  - `input[type=&#34;password&#34;]`
+  - `input[type=&#34;email&#34;]`
+
+  Pure anonymous play. No registration, no email gate, no &#34;guest
+  mode&#34; toggle — just the game.
+
+### Pillar 5 — Payment via ads
+
+```
+&lt;div data-testid=&#34;ad-slot-banner&#34;
+     style=&#34;width: 320px; height: 50px; ...&#34;&gt;AD SLOT (320x50 banner)&lt;/div&gt;
+
+&lt;!-- on game-over only --&gt;
+&lt;div data-testid=&#34;ad-slot-interstitial&#34;
+     style=&#34;width: 300px; height: 250px; ...&#34;&gt;
+  AD SLOT (300x250 medium rectangle)
+  &lt;button data-testid=&#34;ad-close&#34;&gt;Close ad&lt;/button&gt;
+&lt;/div&gt;
+```
+
+- `[data-testid=&#34;ad-slot-banner&#34;]` exists **while playing**. Visible
+  placeholder div labeled `&#34;AD SLOT (320x50 banner)&#34;` in dev mode.
+  Valid IAB-standard dimensions (`320x50` mobile banner OR `728x90`
+  leaderboard).
+- `[data-testid=&#34;ad-slot-interstitial&#34;]` appears **on game-over**,
+  between runs. `[data-testid=&#34;ad-close&#34;]` is a button that dismisses
+  it and reveals the restart hint. Valid IAB dimensions
+  (`300x250` medium rectangle OR a full-screen container).
+- **No real ad code loaded** — these are placeholders. Real ad
+  provider integration is a documented v2 follow-up; v1 just proves
+  the integration points exist at the right shape.
+
+### Gameplay shape (theme-agnostic)
+
+- `[data-testid=&#34;player&#34;]` exists with `data-hopper-species=&#34;&lt;one of
+  the 5 species above&gt;&#34;` and `data-current-lane=&#34;&lt;int&gt;&#34;`.
+- `[data-testid=&#34;lane-&lt;index&gt;&#34;]` for each visible lane (numbered
+  relative to the player; lane 0 = the lane the player currently
+  occupies).
+- `[data-testid=&#34;obstacle-&lt;lane&gt;-&lt;n&gt;&#34;]` for each visible obstacle in
+  each lane.
+- `[data-current-lane]` on the player matches the lane the player
+  currently occupies (zero-indexed; starts at `0`; increments by 1
+  for each successful hop).
+- `[data-testid=&#34;score&#34;]` is an element whose **text content** is the
+  current score (a non-negative integer, no commas / formatting).
+- `[data-score]` attribute somewhere on the document MAY mirror the
+  same value; not asserted by the fixture but a useful convention.
+
+## Deterministic playthrough mode
+
+A real-time arcade game is **flaky to grade** — requestAnimationFrame
+jitter, network races, etc. The grader sidesteps this with a
+deterministic mode:
+
+- URL params `?deterministic=1` puts the game in **JS-loop-driven**
+  mode (no rAF; the game tick advances **only on tap**, not on a
+  timer). Every tap is one tick.
+- Combined with `?lane-speed=0&amp;lane-density=0`: lanes do NOT scroll,
+  NO obstacles spawn, each tap advances exactly one lane. Score
+  equals tap count.
+- URL param `?die-after=N` (deterministic-mode-only) forces a
+  game-over **right after the Nth successful tap**. This is the
+  test affordance the grader uses to assert pillar 1 (instant
+  restart) and pillar 2 (shareable score) and pillar 5 (interstitial
+  ad) without needing the simulator to predict a collision.
+
+The grader&#39;s deterministic playthrough loads
+`?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6`,
+clicks `[data-testid=&#34;game-root&#34;]` six times, and asserts
+`data-current-lane` reads `&#34;1&#34;`, `&#34;2&#34;`, ..., `&#34;6&#34;` after each tap,
+then `data-game-state=&#34;game-over&#34;` and `[data-testid=&#34;share-url&#34;]`&#39;s
+`data-url` contains `score=6` and `seed=hop-test-001`.
+
+`?deterministic=1` and `?die-after=N` MUST be honored exactly; **all
+other modes (normal real-time play, the creator panel, sharing) must
+still work without them.** The deterministic mode is a test surface,
+not the default behavior.
+
+## What the grader will do (so you can mentally simulate it)
+
+The grader (pagehub-evals, driven by pagehub-browser) will:
+
+
+1. `POST {{pagehub-browser_url}}/v1/sessions` — open a headless
+   browser session.
+2. `POST .../navigate` body
+   `{url: &#34;{{eval-game-hoppers_url}}/?seed=hop-test-001&amp;lane-speed=0&amp;lane-density=0&amp;deterministic=1&amp;die-after=6&#34;}`.
+
+3. Read `data-game-state` off `[data-testid=&#34;game-root&#34;]` → expect
+   `&#34;playing&#34;` (pillar 4).
+4. `POST .../find` with `input[type=&#34;password&#34;]`, `input[type=&#34;email&#34;]`,
+   `[data-testid*=&#34;sign-in&#34;]`, `[data-testid*=&#34;sign-up&#34;]`,
+   `[data-testid*=&#34;login&#34;]` → expect `count == 0` for each (pillar 4).
+5. `POST .../find` with the 5-way comma-OR&#39;d species CSS allowlist
+   → expect `count == 1` (gameplay shape — the player exists and
+   carries one of the five species).
+6. Read `data-current-lane` off `[data-testid=&#34;player&#34;]` → expect
+   `&#34;0&#34;`. Read text of `[data-testid=&#34;score&#34;]` → expect `&#34;0&#34;`.
+7. Read text of `[data-testid=&#34;difficulty-active&#34;]` → expect
+   `&#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;` (pillar 3).
+8. `POST .../find` with `[data-testid=&#34;ad-slot-banner&#34;]` → expect
+   `count == 1` (pillar 5).
+9. Tap-loop ×6: `POST .../click` on `[data-testid=&#34;game-root&#34;]`,
+   then read `data-current-lane` → expect `&#34;1&#34;`, `&#34;2&#34;`, ..., `&#34;6&#34;`.
+   After the 6th tap, `die-after=6` fires: read `data-game-state` on
+   `[data-testid=&#34;game-root&#34;]` → expect `&#34;game-over&#34;`.
+10. Read `data-url` off `[data-testid=&#34;share-url&#34;]` → expect the
+    response body to contain `score=6` and `seed=hop-test-001`
+    substrings (pillar 2).
+11. `POST .../find` with `[data-testid=&#34;ad-slot-interstitial&#34;]` →
+    expect `count == 1`. Click `[data-testid=&#34;ad-close&#34;]` (pillar 5).
+12. Click `[data-testid=&#34;game-root&#34;]` → restart. Assert
+    `data-game-state` flips back to `&#34;playing&#34;`, `data-current-lane`
+    resets to `&#34;0&#34;`, score text resets to `&#34;0&#34;` (pillar 1).
+13. Navigate to `?score=6&amp;seed=hop-test-001` (pillar 2 banner check)
+    → read text of `[data-testid=&#34;shared-score-banner&#34;]` → expect
+    the text to contain `&#34;6&#34;`.
+14. `DELETE .../sessions/&lt;sid&gt;` — tear down.
+
+## Stack &amp; layout
+
+- **Vite + TypeScript** (strict mode, no `any` types). React is fine
+  but not required — any framework or vanilla TS is OK as long as
+  the DOM contract is met.
+- A `Makefile` with `make up` (serve on `:8005`) and `make test`
+  (run any unit tests you write).
+- A `docker-compose.yml` that runs the app on `:8005`.
+- A `package.json` with build / serve scripts.
+- A `README.md` documenting:
+  - which species was picked (so the next build can pick a different
+    one);
+  - the deterministic-mode contract (`?deterministic=1`, `?die-after=N`)
+    as a documented test surface;
+  - that the ad slots are placeholders and real provider integration
+    is a v2 follow-up.
+
+Build it, get any tests you write passing — that is all.</pre>
+  </details>
+  <details class="rendered-prompt">
+    <summary>Attempt 2 — 12071 chars (retry follow-up)</summary>
+    <pre class="mono prompt-block">The conformance evals are still failing:
+
+- lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}
+- lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}
+- tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}
+- tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}
+- tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}
+- tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}
+- tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}
+- tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}
+- p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}
+- p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}
+
+Fix the code so every eval passes. Build it, get the tests passing — that is all.</pre>
+  </details>
+  <details class="rendered-prompt">
+    <summary>Attempt 3 — 12071 chars (retry follow-up)</summary>
+    <pre class="mono prompt-block">The conformance evals are still failing:
+
+- lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}
+- lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}
+- tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}
+- tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}
+- tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}
+- tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}
+- tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}
+- tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}
+- p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}
+- p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}
+
+Fix the code so every eval passes. Build it, get the tests passing — that is all.</pre>
+  </details>
+  <details class="rendered-prompt">
+    <summary>Attempt 4 — 12071 chars (retry follow-up)</summary>
+    <pre class="mono prompt-block">The conformance evals are still failing:
+
+- lifecycle-01-create-session :: create-session-201 [status_eq] failed: {&#34;expected&#34;: 201, &#34;observed&#34;: 503}
+- lifecycle-02-navigate (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-02-navigate :: navigate-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p4-zero-install-state-playing :: p4-zero-install-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-zero-install-state-playing :: p4-zero-install-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p4-no-password-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-password-inputs :: p4-no-password-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-password-inputs :: p4-no-password-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-email-inputs (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-email-inputs :: p4-no-email-inputs-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-email-inputs :: p4-no-email-inputs-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signin-testids :: p4-no-signin-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signin-testids :: p4-no-signin-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-signup-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-signup-testids :: p4-no-signup-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-signup-testids :: p4-no-signup-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p4-no-login-testids (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p4-no-login-testids :: p4-no-login-testids-count-0 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 0, &#34;observed&#34;: null}
+- p4-no-login-testids :: p4-no-login-testids-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- gshape-player-species-allowlisted :: gshape-species-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-player-species-allowlisted :: gshape-species-one-of-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- gshape-initial-current-lane (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-current-lane :: gshape-current-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-current-lane :: gshape-current-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- gshape-initial-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- gshape-initial-score :: gshape-score-text-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- gshape-initial-score :: gshape-score-text-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p3-difficulty-active-echo :: p3-difficulty-active-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p3-difficulty-active-echo :: p3-difficulty-active-echo [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;lane-speed=0|lane-density=0|seed=hop-test-001&#34;, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-banner-exists :: p5-ad-banner-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-banner-exists :: p5-ad-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-1-click :: tap-1-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-1-lane-check :: tap-1-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-1-lane-check :: tap-1-lane-one [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;1&#34;, &#34;observed&#34;: null}
+- tap-2-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-2-click :: tap-2-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-2-lane-check :: tap-2-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-2-lane-check :: tap-2-lane-two [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;2&#34;, &#34;observed&#34;: null}
+- tap-3-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-3-click :: tap-3-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-3-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-3-lane-check :: tap-3-lane-three [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;3&#34;, &#34;observed&#34;: null}
+- tap-3-lane-check :: tap-3-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-4-click :: tap-4-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-4-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-4-lane-check :: tap-4-lane-four [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;4&#34;, &#34;observed&#34;: null}
+- tap-4-lane-check :: tap-4-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-5-click :: tap-5-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-5-lane-check :: tap-5-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-5-lane-check :: tap-5-lane-five [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;5&#34;, &#34;observed&#34;: null}
+- tap-6-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- tap-6-click :: tap-6-click-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-lane-check (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-lane-check :: tap-6-lane-six [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;6&#34;, &#34;observed&#34;: null}
+- tap-6-lane-check :: tap-6-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- tap-6-game-state-game-over :: tap-6-game-over-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- tap-6-game-state-game-over :: tap-6-game-over-state [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;game-over&#34;, &#34;observed&#34;: null}
+- p2-share-url-contains-score (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-score :: p2-share-url-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-share-url-contains-score :: p2-share-url-contains-score-6 [body_contains] failed: {&#34;needle&#34;: &#34;score=6&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p2-share-url-contains-seed :: p2-share-url-contains-seed-hop-test-001 [body_contains] failed: {&#34;needle&#34;: &#34;seed=hop-test-001&#34;, &#34;present&#34;: false}
+- p2-share-url-contains-seed :: p2-share-url-seed-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-slot-interstitial-exists (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/find): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-count-1 [json_path_eq] failed: {&#34;path&#34;: &#34;$.count&#34;, &#34;missing&#34;: true, &#34;expected&#34;: 1, &#34;observed&#34;: null}
+- p5-ad-slot-interstitial-exists :: p5-ad-interstitial-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p5-ad-close-click (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p5-ad-close-click :: p5-ad-close-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-tap (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/click): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-tap :: p1-restart-tap-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-state-playing :: p1-restart-state-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-state-playing :: p1-restart-state-playing [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;playing&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-attribute): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-current-lane-zero :: p1-restart-lane-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-current-lane-zero :: p1-restart-lane-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p1-restart-score-zero (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p1-restart-score-zero :: p1-restart-score-zero [json_path_eq] failed: {&#34;path&#34;: &#34;$.text&#34;, &#34;missing&#34;: true, &#34;expected&#34;: &#34;0&#34;, &#34;observed&#34;: null}
+- p1-restart-score-zero :: p1-restart-score-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-visit-share-url (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/navigate): unresolved template vars: [&#39;SID&#39;]
+- p2-visit-share-url :: p2-visit-share-url-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- p2-shared-score-banner-visible (POST http://host.docker.internal:4010/v1/sessions/{{SID}}/get-text): unresolved template vars: [&#39;SID&#39;]
+- p2-shared-score-banner-visible :: p2-shared-banner-shows-score [body_contains] failed: {&#34;needle&#34;: &#34;6&#34;, &#34;present&#34;: false}
+- p2-shared-score-banner-visible :: p2-shared-banner-200 [status_eq] failed: {&#34;expected&#34;: 200, &#34;observed&#34;: 404}
+- lifecycle-99-delete-session (DELETE http://host.docker.internal:4010/v1/sessions/{{SID}}): unresolved template vars: [&#39;SID&#39;]
+- lifecycle-99-delete-session :: delete-session-204 [status_eq] failed: {&#34;expected&#34;: 204, &#34;observed&#34;: 404}
+
+Fix the code so every eval passes. Build it, get the tests passing — that is all.</pre>
+  </details>
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Target repo: <a href="https://github.com/pagehub-io/eval-game-hoppers">https://github.com/pagehub-io/eval-game-hoppers</a></li>
+<li>Built code commit: <a href="https://github.com/pagehub-io/eval-game-hoppers/commit/6330f917d072e6c11bfc158c88f494585d07a0e7">https://github.com/pagehub-io/eval-game-hoppers/commit/6330f917d072e6c11bfc158c88f494585d07a0e7</a></li>  <li>Benchmark definition: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/benchmarks/eval-game-hoppers.yaml">benchmarks/eval-game-hoppers.yaml</a></li>
+  <li>Build prompt: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/prompts/eval-game-hoppers.md">prompts/eval-game-hoppers.md</a></li>
+  <li>Grader fixture bundle: <a href="https://github.com/pagehub-io/pagehub-evals/blob/main/fixtures/eval-game-hoppers.json">fixtures/eval-game-hoppers.json</a> (pagehub-evals)</li>
+  <li>Raw run record (JSON): <a href="../results/eval-game-hoppers/claude-code__claude-opus-4-7__effort-xhigh__2026-05-23T19-58-57Z.json">results/eval-game-hoppers/claude-code__claude-opus-4-7__effort-xhigh__2026-05-23T19-58-57Z.json</a></li>
+</ul>
+<footer>
+Generated by <code>tools/build_site.py</code> from <code>results/**/*.json</code>.
+<code>cost_usd</code> is a computed figure (summed tokens &times; <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/pricing.yaml">pricing.yaml</a>) — what a run would cost at API rates, not an actual bill (runs execute on the Claude CLI's subscription auth).
+</footer>
+</body>
+</html>
