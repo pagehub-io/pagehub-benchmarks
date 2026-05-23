@@ -262,9 +262,15 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         rec.setdefault("template_vars", {})
         rec["template_var_rows"] = _template_var_rows(rec.get("template_vars") or {})
         # Per-attempt rendered_prompt is also opt-in; default to empty string
-        # so the template can `{% if a.rendered_prompt %}` it.
+        # so the template can `{% if a.rendered_prompt %}` it. Same for
+        # ``raw`` (the full claude -p JSON object): legacy records lack it.
         for a in rec.get("per_attempt") or []:
             a.setdefault("rendered_prompt", "")
+            a.setdefault("raw", None)
+            raw = a.get("raw")
+            a["raw_pretty"] = (
+                json.dumps(raw, indent=2, sort_keys=True) if raw else ""
+            )
         runs.append(rec)
     # newest first
     runs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)

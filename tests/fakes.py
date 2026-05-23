@@ -69,6 +69,7 @@ def ar(
     session_handle: str = "sess-1",
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
+    raw: dict | None = None,
 ) -> AttemptResult:
     return AttemptResult(
         input_tokens=input_tokens,
@@ -77,6 +78,7 @@ def ar(
         session_handle=session_handle,
         cache_creation_tokens=cache_creation_tokens,
         cache_read_tokens=cache_read_tokens,
+        raw=raw or {},
     )
 
 
