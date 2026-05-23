@@ -32,6 +32,13 @@ grader:
     # NOT pagehub-browser (already up on :4010 → would short-circuit the
     # probe and start grading before `make up` is even ready).
     eval-chess-frontend_url: http://host.docker.internal:8004
+    # The runner ALSO POSTs to pagehub-browser's /v1/admin/reset-sessions
+    # before each attempt (kills the MAX_SESSIONS capacity cascade that
+    # tanked the 2026-05-22 sweep — a leaked-sessions backlog from a prior
+    # run / attempt 503s every subsequent /v1/sessions call). The Bearer
+    # token comes from the runner's environment: PAGEHUB_BROWSER_ADMIN_TOKEN.
+    # Unset → the call is skipped with a warning (no-op fallback so an
+    # older pagehub-browser without the admin endpoint still works).
     pagehub-browser_url:     http://host.docker.internal:4010
   # Stronger readiness signal than the HTTP /health probe (Vite returns 200
   # the moment it binds, well before React hydrates). Before grading starts,

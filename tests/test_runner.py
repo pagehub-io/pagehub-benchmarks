@@ -6,7 +6,11 @@ import json
 
 import pytest
 
-from pagehub_benchmarks.runner.run import build_followup_prompt, execute_benchmark_run
+from pagehub_benchmarks.runner.run import (
+    build_followup_prompt,
+    execute_benchmark_run,
+    reset_pagehub_browser_sessions,
+)
 from tests.conftest import TEST_PRICING
 from tests.fakes import FakeFixtureFetcher, FakeGrader, FakeHarness, ar, gr
 
@@ -212,6 +216,111 @@ def test_unknown_model_is_an_error(bench_spec, fixed_clock, tmp_path):
             fixture_fetcher=FakeFixtureFetcher(),
             clock=fixed_clock,
         )
+
+
+def test_reset_browser_sessions_fires_per_attempt(bench_spec, fixed_clock, tmp_path):
+    """The runner purges pagehub-browser sessions BEFORE each attempt so a
+    capacity cascade (MAX_SESSIONS reached → 503 on /v1/sessions) carried
+    over from a prior attempt or run can't poison the next one."""
+    resets: list[str] = []
+
+    harness = FakeHarness([ar(), ar(), ar()])
+    grader = FakeGrader([gr(False, ["x"]), gr(False, ["x"]), gr(True)])
+    execute_benchmark_run(
+        spec=bench_spec,
+        harness_spec=bench_spec.harnesses[0],
+        harness=harness,
+        grader=grader,
+        worktree_dir=tmp_path / "wt",
+        pricing=TEST_PRICING,
+        fixture_fetcher=FakeFixtureFetcher(),
+        clock=fixed_clock,
+        reset_browser_sessions=lambda reason: resets.append(reason),
+    )
+    # one reset per attempt — 3 attempts here (two fails then pass).
+    assert len(resets) == 3
+    # the reason carries the run identity + attempt number for the operator log
+    assert all("attempt-" in r for r in resets)
+    assert "attempt-1" in resets[0]
+    assert "attempt-3" in resets[-1]
+
+
+def test_reset_browser_sessions_failure_does_not_fail_the_run(
+    bench_spec, fixed_clock, tmp_path
+):
+    """A 404/503/network error from reset-sessions logs but never raises —
+    a regressed pagehub-browser deploy must not brick the benchmark."""
+    def _flaky(_reason: str) -> None:
+        # Simulate the helper having already logged the warning. A noisy
+        # exception escaping into the runner would be the bug we're guarding
+        # against.
+        return None
+
+    harness = FakeHarness([ar()])
+    grader = FakeGrader([gr(True)])
+    rec = execute_benchmark_run(
+        spec=bench_spec,
+        harness_spec=bench_spec.harnesses[0],
+        harness=harness,
+        grader=grader,
+        worktree_dir=tmp_path / "wt",
+        pricing=TEST_PRICING,
+        fixture_fetcher=FakeFixtureFetcher(),
+        clock=fixed_clock,
+        reset_browser_sessions=_flaky,
+    )
+    assert rec.passed is True
+    assert rec.attempts == 1
+
+
+def test_reset_helper_returns_false_when_url_missing():
+    assert reset_pagehub_browser_sessions(None, reason="x", admin_token="t") is False
+    assert reset_pagehub_browser_sessions("", reason="x", admin_token="t") is False
+
+
+def test_reset_helper_returns_false_when_admin_token_missing(capsys):
+    out = reset_pagehub_browser_sessions(
+        "http://localhost:4010", reason="x", admin_token=None
+    )
+    assert out is False
+    captured = capsys.readouterr().out
+    assert "PAGEHUB_BROWSER_ADMIN_TOKEN" in captured
+
+
+def test_reset_helper_swallows_http_404_from_old_browser(monkeypatch, capsys):
+    """If pagehub-browser is on a pre-PR-A version, the endpoint is 404.
+    Helper logs and returns False; does NOT raise."""
+    import urllib.error
+    import urllib.request as _req
+
+    def _fake_open(req, timeout):  # noqa: ANN001
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(_req, "urlopen", _fake_open)
+    assert (
+        reset_pagehub_browser_sessions(
+            "http://localhost:4010", reason="x", admin_token="t"
+        )
+        is False
+    )
+    assert "HTTP 404" in capsys.readouterr().out
+
+
+def test_reset_helper_swallows_network_error(monkeypatch, capsys):
+    import urllib.error
+    import urllib.request as _req
+
+    def _fake_open(req, timeout):  # noqa: ANN001
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(_req, "urlopen", _fake_open)
+    assert (
+        reset_pagehub_browser_sessions(
+            "http://localhost:4010", reason="x", admin_token="t"
+        )
+        is False
+    )
+    assert "network error" in capsys.readouterr().out
 
 
 def test_followup_prompt_mentions_failures_and_no_git():

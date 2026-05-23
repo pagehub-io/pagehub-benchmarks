@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -132,6 +133,74 @@ def _browser_base_url_from_host(spec: BenchmarkSpec) -> str | None:
     return _local_probe_url(v)
 
 
+_ADMIN_TOKEN_ENV = "PAGEHUB_BROWSER_ADMIN_TOKEN"
+_RESET_SESSIONS_PATH = "/v1/admin/reset-sessions"
+
+
+def reset_pagehub_browser_sessions(
+    browser_base_url: str | None,
+    *,
+    reason: str,
+    admin_token: str | None,
+    timeout_s: float = 10.0,
+) -> bool:
+    """POST ``/v1/admin/reset-sessions`` so the next attempt starts with a
+    clean session table — the brittle 503 capacity cascade we saw on the
+    May 22 chess-frontend sweep was pagehub-browser sitting at MAX_SESSIONS
+    after the eval-game-hoppers run leaked sessions (PR #20 DOM probe bug).
+
+    Best-effort: any failure (no URL, no token, 401/404, network error)
+    logs a warning and returns ``False``. A regressed pagehub-browser
+    deploy that doesn't yet carry the admin endpoint must NOT brick the
+    benchmark — that would be a worse regression than the 503 cascade
+    we're trying to prevent.
+    """
+    if not browser_base_url:
+        return False
+    if not admin_token:
+        print(
+            f"(reset-sessions skipped: {_ADMIN_TOKEN_ENV} not set in the runner "
+            f"environment; the per-attempt session purge is a no-op)"
+        )
+        return False
+    url = browser_base_url.rstrip("/") + _RESET_SESSIONS_PATH
+    payload = json.dumps({"reason": reason}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        # 404 — endpoint missing (pagehub-browser predates the admin route).
+        # 401 — admin token mismatch.
+        # Either way: log + carry on; do not fail the run.
+        print(
+            f"(reset-sessions: HTTP {exc.code} from {url} — continuing without "
+            f"reset; benchmark proceeds)"
+        )
+        return False
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(
+            f"(reset-sessions: network error talking to {url} "
+            f"({type(exc).__name__}: {exc}) — continuing without reset)"
+        )
+        return False
+    try:
+        data = json.loads(body)
+        closed = int(data.get("closed", 0))
+    except (ValueError, TypeError):
+        closed = 0
+    print(f"reset-sessions: closed {closed} pagehub-browser session(s) (reason={reason!r})")
+    return True
+
+
 def _build_dom_ready_probe(spec: BenchmarkSpec) -> Callable[[], bool] | None:
     """Construct the per-attempt DOM readiness probe, or ``None`` if the
     benchmark's grader spec doesn't declare ``ready_testid`` (preserving
@@ -204,6 +273,7 @@ def execute_benchmark_run(
     service_factory: Callable[[], AbstractContextManager[Any]] | None = None,
     clock: Callable[[], datetime] = _utcnow,
     provider_model: str | None = None,
+    reset_browser_sessions: Callable[[str], None] | None = None,
 ) -> RunRecord:
     model = harness_spec.model
     if model not in pricing:
@@ -231,6 +301,16 @@ def execute_benchmark_run(
     attempt_no = 0
 
     for attempt_no in range(1, max_attempts + 1):
+        # Purge pagehub-browser's session table BEFORE each attempt. The
+        # capacity cascade we saw on May 22 (chess-frontend matrix:
+        # downstream 503s after eval-game-hoppers leaked sessions) is
+        # entirely a "previous attempt's session leak filled the MAX_SESSIONS
+        # registry" failure mode — clearing per-attempt closes the door on
+        # carryover between attempts within a run AND between runs.
+        if reset_browser_sessions is not None:
+            reset_browser_sessions(
+                f"{spec.name}/{harness_spec.harness}/attempt-{attempt_no}"
+            )
         if attempt_no == 1:
             sent_prompt = prompt
             ar = harness.start_build(str(worktree_dir), sent_prompt, model, config)
@@ -399,6 +479,12 @@ def run_benchmark(
                 if serve
                 else None
             )
+            browser_base = _browser_base_url_from_host(spec)
+            admin_token = os.environ.get(_ADMIN_TOKEN_ENV) or None
+
+            def _reset(reason: str, _u=browser_base, _t=admin_token) -> None:
+                reset_pagehub_browser_sessions(_u, reason=reason, admin_token=_t)
+
             record = execute_benchmark_run(
                 spec=spec,
                 harness_spec=h,
@@ -409,6 +495,7 @@ def run_benchmark(
                 fixture_fetcher=fetcher,
                 service_factory=service_factory,
                 provider_model=_probe_provider_model(_gateway_url_from(h)),
+                reset_browser_sessions=_reset if browser_base else None,
             )
         record.built_git_sha = capture_built_sha(worktree)
         _push_built_tree(record, h, spec, worktree, pusher)

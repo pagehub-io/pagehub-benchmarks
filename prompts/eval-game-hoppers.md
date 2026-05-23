@@ -1,3 +1,13 @@
+{# Operator-side note (stripped at render time, never sent to the model):
+   Before each attempt, the runner POSTs to pagehub-browser's
+   /v1/admin/reset-sessions endpoint (Bearer auth from the runner-env
+   var PAGEHUB_BROWSER_ADMIN_TOKEN). This kills the leaked-sessions
+   capacity cascade that tanked the 2026-05-22 chess-frontend sweep:
+   a prior attempt or run that filled MAX_SESSIONS would 503 every
+   subsequent /v1/sessions call and the grader saw the entire battery
+   as failed before the model even got a chance. If the admin endpoint
+   isn't reachable (404 / 401 / unset token), the runner logs and
+   continues — older deploys keep working. -#}
 Build a **single-tap hopper web game** as a pure-frontend TypeScript
 application. It runs on **port 8005** (port 8003 is reserved for
 eval-chess-backend, 8004 for eval-chess-frontend; pick 8005). No backend
