@@ -189,9 +189,9 @@ def wait_for_dom_ready(
             try:
                 resp = client.post("/v1/sessions", json={})
                 resp.raise_for_status()
-                session_id = str(resp.json().get("id") or "")
+                session_id = str(resp.json().get("session_id") or "")
                 if not session_id:
-                    raise httpx.HTTPError("pagehub-browser session response had no 'id'")
+                    raise httpx.HTTPError("pagehub-browser session response had no 'session_id'")
                 nav = client.post(
                     f"/v1/sessions/{session_id}/navigate",
                     json={"url": sut_url, "wait_until": "load", "timeout": step_timeout},
