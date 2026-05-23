@@ -27,7 +27,7 @@ def test_returns_true_on_first_attempt_when_testid_visible():
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append((request.method, request.url.path))
         if request.method == "POST" and request.url.path == "/v1/sessions":
-            return httpx.Response(201, json={"id": "sess-abc"})
+            return httpx.Response(201, json={"session_id": "sess-abc"})
         if request.method == "POST" and request.url.path == "/v1/sessions/sess-abc/navigate":
             return httpx.Response(200, json={"ok": True})
         if request.method == "POST" and request.url.path == "/v1/sessions/sess-abc/wait-for":
@@ -60,7 +60,7 @@ def test_navigate_payload_carries_sut_url_and_testid():
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/v1/sessions":
-            return httpx.Response(201, json={"id": "s1"})
+            return httpx.Response(201, json={"session_id": "s1"})
         if request.method == "POST" and request.url.path.endswith("/navigate"):
             captured["navigate_body"] = request.read().decode()
             return httpx.Response(200, json={"ok": True})
@@ -101,7 +101,7 @@ def test_retries_when_wait_for_404s_then_succeeds(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/v1/sessions":
-            return httpx.Response(201, json={"id": "s-x"})
+            return httpx.Response(201, json={"session_id": "s-x"})
         if request.method == "POST" and request.url.path.endswith("/navigate"):
             return httpx.Response(200, json={"ok": True})
         if request.method == "POST" and request.url.path.endswith("/wait-for"):
@@ -129,7 +129,7 @@ def test_returns_false_after_timeout(monkeypatch, capsys):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/v1/sessions":
-            return httpx.Response(201, json={"id": "s"})
+            return httpx.Response(201, json={"session_id": "s"})
         if request.method == "POST" and request.url.path.endswith("/navigate"):
             return httpx.Response(200, json={"ok": True})
         if request.method == "POST" and request.url.path.endswith("/wait-for"):
@@ -156,7 +156,7 @@ def test_session_id_missing_in_response_is_handled(monkeypatch, capsys):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/v1/sessions":
-            return httpx.Response(201, json={})  # no id field
+            return httpx.Response(201, json={})  # no session_id field
         return httpx.Response(500, json={"error": "shouldn't get here"})
 
     client = _make_client(handler)
@@ -170,6 +170,51 @@ def test_session_id_missing_in_response_is_handled(monkeypatch, capsys):
     assert ok is False  # times out instead of raising
 
 
+def test_session_is_deleted_when_testid_never_visible(monkeypatch):
+    """Regression: each poll loop opens a new session; if cleanup is gated
+    on the wrong field name and never runs, the probe leaks one session per
+    iteration and pagehub-browser's pool fills up. The eval-game-hoppers
+    first-run (2026-05-23) hit exactly this — ~60 leaked sessions per attempt
+    eventually returned 503 from `/v1/sessions` on later attempts. So:
+    on the timeout path, every session that got created MUST also be DELETEd.
+    """
+    monkeypatch.setattr("pagehub_benchmarks.runner.workspace.time.sleep", lambda _s: None)
+
+    created: list[str] = []
+    deleted: list[str] = []
+    counter = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "POST" and path == "/v1/sessions":
+            counter["n"] += 1
+            sid = f"sess-{counter['n']}"
+            created.append(sid)
+            return httpx.Response(201, json={"session_id": sid})
+        if request.method == "POST" and path.endswith("/navigate"):
+            return httpx.Response(200, json={"ok": True})
+        if request.method == "POST" and path.endswith("/wait-for"):
+            return httpx.Response(404, json={"error": "still not there"})
+        if request.method == "DELETE" and path.startswith("/v1/sessions/"):
+            deleted.append(path.rsplit("/", 1)[-1])
+            return httpx.Response(204)
+        return httpx.Response(500, json={"error": f"unexpected {request.method} {path}"})
+
+    client = _make_client(handler)
+    ok = wait_for_dom_ready(
+        browser_base_url="http://browser.test",
+        sut_url="http://host:8004",
+        testid="board",
+        timeout_s=0.05,
+        client=client,
+    )
+    assert ok is False
+    assert created, "the probe should have created at least one session"
+    assert deleted == created, (
+        f"every created session must be DELETEd; created={created} deleted={deleted}"
+    )
+
+
 def test_browser_connection_error_is_retried_not_raised(monkeypatch):
     """A flaky browser (5xx on session create) gets retried within the
     outer timeout budget, not surfaced as an exception that aborts the run.
@@ -179,7 +224,7 @@ def test_browser_connection_error_is_retried_not_raised(monkeypatch):
     session_responses = iter(
         [
             httpx.Response(503, json={"error": "browser warming up"}),
-            httpx.Response(201, json={"id": "s2"}),
+            httpx.Response(201, json={"session_id": "s2"}),
         ]
     )
 
