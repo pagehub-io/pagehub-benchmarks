@@ -186,22 +186,101 @@ URL params override defaults:
   provider integration is a documented v2 follow-up; v1 just proves
   the integration points exist at the right shape.
 
-### Gameplay shape (theme-agnostic)
+### Gameplay shape (theme-agnostic — graded)
 
+**Player**
 - `[data-testid="player"]` exists with `data-hopper-species="<one of
   the 5 species above>"` and `data-current-lane="<int>"`.
+- `data-current-lane` starts at `0` and increments by 1 for each
+  successful hop (zero-indexed).
+- `data-player-x` (integer 0..100) — the player's lateral position as
+  a percent across the current lane. Starts at `50` on every lane
+  entry. The fixture doesn't pin this in the graded path, but it's
+  load-bearing for the log-riding mechanic below.
+
+**Lanes**
 - `[data-testid="lane-<index>"]` for each visible lane (numbered
   relative to the player; lane 0 = the lane the player currently
-  occupies).
-- `[data-testid="obstacle-<lane>-<n>"]` for each visible obstacle in
+  occupies). Visible viewport is 2 lanes behind + 6 ahead = 9 lanes.
+- Each lane carries a `data-lane-kind` attribute declaring its kind:
+  one of `"bank"`, `"grass"`, `"road"`, `"riverbed"`. The kind is a
+  pure function of the absolute lane index (see "Lane-kind cadence"
+  below), so the rendering is stable across seeds for any given
+  lane.
+
+**Lane-kind cadence** (load-bearing — the grader counts these)
+
+| absolute lane index | kind       | meaning                                          |
+|---------------------|-----------|---------------------------------------------------|
+| `≤ 0`               | `bank`    | safe — the kangaroo's starting riverbank          |
+| `n % 3 == 1`        | `grass`   | safe rest lane — wait here as long as you want    |
+| `n % 3 == 2`        | `road`    | vehicles drift across; collision = die            |
+| `n % 3 == 0` (n>0)  | `riverbed`| logs drift across; must be ON a log or die        |
+
+At the start of the run (world.lane = 0) the rendered 9-lane
+viewport spans absolute lanes -2 through 6, so the kind counts are
+**3 bank** (-2, -1, 0), **2 grass** (1, 4), **2 road** (2, 5),
+**2 riverbed** (3, 6). The grader binds to these exact counts AND
+to the cadence (asserts lane 1 is grass and lane 3 is riverbed
+specifically — same counts under a different starting offset would
+not satisfy the grader).
+
+**Objects on each lane**
+- `[data-testid="obstacle-<rel-lane>-<n>"]` for each obstacle in
   each lane.
-- `[data-current-lane]` on the player matches the lane the player
-  currently occupies (zero-indexed; starts at `0`; increments by 1
-  for each successful hop).
+- Every obstacle carries `data-obstacle-kind` = `"vehicle"` or
+  `"log"`.
+- Riverbed lanes ALWAYS spawn **exactly 3 logs**, uniformly spaced
+  at approximate xBase positions `17%`, `50%`, `83%` (+ small
+  jitter). This guarantees a log is always within reach of lane
+  center, so the lane is always hopable. The grader asserts the
+  log count for every visible riverbed.
+- Road lanes spawn 0..4 vehicles per slot-density coin flip
+  (a road lane with no vehicles is fine — it's a free lane). The
+  grader does NOT pin road vehicle counts; that's a per-seed
+  variable.
+
+**Score**
 - `[data-testid="score"]` is an element whose **text content** is the
   current score (a non-negative integer, no commas / formatting).
 - `[data-score]` attribute somewhere on the document MAY mirror the
   same value; not asserted by the fixture but a useful convention.
+
+### Real-time gameplay (required but NOT directly graded)
+
+The fixture pins down the lane-kind shape via deterministic mode.
+The behaviors below are required for the game to actually be
+*playable* in real-time mode, but they're timing-flaky to assert
+deterministically so the fixture doesn't bind to them directly:
+
+- **rAF drift** — in non-deterministic mode, vehicles and logs
+  drift laterally via a `requestAnimationFrame` loop. Drift
+  direction alternates by lane parity (so adjacent lanes go
+  opposite ways). Drift speed = `lane-speed` URL param multiplier ×
+  per-object speedMul. In deterministic mode the rAF loop does NOT
+  run — objects render at their xBase positions and stay there.
+- **Road collision** — on a road lane, if any vehicle's hit-box
+  (~±half its `data-width-pct`) overlaps the player's
+  `data-player-x` after the grace window expires, the player dies
+  (state → `"game-over"`).
+- **Riverbed log-riding** — on a riverbed lane:
+  - On lane entry, the player tries to board the log nearest to
+    lateral center (`data-player-x = 50`). If no log is within
+    boarding reach (~±32% of center) the player falls in and dies.
+  - While riding, the player's `data-player-x` tracks the log's
+    current lateral position. If the log drifts off-screen the
+    player dies.
+  - With 3 evenly-spaced logs per riverbed (this contract),
+    *some* log is always within reach of center, so the riverbed
+    is always hopable on entry.
+- **Lane-entry grace** — for ~1000 ms after every successful hop,
+  road-vehicle collisions are suppressed. The player needs this
+  window to see what's drifting on the new lane before the
+  hit-box arms. Riverbed log-boarding still resolves on entry
+  (no grace there — the log would drift away during grace).
+- **Safe lanes** — `bank` and `grass` lanes never trigger collision;
+  the player can stay on them indefinitely. This is the rhythm the
+  cadence creates: hop through threats, rest on the grass, repeat.
 
 ## Deterministic playthrough mode
 
@@ -209,29 +288,41 @@ A real-time arcade game is **flaky to grade** — requestAnimationFrame
 jitter, network races, etc. The grader sidesteps this with a
 deterministic mode:
 
-- URL params `?deterministic=1` puts the game in **JS-loop-driven**
-  mode (no rAF; the game tick advances **only on tap**, not on a
-  timer). Every tap is one tick.
+- URL param `?deterministic=1` puts the game in **JS-loop-driven**
+  mode: NO `requestAnimationFrame` loop runs at all. The game tick
+  advances **only on tap**, not on a timer. Objects render at their
+  `xBase` positions and stay frozen there. Collisions are NOT
+  computed.
 - Combined with `?lane-speed=0&lane-density=0`: lanes do NOT scroll,
   NO obstacles spawn, each tap advances exactly one lane. Score
-  equals tap count.
+  equals tap count. (This is the **playthrough** sub-mode the
+  grader uses for the 6-tap die-after sequence.)
+- Combined with `?lane-density=0.5`: objects DO spawn (logs on
+  riverbeds, vehicles on roads) at their `xBase` positions but do
+  NOT drift and do NOT trigger collisions. (This is the **shape**
+  sub-mode the grader uses to count lane kinds and verify the
+  log-spawn contract without timing flakiness.)
 - URL param `?die-after=N` (deterministic-mode-only) forces a
   game-over **right after the Nth successful tap**. This is the
   test affordance the grader uses to assert pillar 1 (instant
   restart) and pillar 2 (shareable score) and pillar 5 (interstitial
   ad) without needing the simulator to predict a collision.
 
-The grader's deterministic playthrough loads
-`?seed=hop-test-001&lane-speed=0&lane-density=0&deterministic=1&die-after=6`,
-clicks `[data-testid="game-root"]` six times, and asserts
-`data-current-lane` reads `"1"`, `"2"`, ..., `"6"` after each tap,
-then `data-game-state="game-over"` and `[data-testid="share-url"]`'s
-`data-url` contains `score=6` and `seed=hop-test-001`.
+The grader makes **two deterministic navigations** per run:
 
-`?deterministic=1` and `?die-after=N` MUST be honored exactly; **all
-other modes (normal real-time play, the creator panel, sharing) must
-still work without them.** The deterministic mode is a test surface,
-not the default behavior.
+1. **Playthrough**: `?seed=hop-test-001&lane-speed=0&lane-density=0
+   &deterministic=1&die-after=6` — clicks `[data-testid="game-root"]`
+   six times, asserts `data-current-lane` reads `"1"`, `"2"`, ...,
+   `"6"` after each tap, then `data-game-state="game-over"` and the
+   share URL contains `score=6` and `seed=hop-test-001`.
+2. **Shape**: `?seed=hop-test-001&lane-speed=0&lane-density=0.5
+   &deterministic=1` — counts lane kinds, asserts the cadence on
+   lanes 1 and 3, asserts exactly 3 logs in lanes 3 and 6.
+
+`?deterministic=1`, `?lane-density`, `?lane-speed`, `?die-after=N`
+MUST all be honored exactly; **all other modes (normal real-time
+play, the creator panel, sharing) must still work without them.**
+The deterministic mode is a test surface, not the default behavior.
 
 ## What the grader will do (so you can mentally simulate it)
 
@@ -269,10 +360,22 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
 12. Click `[data-testid="game-root"]` → restart. Assert
     `data-game-state` flips back to `"playing"`, `data-current-lane`
     resets to `"0"`, score text resets to `"0"` (pillar 1).
-13. Navigate to `?score=6&seed=hop-test-001` (pillar 2 banner check)
+13. **Shape sub-suite** — navigate to
+    `?seed=hop-test-001&lane-speed=0&lane-density=0.5&deterministic=1`
+    and assert (all via `POST .../find` with `$.count`):
+    - `[data-lane-kind="bank"]` → 3
+    - `[data-lane-kind="grass"]` → 2
+    - `[data-lane-kind="road"]` → 2
+    - `[data-lane-kind="riverbed"]` → 2
+    - `[data-testid="lane-1"][data-lane-kind="grass"]` → 1
+      (enforces cadence ordering, not just counts)
+    - `[data-testid="lane-3"][data-lane-kind="riverbed"]` → 1
+    - `[data-testid="lane-3"] [data-obstacle-kind="log"]` → 3
+    - `[data-testid="lane-6"] [data-obstacle-kind="log"]` → 3
+14. Navigate to `?score=6&seed=hop-test-001` (pillar 2 banner check)
     → read text of `[data-testid="shared-score-banner"]` → expect
     the text to contain `"6"`.
-14. `DELETE .../sessions/<sid>` — tear down.
+15. `DELETE .../sessions/<sid>` — tear down.
 
 ## Stack & layout
 
