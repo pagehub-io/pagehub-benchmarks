@@ -282,6 +282,75 @@ deterministically so the fixture doesn't bind to them directly:
   the player can stay on them indefinitely. This is the rhythm the
   cadence creates: hop through threats, rest on the grass, repeat.
 
+## Mobile design quality (this is a MOBILE game — graded at 390×844)
+
+The grader creates its browser session at a **390×844 mobile
+viewport** and audits the layout. The first build of this game passed
+the functional contract but was a small letterboxed widget floating
+in dead space, leaked a debug string into the HUD, had 16px text-link
+controls, and hid the interstitial's close button below the fold — a
+design review flagged all of it. The following are now **graded**
+(two `/evaluate`-driven design-audit requests):
+
+- **Playfield fills the viewport.** `[data-testid="game-root"]`'s
+  bottom edge must reach **≥80% of the viewport height**. No fixed
+  `height: 420px` playfield with a tan dead band beneath it — use
+  flexbox / `dvh` units so the play area fills the phone screen
+  (which also shows more lanes = more lookahead). *Graded:
+  `playfield-fills-viewport`.*
+- **Difficulty string present but hidden.** `[data-testid=
+  "difficulty-active"]` MUST stay in the DOM with its exact
+  `lane-speed=…|lane-density=…|seed=…` text (pillar 3 reads it via
+  textContent), but in normal play it must be **visually hidden**
+  (sr-only: `position:absolute; width:1px; height:1px; clip:rect(0
+  0 0 0); overflow:hidden` — NOT `display:none`, which is fine too
+  since get-text reads textContent regardless). Surface it visibly
+  only under `?creator=1`. Don't make raw telemetry the most
+  prominent thing on the player's screen. *Graded:
+  `difficulty-active-present` + `…-visually-hidden`.*
+- **≥44px tap targets.** `[data-testid="share-url"]`,
+  `[data-testid="play"]`, and `[data-testid="ad-close"]` must each be
+  **≥44px tall** (iOS HIG / Material minimum). The Share control in
+  particular must be a real button, not a tiny text link. *Graded:
+  `share-tap-target`, `play-tap-target`, `ad-close-tap-target`.*
+- **Interstitial reachable without scrolling.** On game-over,
+  `[data-testid="ad-close"]` must be **within the viewport**
+  (`top ≥ 0 && bottom ≤ innerHeight`). The interstitial is still a
+  sibling of `game-root` (never an occluding overlay — see pillar 1),
+  but it must render *in the visible area*, e.g. directly under the
+  playfield, not appended below a tall scroll. *Graded:
+  `ad-close-reachable-without-scroll-on-mobile`.*
+- **Death feedback.** On game-over, render
+  `[data-testid="death-cause"]` with **non-empty text** telling the
+  player why the run ended — `"Splash!"` / `"drowned"` when they miss
+  a log, `"Squashed!"` / `"hit by a jeep"` on a road collision, any
+  short message for the `die-after` test path. The first build just
+  froze the dead hopper with no explanation. *Graded:
+  `death-cause-feedback-present-on-game-over`.*
+
+**Also expected (not directly graded — design quality the review
+called out, satisfy them for a good build):**
+
+- **Score is the hero.** It's an endless runner; the score should be
+  the most prominent thing in the HUD, not equal-weight with QA
+  labels. Drop the visible `STATE: playing/game-over` label from the
+  player's view (keep the testid/attribute for the grader).
+- **Banner ad at the bottom.** Anchor `[data-testid="ad-slot-banner"]`
+  to the bottom of the viewport (standard mobile placement) so the
+  playfield owns the top of the screen, rather than wedging the
+  banner between the HUD and the playfield.
+- **On-theme hazards.** Match the chosen species. For the kangaroo:
+  jeeps / road-trains and dingoes on roads (not generic cars + pet
+  dogs); the "gap" lanes were specced as **drying riverbeds** (cracked
+  tan), so reconcile that with water-readability rather than defaulting
+  to generic blue Frogger water.
+- **Player faces travel direction.** The hopper moves *up* the screen;
+  it should face up, not sideways.
+- **Death + hop animation.** A short splash/sink on death and a
+  visible hop arc on each tap (the player shouldn't just teleport
+  between lanes). Preserve the player's lateral position when hopping
+  off a log onto the next lane — don't snap to center.
+
 ## Deterministic playthrough mode
 
 A real-time arcade game is **flaky to grade** — requestAnimationFrame
@@ -329,8 +398,10 @@ The deterministic mode is a test surface, not the default behavior.
 The grader (pagehub-evals, driven by pagehub-browser) will:
 
 {% raw %}
-1. `POST {{pagehub-browser_url}}/v1/sessions` — open a headless
-   browser session.
+1. `POST {{pagehub-browser_url}}/v1/sessions` body
+   `{headless: true, viewport_width: 390, viewport_height: 844}` —
+   open a headless **mobile-sized** session. Every assertion below
+   reflects that 390×844 viewport.
 2. `POST .../navigate` body
    `{url: "{{eval-game-hoppers_url}}/?seed=hop-test-001&lane-speed=0&lane-density=0&deterministic=1&die-after=6"}`.
 {% endraw %}
@@ -348,6 +419,12 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
    `"lane-speed=0|lane-density=0|seed=hop-test-001"` (pillar 3).
 8. `POST .../find` with `[data-testid="ad-slot-banner"]` → expect
    `count == 1` (pillar 5).
+8b. **Design audit (playing)** — `POST .../evaluate` returns a
+    `key=ok|key=fail` status string; the grader asserts each
+    `key=ok` substring: `playfield-fills` (game-root bottom ≥80% of
+    viewport height), `difficulty-present` + `difficulty-hidden`
+    (difficulty-active in the DOM but visually hidden),
+    `share-tap-target` (Share ≥44px tall).
 9. Tap-loop ×6: `POST .../click` on `[data-testid="game-root"]`,
    then read `data-current-lane` → expect `"1"`, `"2"`, ..., `"6"`.
    After the 6th tap, `die-after=6` fires: read `data-game-state` on
@@ -355,6 +432,12 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
 10. Read `data-url` off `[data-testid="share-url"]` → expect the
     response body to contain `score=6` and `seed=hop-test-001`
     substrings (pillar 2).
+10b. **Design audit (game-over)** — `POST .../evaluate` returns a
+    `key=ok|key=fail` status string; the grader asserts each
+    `key=ok`: `ad-close-present`, `ad-close-in-viewport` (close
+    button within the 844px viewport, no scroll), `ad-close-tap-target`
+    (≥44px), `death-cause` (`[data-testid="death-cause"]` has
+    non-empty text), `play-tap-target` (≥44px).
 11. `POST .../find` with `[data-testid="ad-slot-interstitial"]` →
     expect `count == 1`. Click `[data-testid="ad-close"]` (pillar 5).
 12. Click `[data-testid="game-root"]` → restart. Assert
