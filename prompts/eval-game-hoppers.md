@@ -327,6 +327,25 @@ design review flagged all of it. The following are now **graded**
   short message for the `die-after` test path. The first build just
   froze the dead hopper with no explanation. *Graded:
   `death-cause-feedback-present-on-game-over`.*
+- **Lateral position is preserved across hops (no teleport).** A
+  forward hop must land the player at the **same lateral position**
+  they hopped from — if a log carried the hopper to `data-player-x=90`
+  and they hop onto grass, they stay at ~90, they do NOT snap back to
+  center. (Boarding a riverbed log may then re-align onto the nearest
+  log, but bank/grass/road hops preserve X exactly.) The grader places
+  the player at `start-x=90` (see deterministic state-init below), runs
+  the 6-tap playthrough, and asserts `data-player-x` is still ~90 at
+  game-over. *Graded: `deterministic-start-x-init-honored`,
+  `lateral-x-preserved-across-hops-no-teleport`.*
+- **Vehicles face their drift direction.** Every road vehicle must
+  carry `data-facing="left"|"right"` matching the way it drifts, and a
+  left-facing vehicle must render a **visually distinct sprite** from a
+  right-facing one (mirror the glyph via `transform: scaleX(-1)`, or
+  use a directional sprite) — a car drifting left must not look like
+  it's driving backwards. Drift direction alternates by lane parity, so
+  both facings are on screen at once. *Graded (at `?lane-density=0.9`
+  so both road lanes are populated): `vehicles-carry-data-facing-…`,
+  `both-drift-directions-on-screen`, `vehicle-sprite-differs-by-direction`.*
 
 **Also expected (not directly graded — design quality the review
 called out, satisfy them for a good build):**
@@ -347,9 +366,9 @@ called out, satisfy them for a good build):**
 - **Player faces travel direction.** The hopper moves *up* the screen;
   it should face up, not sideways.
 - **Death + hop animation.** A short splash/sink on death and a
-  visible hop arc on each tap (the player shouldn't just teleport
-  between lanes). Preserve the player's lateral position when hopping
-  off a log onto the next lane — don't snap to center.
+  visible hop arc on each tap (the player shouldn't just snap between
+  lanes). (The *lateral*-position-preservation rule is now graded —
+  see above.)
 
 ## Deterministic playthrough mode
 
@@ -366,16 +385,35 @@ deterministic mode:
   NO obstacles spawn, each tap advances exactly one lane. Score
   equals tap count. (This is the **playthrough** sub-mode the
   grader uses for the 6-tap die-after sequence.)
-- Combined with `?lane-density=0.5`: objects DO spawn (logs on
+- Combined with `?lane-density=0.9`: objects DO spawn (logs on
   riverbeds, vehicles on roads) at their `xBase` positions but do
   NOT drift and do NOT trigger collisions. (This is the **shape**
-  sub-mode the grader uses to count lane kinds and verify the
-  log-spawn contract without timing flakiness.)
+  sub-mode the grader uses to count lane kinds, verify the log-spawn
+  contract, and audit vehicle facing without timing flakiness.)
 - URL param `?die-after=N` (deterministic-mode-only) forces a
   game-over **right after the Nth successful tap**. This is the
   test affordance the grader uses to assert pillar 1 (instant
   restart) and pillar 2 (shareable score) and pillar 5 (interstitial
   ad) without needing the simulator to predict a collision.
+
+### Deterministic state-init (`?start-x`, `?start-lane`)
+
+So the grader can set up edge cases that real-time physics would be
+needed to reach (e.g. a hopper carried to the screen edge on a log),
+two **deterministic-mode-only** init params place the player in a
+known state at load:
+
+- `?start-x=<0..100>` — the player's initial lateral position as a
+  percent across the lane (default `50` = center). Reflected
+  immediately in `[data-testid="player"]`'s `data-player-x`.
+- `?start-lane=<N>` — the lane the player starts on (default `0`).
+  Reflected in `data-current-lane`; the rendered viewport recenters on
+  that lane.
+
+These MUST be honored only when `deterministic=1` (ignored in normal
+play, like `die-after`). They're how the grader proves the
+lateral-position-preservation rule: load `start-x=90`, hop forward,
+assert `data-player-x` stays ~90.
 
 The grader makes **two deterministic navigations** per run:
 
@@ -384,12 +422,14 @@ The grader makes **two deterministic navigations** per run:
    six times, asserts `data-current-lane` reads `"1"`, `"2"`, ...,
    `"6"` after each tap, then `data-game-state="game-over"` and the
    share URL contains `score=6` and `seed=hop-test-001`.
-2. **Shape**: `?seed=hop-test-001&lane-speed=0&lane-density=0.5
+2. **Shape**: `?seed=hop-test-001&lane-speed=0&lane-density=0.9
    &deterministic=1` — counts lane kinds, asserts the cadence on
-   lanes 1 and 3, asserts exactly 3 logs in lanes 3 and 6.
+   lanes 1 and 3, asserts exactly 3 logs in lanes 3 and 6, and audits
+   vehicle facing.
 
-`?deterministic=1`, `?lane-density`, `?lane-speed`, `?die-after=N`
-MUST all be honored exactly; **all other modes (normal real-time
+`?deterministic=1`, `?lane-density`, `?lane-speed`, `?die-after=N`,
+`?start-x`, `?start-lane` MUST all be honored exactly; **all other
+modes (normal real-time
 play, the creator panel, sharing) must still work without them.**
 The deterministic mode is a test surface, not the default behavior.
 
@@ -403,7 +443,9 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
    open a headless **mobile-sized** session. Every assertion below
    reflects that 390×844 viewport.
 2. `POST .../navigate` body
-   `{url: "{{eval-game-hoppers_url}}/?seed=hop-test-001&lane-speed=0&lane-density=0&deterministic=1&die-after=6"}`.
+   `{url: "{{eval-game-hoppers_url}}/?seed=hop-test-001&lane-speed=0&lane-density=0&deterministic=1&die-after=6&start-x=90"}`
+   — note `start-x=90` places the hopper off-center for the
+   lateral-preservation check.
 {% endraw %}
 3. Read `data-game-state` off `[data-testid="game-root"]` → expect
    `"playing"` (pillar 4).
@@ -424,7 +466,8 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
     `key=ok` substring: `playfield-fills` (game-root bottom ≥80% of
     viewport height), `difficulty-present` + `difficulty-hidden`
     (difficulty-active in the DOM but visually hidden),
-    `share-tap-target` (Share ≥44px tall).
+    `share-tap-target` (Share ≥44px tall), `start-x-honored`
+    (`data-player-x` ≈ 90, i.e. the `start-x` init param took effect).
 9. Tap-loop ×6: `POST .../click` on `[data-testid="game-root"]`,
    then read `data-current-lane` → expect `"1"`, `"2"`, ..., `"6"`.
    After the 6th tap, `die-after=6` fires: read `data-game-state` on
@@ -437,14 +480,16 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
     `key=ok`: `ad-close-present`, `ad-close-in-viewport` (close
     button within the 844px viewport, no scroll), `ad-close-tap-target`
     (≥44px), `death-cause` (`[data-testid="death-cause"]` has
-    non-empty text), `play-tap-target` (≥44px).
+    non-empty text), `play-tap-target` (≥44px), `lateral-x-preserved`
+    (`data-player-x` is STILL ≈ 90 after the 6 hops — the player was
+    not teleported to center).
 11. `POST .../find` with `[data-testid="ad-slot-interstitial"]` →
     expect `count == 1`. Click `[data-testid="ad-close"]` (pillar 5).
 12. Click `[data-testid="game-root"]` → restart. Assert
     `data-game-state` flips back to `"playing"`, `data-current-lane`
     resets to `"0"`, score text resets to `"0"` (pillar 1).
 13. **Shape sub-suite** — navigate to
-    `?seed=hop-test-001&lane-speed=0&lane-density=0.5&deterministic=1`
+    `?seed=hop-test-001&lane-speed=0&lane-density=0.9&deterministic=1`
     and assert (all via `POST .../find` with `$.count`):
     - `[data-lane-kind="bank"]` → 3
     - `[data-lane-kind="grass"]` → 2
@@ -455,6 +500,12 @@ The grader (pagehub-evals, driven by pagehub-browser) will:
     - `[data-testid="lane-3"][data-lane-kind="riverbed"]` → 1
     - `[data-testid="lane-3"] [data-obstacle-kind="log"]` → 3
     - `[data-testid="lane-6"] [data-obstacle-kind="log"]` → 3
+13b. **Vehicle-facing audit** — `POST .../evaluate` on the same shape
+    screen; asserts each `key=ok`: `vehicles-present`,
+    `facing-attr-present` (every vehicle has `data-facing=left|right`),
+    `facing-both-present` (both directions on screen),
+    `facing-visual-distinct` (left vs right vehicles render a different
+    transform/glyph signature).
 14. Navigate to `?score=6&seed=hop-test-001` (pillar 2 banner check)
     → read text of `[data-testid="shared-score-banner"]` → expect
     the text to contain `"6"`.
