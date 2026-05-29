@@ -93,6 +93,27 @@ harnesses:
     model: claude-opus-4-7
     config:
       effort: high
+  # Opus 4.8 — the new model. Full four-level effort sweep (low/medium/high/xhigh)
+  # to compare convergence (attempts), token usage, and computed cost_usd against
+  # the 4.5/4.6/4.7 rows above at equal effort. Shares the $5/$25 tier and the
+  # 4.7+ tokenizer (see pricing.yaml), so cost deltas vs 4.6/4.5 reflect both
+  # token-usage AND tokenizer differences; vs 4.7 it's token-usage only.
+  - harness: claude-code
+    model: claude-opus-4-8
+    config:
+      effort: low
+  - harness: claude-code
+    model: claude-opus-4-8
+    config:
+      effort: medium
+  - harness: claude-code
+    model: claude-opus-4-8
+    config:
+      effort: high
+  - harness: claude-code
+    model: claude-opus-4-8
+    config:
+      effort: xhigh
   # Sonnet 4.5 (with effort=xhigh -> extended thinking). Third-party agentic-coding
   # benchmarks score Grok 4.3 at roughly Sonnet 4.5 / thinking level, so this row
   # also serves as a *proxy* for what a Grok run would cost — multiply this run's
