@@ -4,6 +4,11 @@ A **benchmark runner for LLM coding harnesses.** Cheaply, repeatably compare
 harnesses / models / configs / prompts on *"can it build this code, in how many
 tries, how long, and how much money?"*
 
+📊 **Live results site:** <https://pagehub-io.github.io/pagehub-benchmarks/> —
+sortable table of every run (attempts · pass · tokens · cost · wall time) with
+per-run and per-benchmark detail pages. Regenerated and published on every push
+to `main` (see [Results site](#results-site)).
+
 ## What a benchmark is
 
 A **benchmark** = a build task (a verbatim prompt) + a target repo to build
@@ -133,6 +138,8 @@ Graded by the pagehub-evals `eval-chess-backend` collection (fixture bundle:
 the draw rules).
 
 ## Results site
+
+**Live at <https://pagehub-io.github.io/pagehub-benchmarks/>.**
 
 `results/**/*.json` (the committed run history) feeds a small static site under
 `docs/`:
