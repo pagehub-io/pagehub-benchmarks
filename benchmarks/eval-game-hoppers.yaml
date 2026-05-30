@@ -70,6 +70,6 @@ max_attempts: 5
 # benchmarks-gateway-openai work, not here.
 harnesses:
   - harness: claude-code
-    model: claude-opus-4-8
+    model: claude-opus-4-7
     config:
-      effort: xhigh
+      effort: high
