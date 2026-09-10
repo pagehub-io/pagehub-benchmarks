@@ -137,8 +137,10 @@ models:
   # either Input, Cached Input, or Cache Write and writes are not an additive
   # fee" — a token written to the cache is billed at the write rate instead of
   # the input rate, which is exactly how runner.pricing partitions input vs
-  # cache_creation tokens. Used by the codex-cli harness (subscription auth;
-  # cost_usd is a computed figure).
+  # cache_creation tokens. The page also lists a "Fast mode" (priority) tier
+  # at 2x these rates; the codex-cli harness pins no service tier, so a run
+  # is assumed to be standard tier. Used by the codex-cli harness
+  # (subscription auth; cost_usd is a computed figure).
   gpt-6-astra:
     input: 10.00
     output: 50.00

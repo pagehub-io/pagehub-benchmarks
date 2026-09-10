@@ -17,6 +17,7 @@ the success fixtures exist (plans/codex-cli-harness.md §6).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -71,41 +72,69 @@ def _synthetic_completed_no_usage(stream: str) -> str:
 # fakes for the subprocess layer
 
 
+class _FakePipe:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _FakeProc:
-    def __init__(self, stdout: str, stderr: str, returncode: int, *, timeout_first: bool = False):
+    """``dies_on_sigterm``: after ``wait()`` the process reports exited, so no
+    SIGKILL follows. Otherwise ``poll()`` keeps saying alive ⇒ SIGKILL path."""
+
+    def __init__(self, stdout: str, stderr: str, returncode: int, *,
+                 raise_first: BaseException | None = None, dies_on_sigterm: bool = False):
         self._stdout, self._stderr, self.returncode = stdout, stderr, returncode
-        self._timeout_first = timeout_first
+        self._raise_first = raise_first
+        self._dies_on_sigterm = dies_on_sigterm
         self.pid = 4242
-        self.stdin = self.stdout = self.stderr = None
+        self.stdin, self.stdout, self.stderr = _FakePipe(), _FakePipe(), _FakePipe()
         self.communicate_calls: list[dict[str, Any]] = []
-        self.killed = False
+        self._waited = False
 
     def communicate(self, input=None, timeout=None):  # noqa: ANN001
         self.communicate_calls.append({"input": input, "timeout": timeout})
-        if self._timeout_first and len(self.communicate_calls) == 1:
-            raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
+        if self._raise_first is not None and len(self.communicate_calls) == 1:
+            raise self._raise_first
         return self._stdout, self._stderr
 
     def wait(self, timeout=None):  # noqa: ANN001
+        self._waited = True
         return self.returncode
 
     def poll(self):
-        return self.returncode if self.killed else None
+        return self.returncode if (self._dies_on_sigterm and self._waited) else None
+
+    @property
+    def pipes_closed(self) -> bool:
+        return all(p.closed for p in (self.stdin, self.stdout, self.stderr))
 
 
 class _Legs:
-    """Scripted ``subprocess.Popen`` replacement; records every call."""
+    """Scripted ``subprocess.Popen`` replacement; records every call.
 
-    def __init__(self, script: list[tuple[str, str, int]], *, timeout_first: bool = False):
+    ``raise_first`` makes the FIRST leg's first ``communicate`` raise that
+    exception (``TimeoutExpired`` for the timeout path, ``KeyboardInterrupt``
+    for the interrupt path)."""
+
+    def __init__(self, script: list[tuple[str, str, int]], *,
+                 raise_first: BaseException | None = None, dies_on_sigterm: bool = False):
         self.script = list(script)
         self.calls: list[dict[str, Any]] = []
         self.procs: list[_FakeProc] = []
-        self._timeout_first = timeout_first
+        self._raise_first = raise_first
+        self._dies_on_sigterm = dies_on_sigterm
 
     def __call__(self, cmd, **kwargs):  # noqa: ANN001
         stdout, stderr, rc = self.script[min(len(self.calls), len(self.script) - 1)]
         self.calls.append({"cmd": list(cmd), **kwargs})
-        proc = _FakeProc(stdout, stderr, rc, timeout_first=self._timeout_first and not self.procs)
+        proc = _FakeProc(
+            stdout, stderr, rc,
+            raise_first=self._raise_first if not self.procs else None,
+            dies_on_sigterm=self._dies_on_sigterm,
+        )
         self.procs.append(proc)
         return proc
 
@@ -239,10 +268,10 @@ def test_env_strips_all_three_auth_vars_on_legs_and_preflight(monkeypatch, tmp_p
         assert env["PATH"] == "/usr/bin"
         assert env["CODEX_HOME"].endswith("codex-home")
     assert STRIPPED_ENV_VARS == ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-    # nothing added beyond the inherited env
-    import os
+    # nothing added beyond the inherited env — on the leg AND the pre-flight
     expected = {k for k in os.environ if k not in STRIPPED_ENV_VARS}
     assert set(legs.calls[0]["env"]) == expected
+    assert set(preflight.calls[0]["env"]) == expected
 
 
 # --------------------------------------------------------------------------
@@ -260,14 +289,16 @@ def test_preflight_not_logged_in_raises_without_exec(monkeypatch, tmp_path, isol
 def test_preflight_api_key_login_raises_without_exec(monkeypatch, tmp_path, isolated_env):
     legs = _Legs([(NON_DEAD_START, "", 1)])
     _install(monkeypatch, legs, _Preflight(stdout="Logged in using an API key - sk-…\n", stderr="", returncode=0))
-    with pytest.raises(HarnessError, match="Logged in using an API key"):
+    with pytest.raises(HarnessError, match="Logged in using an API key") as excinfo:
         CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
     assert legs.calls == []
+    assert "sk-" not in str(excinfo.value)  # the key fragment after " - " is not echoed
 
 
 def test_preflight_chatgpt_proceeds_and_records_auth_mode(monkeypatch, tmp_path, isolated_env):
     legs = _Legs([(NON_DEAD_START, "", 1)])
-    preflight = _install(monkeypatch, legs, _Preflight(stdout=CHATGPT_LINE + "\n", stderr="", returncode=0))
+    coloured = f"\x1b[32m{CHATGPT_LINE}\x1b[0m\n"  # a coloured TTY-style line must still match
+    preflight = _install(monkeypatch, legs, _Preflight(stdout=coloured, stderr="", returncode=0))
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
     assert preflight.calls[0]["cmd"] == ["codex", "login", "status"]
     assert preflight.calls[0]["timeout"] == codex_cli.PREFLIGHT_TIMEOUT_SECONDS
@@ -329,7 +360,8 @@ def test_dead_turn_retry_count_is_env_tunable(monkeypatch, tmp_path, isolated_en
 
 
 def test_non_dead_failure_is_captured_with_error_text(monkeypatch, tmp_path, isolated_env):
-    legs = _Legs([(NON_DEAD_START, "\x1b[31mERROR\x1b[0m codex_api: ws failed\n", 1)])
+    osc_link = "\x1b]8;;https://example\x1b\\link\x1b]8;;\x1b\\"
+    legs = _Legs([(NON_DEAD_START, f"\x1b[31mERROR\x1b[0m codex_api: ws failed {osc_link}\n", 1)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
     assert len(legs.calls) == 1  # never retried
@@ -348,7 +380,7 @@ def test_non_dead_failure_is_captured_with_error_text(monkeypatch, tmp_path, iso
     assert raw["effort"] == "high" and raw["model"] == "gpt-6-astra"
     assert raw["event_counts"]["error"] >= 1 and raw["event_counts"]["turn.failed"] == 1
     assert raw["errors_total"] == len(raw["errors"]) >= 1
-    assert raw["stderr_tail"] == "ERROR codex_api: ws failed\n"  # ANSI stripped
+    assert raw["stderr_tail"] == "ERROR codex_api: ws failed link\n"  # CSI colours + OSC link stripped
     json.dumps(raw)  # plain JSON types only — must round-trip through RunRecord.write
 
 
@@ -361,6 +393,20 @@ def test_wall_time_sums_legs_and_excludes_pauses(monkeypatch, tmp_path, isolated
     assert r.wall_time_seconds == pytest.approx(40.0)
     assert r.raw["dead_turn_retries"] == 1
     assert isolated_env == [codex_cli.DEAD_TURN_RETRY_PAUSE_SECONDS]
+
+
+def test_dead_leg_error_messages_survive_into_the_returned_attempt(monkeypatch, tmp_path, isolated_env):
+    """A retried attempt must say WHY its earlier legs were dead — the
+    abandoned thread is not referenced anywhere else in the record."""
+    legs = _Legs([(START_FIXTURE, "", 1), (NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    dead_msgs = codex_cli._error_messages(_parse_jsonl(START_FIXTURE)[0])
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_errors_total"] == len(dead_msgs) >= 1
+    assert r.raw["dead_turn_errors"] == dead_msgs[: codex_cli.RAW_LIST_LIMIT]
+    assert any("401 Unauthorized" in m for m in r.raw["dead_turn_errors"])
+    assert r.raw["errors_total"] == len(codex_cli._error_messages(_parse_jsonl(NON_DEAD_START)[0]))
 
 
 # --------------------------------------------------------------------------
@@ -382,7 +428,7 @@ def test_no_thread_started_raises_after_one_call(monkeypatch, tmp_path, isolated
 
 def test_timeout_kills_process_group_and_drains(monkeypatch, tmp_path, isolated_env):
     monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "7")
-    legs = _Legs([(NON_DEAD_START, "", 1)], timeout_first=True)
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=subprocess.TimeoutExpired("codex", 7))
     _install(monkeypatch, legs)
     signals: list[tuple[int, int]] = []
     monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid + 1)
@@ -393,8 +439,37 @@ def test_timeout_kills_process_group_and_drains(monkeypatch, tmp_path, isolated_
     assert proc.communicate_calls[0]["timeout"] == 7
     # SIGTERM to the group; poll() still None afterwards ⇒ SIGKILL to the group
     assert signals == [(4243, codex_cli.signal.SIGTERM), (4243, codex_cli.signal.SIGKILL)]
-    # a second, bounded communicate() drained the pipes
+    # a second, bounded communicate() drained the pipes, then they were closed
     assert proc.communicate_calls[1]["timeout"] == codex_cli.DRAIN_TIMEOUT_SECONDS
+    assert proc.pipes_closed
+
+
+def test_timeout_sigterm_alone_when_group_exits(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=subprocess.TimeoutExpired("codex", 1),
+                 dies_on_sigterm=True)
+    _install(monkeypatch, legs)
+    signals: list[int] = []
+    monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(codex_cli.os, "killpg", lambda pgid, sig: signals.append(sig))
+    with pytest.raises(HarnessError, match="timed out"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert signals == [codex_cli.signal.SIGTERM]  # no SIGKILL once the group is gone
+
+
+def test_interrupt_during_leg_kills_group_closes_pipes_and_reraises(monkeypatch, tmp_path, isolated_env):
+    """Ctrl-C: the child is in its own process group, so the terminal's SIGINT
+    never reaches it — the adapter must kill the group itself, then re-raise
+    the interrupt unwrapped (never as a HarnessError)."""
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=KeyboardInterrupt(), dies_on_sigterm=True)
+    _install(monkeypatch, legs)
+    signals: list[int] = []
+    monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(codex_cli.os, "killpg", lambda pgid, sig: signals.append(sig))
+    with pytest.raises(KeyboardInterrupt):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert signals == [codex_cli.signal.SIGTERM]
+    assert legs.procs[0].pipes_closed
+    assert len(legs.procs[0].communicate_calls) == 1  # no drain attempt on interrupt
 
 
 # --------------------------------------------------------------------------

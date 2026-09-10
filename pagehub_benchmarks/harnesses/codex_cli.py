@@ -51,8 +51,10 @@ stream, never by matching error text:
   either leg, exactly as the Claude adapter raises on a non-zero exit. Auth /
   transport failures and a rejected (``invalid_prompt``) prompt are dead turns;
 - a turn in which the model *did* work and then failed is **captured**: an
-  :class:`AttemptResult` with the error text under ``raw["harness_error"]``,
-  so the runner grades whatever was written and resumes the thread;
+  :class:`AttemptResult` with the error text under ``raw["harness_error"]``
+  (the ``turn.failed`` message, else the last ``error`` event, else the
+  stderr tail, else the exit code), so the runner grades whatever was written
+  and resumes the thread;
 - ``turn.completed`` with no usage from any source raises — a success is
   never recorded with zero tokens;
 - timeout (``CODEX_BUILD_TIMEOUT_SECONDS``, default 3600) kills the whole
@@ -98,7 +100,8 @@ STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 # is intentionally absent.
 EFFORT_MAP: dict[str, str] = {e: e for e in ("low", "medium", "high", "xhigh", "max")}
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# CSI sequences (colours, cursor) and OSC sequences (hyperlinks, titles).
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _TERMINAL_TYPES = ("turn.completed", "turn.failed")
 
 __all__ = ["CodexCliHarness", "HarnessError", "EFFORT_MAP", "STRIPPED_ENV_VARS"]
@@ -161,7 +164,9 @@ def _find_rollout(thread_id: str) -> str | None:
     (``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<thread_id>.jsonl``)."""
     if not thread_id:
         return None
-    pattern = str(_codex_home() / "sessions" / "*" / "*" / "*" / f"rollout-*-{thread_id}.jsonl")
+    pattern = str(
+        _codex_home() / "sessions" / "*" / "*" / "*" / f"rollout-*-{glob.escape(thread_id)}.jsonl"
+    )
     matches = sorted(glob.glob(pattern))
     return matches[-1] if matches else None
 
@@ -363,15 +368,18 @@ class CodexCliHarness(Harness):
             raise HarnessError(
                 f"`codex login status` did not answer within {PREFLIGHT_TIMEOUT_SECONDS}s"
             ) from exc
-        combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+        combined = _strip_ansi(f"{proc.stdout or ''}\n{proc.stderr or ''}")
         mode_line = next(
             (ln.strip() for ln in combined.splitlines() if "ogged in" in ln),
-            _strip_ansi(combined).strip()[:200],
+            combined.strip()[:200],
         )
         if proc.returncode != 0 or SUBSCRIPTION_MODE_LINE not in combined:
+            # Keep only the mode, not whatever follows " - " (an API-key login
+            # line carries a redacted key fragment there).
+            shown = mode_line.split(" - ", 1)[0]
             raise HarnessError(
                 "codex is not logged in with a ChatGPT subscription "
-                f"(`codex login status` exited {proc.returncode}: {mode_line!r}). "
+                f"(`codex login status` exited {proc.returncode}: {shown!r}). "
                 "Run `codex login` (or `codex login --device-auth` on a headless box); "
                 "do not log in with an API key — runs must stay on subscription auth."
             )
@@ -405,6 +413,13 @@ class CodexCliHarness(Harness):
             raise HarnessError(
                 f"codex timed out after {timeout}s: {' '.join(cmd[:3])} ..."
             ) from exc
+        except BaseException:
+            # KeyboardInterrupt or anything else: the child is in its own
+            # process group, so the terminal's SIGINT never reaches it — kill
+            # the group ourselves rather than orphaning a live agent.
+            _kill_group(proc)
+            _close_pipes(proc)
+            raise
         wall = time.monotonic() - started
         return _Leg(stdout or "", stderr or "", proc.returncode, wall)
 
@@ -413,6 +428,7 @@ class CodexCliHarness(Harness):
         retries = _dead_turn_retries()
         total_wall = 0.0
         dead_legs = 0
+        dead_leg_errors: list[str] = []
         leg_name = "start" if is_start else "resume"
         for leg_no in range(retries + 1):
             leg = self._run_leg(cmd, cwd, stdin_text)
@@ -450,6 +466,7 @@ class CodexCliHarness(Harness):
                     rollout_path=rollout_path,
                     wall=total_wall,
                     dead_legs=dead_legs,
+                    dead_leg_errors=dead_leg_errors,
                     is_start=is_start,
                     harness_error=None,
                 )
@@ -457,6 +474,7 @@ class CodexCliHarness(Harness):
             dead = usage.source == "none" and not _has_model_activity(events)
             if dead:
                 dead_legs += 1
+                dead_leg_errors.extend(errors or [error_text])
                 if leg_no < retries:
                     time.sleep(DEAD_TURN_RETRY_PAUSE_SECONDS)
                     continue
@@ -480,6 +498,7 @@ class CodexCliHarness(Harness):
                 rollout_path=rollout_path,
                 wall=total_wall,
                 dead_legs=dead_legs,
+                dead_leg_errors=dead_leg_errors,
                 is_start=is_start,
                 harness_error=error_text,
             )
@@ -499,6 +518,7 @@ class CodexCliHarness(Harness):
         rollout_path: str | None,
         wall: float,
         dead_legs: int,
+        dead_leg_errors: list[str],
         is_start: bool,
         harness_error: str | None,
     ) -> AttemptResult:
@@ -515,6 +535,10 @@ class CodexCliHarness(Harness):
             "model": self._model,
             "cache_tokens_reported": usage.cache_tokens_reported,
             "dead_turn_retries": dead_legs,
+            # Why the retried legs were dead — the abandoned threads are not
+            # otherwise referenced anywhere in the record.
+            "dead_turn_errors": dead_leg_errors[:RAW_LIST_LIMIT],
+            "dead_turn_errors_total": len(dead_leg_errors),
             "rollout_path": rollout_path,
             "unparsed_lines": unparsed,
             "unparsed_total": unparsed_total,

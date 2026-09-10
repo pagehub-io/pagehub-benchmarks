@@ -1,6 +1,6 @@
 # Tech spec — Codex CLI harness (`codex-cli`, GPT-6 Astra) for pagehub-benchmarks
 
-Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Review history: round 1 on v1 (1 critical,
+Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). Review history: round 1 on v1 (1 critical,
 11 important, 10 nits) → v2; round 2 on v2 (0 critical, 5 important, 10 nits)
 → v3; round 3 on v3 (0 critical, 2 important, 11 nits) → v4; round 4 on v4
 (0 critical, 2 important — both caused by v4's Stage-1 guard, now removed —
@@ -114,7 +114,7 @@ both turns' rollout usage payloads (0.4).
 | Item | Result |
 |---|---|
 | `invalid_prompt` (openai/codex #43237, open, filed 2026-09-06) | gpt-6-astra with ChatGPT-subscription auth rejects prompts with exit **1** and error text "Invalid prompt: your prompt was flagged as potentially violating our usage policy…". The original post reproduces it **consistently** (even for `hi`, isolated `CODEX_HOME`, `--ignore-user-config`); a 2026-09-07 commenter reports it **intermittent** ("10 failures in ~40 min across projects", `high`/`xhigh`/`max`, while `gpt-5.6-sol` turns succeeded); 2026-09-08 commenters report it **account-scoped and total** ("began rejecting every prompt", Pro plan at 0 % usage, `sol` fine). So on a given account it may be absent, intermittent, or total. The OP's repro also passed `--disable multi_agent --disable apps --disable plugins`, which the adapter does not. No `--json` sample exists; it arrives as ordinary error text (the binary also carries a second wording, "Invalid prompt: we've limited access…"). Re-checked 2026-09-10: still open. |
-| pricing | `https://developers.openai.com/api/docs/pricing` (openai.com/api/pricing 403s for bots; platform.openai.com/docs/pricing 301s here). Table header **Input · Cached input · Cache writes · Output**, tiers "Short context (≤272K input tokens)" / "Long context (>272K input tokens)". `gpt-6-astra` standard short: **$10.00 · $1.00 · $12.50 · $50.00** per 1M; long: $20 · $2 · $25 · $75. Tooltip: "Input tokens are either Input, Cached Input, or Cache Write and writes are not an additive fee." |
+| pricing | `https://developers.openai.com/api/docs/pricing` — the page also lists a "Fast mode" (priority) tier at 2× the standard rates; the adapter pins no service tier, so runs are priced as standard (Stage 2 may record `turn_context.service_tier` from the rollout to confirm). (openai.com/api/pricing 403s for bots; platform.openai.com/docs/pricing 301s here). Table header **Input · Cached input · Cache writes · Output**, tiers "Short context (≤272K input tokens)" / "Long context (>272K input tokens)". `gpt-6-astra` standard short: **$10.00 · $1.00 · $12.50 · $50.00** per 1M; long: $20 · $2 · $25 · $75. Tooltip: "Input tokens are either Input, Cached Input, or Cache Write and writes are not an additive fee." |
 
 ## 4. Design
 
@@ -281,7 +281,8 @@ Usage — **the mapping rule is provisional until both success fixtures exist
 `{"thread_id", "exit_code", "auth_mode", "usage", "usage_source",
 "final_event", "event_counts": {type: n}, "errors": [first 20 messages] +
 "errors_total", "effort", "model", "cache_tokens_reported",
-"harness_error"?, "dead_turn_retries", "rollout_path": str|None,
+"harness_error"?, "dead_turn_retries", "dead_turn_errors": [first 20 messages
+from the dead legs] + "dead_turn_errors_total", "rollout_path": str|None,
 "unparsed_lines": [first 20] + "unparsed_total", "stderr_tail": str (last
 2000 chars, ANSI-stripped)}`.
 Plain JSON types only; must round-trip through `RunRecord.write`.
@@ -327,8 +328,9 @@ error text**, and treats "the model never ran" the same on every attempt:
    retry avoids consuming an `attempt` for something the model never saw.
    A deterministic `invalid_prompt` costs ≤ 2 dead legs (~15 s each with
    codex's own reconnects) before failing loudly. Dead-leg wall time is
-   counted; `raw["dead_turn_retries"]` and distinct messages in
-   `raw["errors"]` are recorded. Side effects: a dead *start* leg leaves an
+   counted; `raw["dead_turn_retries"]` and the dead legs' error messages
+   (`raw["dead_turn_errors"]`, bounded) are recorded on the attempt that
+   eventually returns — the abandoned threads are not otherwise referenced. Side effects: a dead *start* leg leaves an
    abandoned thread (new `thread_id` on retry); a dead *resume* leg leaves
    the follow-up user message in the thread history (the model may see it
    up to three times).
@@ -339,8 +341,9 @@ error text**, and treats "the model never ran" the same on every attempt:
    run; the message tells the operator to rerun or switch model.
 5. **Non-dead failure** (model activity, then `turn.failed` / non-zero exit)
    ⇒ **captured**: usage from the rollout (§4.5), `session_handle` =
-   thread_id, `raw["harness_error"]` = terminal error message (else
-   ANSI-stripped stderr tail, else `"codex exited N"`), `raw["exit_code"]`.
+   thread_id, `raw["harness_error"]` = the `turn.failed` message (else the
+   last `error` event's message, else the ANSI-stripped stderr tail, else
+   `"codex exited N"`), `raw["exit_code"]`.
    The runner grades whatever was written and resumes the thread. This is
    the case the task's "attempt failure, not a crash" sentence protects.
 6. **Timeout** (`CODEX_BUILD_TIMEOUT_SECONDS`, default 3600) ⇒
@@ -349,7 +352,11 @@ error text**, and treats "the model never ran" the same on every attempt:
    `communicate(timeout=10)` to drain and close the pipes (a grandchild that
    escaped the group could otherwise hold stdout; a second `TimeoutExpired`
    is caught and the pipes are closed regardless) ⇒ `HarnessError`, as
-   Claude.
+   Claude. **Any other exception** out of `communicate` (a `KeyboardInterrupt`
+   above all — the child is in its own process group, so the terminal's
+   SIGINT never reaches it) also kills the group and closes the pipes before
+   re-raising unwrapped; otherwise an interrupted benchmark would orphan a
+   live agent for up to the timeout.
 7. Exit `0` with a `turn.failed` terminal event, or with no terminal event,
    is a failure per rules 2–5 (exit codes are advisory; the stream is the
    truth).
@@ -375,8 +382,9 @@ make the cause visible.
   lines, `tests/fakes.py` docstring, `.github/workflows/ci.yml` comment.
   **Stage 2, prose only (column set untouched):** `templates/base.html`
   footer "(runs execute on the Claude CLI's subscription auth)" and
-  `templates/run.html` "The full `claude -p --output-format json` response"
-  become false once a codex record exists.
+  `templates/run.html` "The full `claude -p --output-format json` response",
+  and `runner/results.py`'s `AttemptRecord.raw` docstring ("full JSON …
+  preserved verbatim") become false once a codex record exists.
 - `pricing.yaml`, OpenAI block:
   `gpt-6-astra: {input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00}`
   with a comment: source URL + date (§3.3), standard tier ≤272K input
@@ -579,7 +587,9 @@ and to leave the default `make run` path untouched in the meantime (**D7**):
   1–5, 7, 9–11, 13 (registry half), 14. `make test` / `make lint` green. PR
   review round on this diff.
 - **Stage 2 (after login + §4.11 steps 1–2):** commit both success fixtures
-  verbatim; implement the confirmed mapping in `_usage_from`; add the matrix
+  verbatim; implement the confirmed mapping in `_usage_from` (if usage turns
+  out cumulative across a thread, the function gains a `previous_total`
+  argument fed from instance state — its Stage-1 signature is not final); add the matrix
   row; tests 6, 8, 12, 13 (dry-run half); the task's dry-run command passes
   for both rows; finish README's "what is reported"; then §4.11 step 3. PR
   review round on the diff.

@@ -159,10 +159,11 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   Claude adapter on a non-zero exit. A turn in which the model did work and
   then failed is recorded as a failed attempt with the error text under
   `raw.harness_error`, graded as-is, and the thread is resumed.
-  `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each attempt.
-- **Matrix note:** the task pairs codex at `effort: high` with the existing
-  Claude row at `xhigh`; both models accept `xhigh` — add a matching row on
-  either side for a like-for-like comparison.
+  `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each `codex exec` leg
+  (a retried attempt is several legs).
+- **Matrix note:** the planned `eval-chess-backend` row runs codex at
+  `effort: high` while the existing Claude row is `xhigh`; both models accept
+  `xhigh` — add a matching row on either side for a like-for-like comparison.
 
 See `.env.example` for every knob.
 
