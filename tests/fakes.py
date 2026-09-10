@@ -1,4 +1,4 @@
-"""Scripted fakes for the runner tests — no real `claude`, no real pagehub-evals."""
+"""Scripted fakes for the runner tests — no real `claude` or `codex`, no real pagehub-evals."""
 
 from __future__ import annotations
 

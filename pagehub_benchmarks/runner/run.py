@@ -5,9 +5,10 @@ green or attempts exhausted, then write the run record.
 ``execute_benchmark_run`` is the pure core (harness, grader, and worktree are
 injected — that is what the unit tests exercise with fakes). ``run_benchmark``
 is the CLI-facing wrapper: it loads the spec, prepares worktrees, constructs
-the real :class:`ClaudeCodeHarness` + :class:`EvalsGrader`, and persists
-results. ``dry_run_report`` sanity-checks YAML + prompt + grader wiring +
-pricing without calling the harness or pagehub-evals.
+the real harness (:class:`ClaudeCodeHarness` / :class:`CodexCliHarness`, looked
+up in ``HARNESSES``) + :class:`EvalsGrader`, and persists results.
+``dry_run_report`` sanity-checks YAML + prompt + grader wiring + pricing
+without calling the harness or pagehub-evals.
 """
 
 from __future__ import annotations

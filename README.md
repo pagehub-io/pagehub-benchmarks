@@ -46,6 +46,7 @@ docs/                           generated static site (committed; published to G
 pagehub_benchmarks/
   harnesses/base.py             Harness ABC + AttemptResult
   harnesses/claude_code.py      Claude Code adapter (`claude -p ... --output-format json`)
+  harnesses/codex_cli.py        Codex CLI adapter (`codex exec ... --json`, OpenAI)
   grader/client.py              pagehub-evals client (import bundle → run → verdict)
   runner/run.py                 the build→grade→retry loop + the CLI-facing wrapper
   runner/pricing.py             token counts → USD
@@ -55,7 +56,8 @@ pagehub_benchmarks/
   __main__.py                   `python -m pagehub_benchmarks ...`  (list / run / site)
 tools/build_site.py             results/**/*.json → docs/ (Jinja2; `make site`)
 templates/, static/             site templates + plain CSS
-tests/                          unit tests (FakeHarness + FakeGrader — no real claude / evals)
+tests/                          unit tests (FakeHarness + FakeGrader — no real claude / codex / evals)
+tests/fixtures/                 recorded `codex exec --json` streams the codex adapter is tested against
 ```
 
 ## Usage
@@ -102,6 +104,65 @@ A real run needs:
   built worktree has a `make up` target (or a `docker-compose.yml`), the runner
   brings it up before grading and tears it down after; pass `--no-serve` to
   manage it yourself.
+
+### Codex CLI harness (`codex-cli`)
+
+The same loop can drive OpenAI's Codex CLI (`codex exec`) so a benchmark runs
+head-to-head against Claude Code with the identical prompt, grader and run
+record. The adapter is `pagehub_benchmarks/harnesses/codex_cli.py`; the design
+and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
+
+- **Version:** `codex` ≥ 0.153.0 on PATH (developed and tested against
+  0.154.0; `npm i -g @openai/codex`). No matrix row selects it yet — the
+  token-usage parser is calibrated against recorded fixtures first
+  (`plans/codex-cli-harness.md` §6), then the `eval-chess-backend` row lands.
+- **Login:** `codex login` (or `codex login --device-auth` on a headless box).
+  Runs require the **ChatGPT-subscription** login: before the first attempt the
+  adapter runs `codex login status` and refuses unless it reports `Logged in
+  using ChatGPT`. `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` and `OPENAI_API_KEY`
+  are unset in the subprocess — an API key would silently move the run onto
+  metered billing. As for Claude, **`cost_usd` is a computed figure** (tokens ×
+  `pricing.yaml`), not a bill.
+- **Effort is required and explicit.** `config.effort` (`low|medium|high|xhigh|max`)
+  is passed as `-c model_reasoning_effort=…` on **every** attempt. Codex would
+  otherwise inherit `~/.codex/config.toml` or the model default (a bare
+  `codex exec resume` was observed to reset the effort), silently changing
+  results between runs; codex accepts any string here without validating it,
+  so the adapter's explicit map is the only guard. `ultra` (automatic sub-agent
+  delegation) is deliberately not mapped. `--ignore-user-config` is passed on
+  both legs so the operator's config never leaks in; codex still appends a
+  `[projects."<worktree>"] trust_level` entry to `~/.codex/config.toml` per run
+  (harmless; prune occasionally).
+- **Sandbox:** `--sandbox workspace-write` (never `danger-full-access`) with
+  network enabled inside the sandbox. Compared with Claude Code (which runs
+  unsandboxed with `--dangerously-skip-permissions`), the codex agent can
+  write only the worktree and `/tmp`, sees the worktree's `.git` read-only,
+  and can only `pip install` into a venv under the worktree or `/tmp` (prefer
+  `/tmp` — a venv left in the worktree is committed and pushed with the build).
+  It can read the whole filesystem and reach the network — the same exposure
+  as Claude. Codex also prepends its own instructions (bundled skills, a
+  multi-agent role) to every thread, as Claude Code does its system prompt.
+  After each attempt the **runner** executes the built `Makefile` (`make up`)
+  on the host, outside any sandbox, for both harnesses.
+- **What is recorded:** `session_handle` is the codex `thread_id`; attempt 2+
+  runs `codex exec resume <thread_id>` with the failing-eval output. Token
+  counts come from the `--json` stream; if codex reports no cache-token split,
+  the cache columns show `0` and `per_attempt[].raw.cache_tokens_reported` is
+  `false`. `raw` is a bounded summary (`thread_id`, `usage`, `usage_source`,
+  terminal event, error messages, `rollout_path` to codex's own transcript).
+  *Token reporting details are filled in once the success fixtures are
+  recorded — pending calibration.*
+- **When a run crashes vs. records:** a turn in which the model never ran
+  (not logged in, usage limit hit, provider outage, a rejected prompt — see
+  openai/codex#43237) is retried `CODEX_DEAD_TURN_RETRIES` times (default 2)
+  and then fails the run loudly with no record and no push — the same as the
+  Claude adapter on a non-zero exit. A turn in which the model did work and
+  then failed is recorded as a failed attempt with the error text under
+  `raw.harness_error`, graded as-is, and the thread is resumed.
+  `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each attempt.
+- **Matrix note:** the task pairs codex at `effort: high` with the existing
+  Claude row at `xhigh`; both models accept `xhigh` — add a matching row on
+  either side for a like-for-like comparison.
 
 See `.env.example` for every knob.
 
@@ -169,6 +230,7 @@ in the Links sections default to the `pagehub-io` org repos; override via
 ## CI
 
 `.github/workflows/ci.yml` runs **ruff + pytest only**. CI never runs a real
-benchmark — that would call `claude` and pagehub-evals and cost tokens. The
-runner is tested with `FakeHarness` / `FakeGrader`. (`.github/workflows/pages.yml`
+benchmark — that would call `claude` / `codex` and pagehub-evals and cost
+tokens. The runner is tested with `FakeHarness` / `FakeGrader`; the codex
+adapter against recorded `codex exec --json` streams in `tests/fixtures/`. (`.github/workflows/pages.yml`
 is separate — it regenerates and publishes the results site on push to `main`.)

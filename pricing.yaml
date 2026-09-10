@@ -2,10 +2,10 @@
 #
 # `input` / `output` are the standard per-token rates (REQUIRED). `cache_write`
 # is the prompt-cache write rate (Anthropic: 1.25x input over a 5-minute TTL).
-# `cache_read` is the cache-hit read rate. OpenAI lists a single "cached input"
-# rate; we record it under `cache_read` (no separate write rate) and leave
-# `cache_write: 0` so a write contributes nothing — OpenAI doesn't charge for
-# writes separately, only discounts subsequent reads.
+# `cache_read` is the cache-hit read rate. For OpenAI models that publish only a
+# "cached input" rate (the GPT-5 family) we record it under `cache_read` and
+# leave `cache_write: 0` so a write contributes nothing. GPT-6 Astra publishes
+# a separate "Cache writes" rate — see its entry.
 #
 # Providers without a prompt-cache concept (xAI / Grok) omit both cache fields
 # (or set them to null). The loader treats missing/null cache rates as 0.0; the
@@ -125,6 +125,25 @@ models:
     output: 180.00
     cache_write: 0
     cache_read: 0
+
+  # GPT-6 Astra — verified 2026-09-10 at
+  # https://developers.openai.com/api/docs/pricing (openai.com/api/pricing
+  # answers 403 to non-browser fetches; platform.openai.com/docs/pricing 301s
+  # to the developers site). Standard tier, short context (<=272K input
+  # tokens): Input $10.00 / Cached input $1.00 / Cache writes $12.50 /
+  # Output $50.00 per 1M. The long-context tier (>272K input tokens:
+  # $20 / $2 / $25 / $75) is not modelled. Unlike the GPT-5 rows, OpenAI
+  # publishes a cache-WRITE rate here; the page's tooltip: "Input tokens are
+  # either Input, Cached Input, or Cache Write and writes are not an additive
+  # fee" — a token written to the cache is billed at the write rate instead of
+  # the input rate, which is exactly how runner.pricing partitions input vs
+  # cache_creation tokens. Used by the codex-cli harness (subscription auth;
+  # cost_usd is a computed figure).
+  gpt-6-astra:
+    input: 10.00
+    output: 50.00
+    cache_write: 12.50
+    cache_read: 1.00
 
   # --- xAI Grok — published rates as of 2026-05. No prompt-cache concept in
   # the public pricing, so both cache fields are null (=> 0 contribution).
