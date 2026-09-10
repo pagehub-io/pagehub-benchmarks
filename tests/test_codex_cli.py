@@ -297,7 +297,10 @@ def test_preflight_api_key_login_raises_without_exec(monkeypatch, tmp_path, isol
 
 def test_preflight_chatgpt_proceeds_and_records_auth_mode(monkeypatch, tmp_path, isolated_env):
     legs = _Legs([(NON_DEAD_START, "", 1)])
-    coloured = f"\x1b[32m{CHATGPT_LINE}\x1b[0m\n"  # a coloured TTY-style line must still match
+    # a coloured TTY-style line (colon-form CSI params) must still match, a
+    # preceding chatter line mentioning "logged in" must not be what gets
+    # recorded, and any " - suffix" is never stored in the record
+    coloured = f"note: previously logged in elsewhere\n\x1b[38:2:0:255:0m{CHATGPT_LINE} - workspace x\x1b[0m\n"
     preflight = _install(monkeypatch, legs, _Preflight(stdout=coloured, stderr="", returncode=0))
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
     assert preflight.calls[0]["cmd"] == ["codex", "login", "status"]

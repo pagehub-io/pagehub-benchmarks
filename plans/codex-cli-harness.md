@@ -436,7 +436,9 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
 7. **dead-turn path** on `codex_exec_unauthenticated.jsonl` + rc 1: on
    `start_build` **and** on `continue_build` (with the resume fixture),
    the leg is invoked `1 + CODEX_DEAD_TURN_RETRIES` times, `sleep(5)` between,
-   then `HarnessError` whose message contains `401 Unauthorized`.
+   then `HarnessError` whose message contains `401 Unauthorized`. **7b:** a
+   dead start leg followed by a captured leg keeps the dead leg's messages in
+   `raw["dead_turn_errors"]` (+ total) on the returned attempt.
 8. **non-dead failure** (after smoke — needs the rollout usage shape):
    labelled synthetic stream = the real failure envelope plus a non-error
    `item.completed`, then `turn.failed`, with a recorded rollout under a
@@ -445,7 +447,10 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
 9. **no `thread.started`** ⇒ `start_build` raises after exactly **one**
    subprocess call (no dead-turn retry).
 10. **timeout** ⇒ SIGTERM then SIGKILL to the group, drain attempted,
-    `HarnessError`.
+    `HarnessError`; a second case where the group exits on SIGTERM asserts
+    no SIGKILL follows. **10b (interrupt):** a `KeyboardInterrupt` out of
+    `communicate` ⇒ SIGTERM to the group, pipes closed, the interrupt
+    re-raised unwrapped (never a `HarnessError`), no drain attempt.
 11. **parser:** non-JSON chatter ⇒ `unparsed_lines` bounded + count; exit 0 +
     `turn.failed` ⇒ failure; **`turn.completed` with no usage anywhere ⇒
     `HarnessError`**; `errors` bounded + count; stderr tail bounded (2000)

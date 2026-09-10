@@ -101,7 +101,7 @@ STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 EFFORT_MAP: dict[str, str] = {e: e for e in ("low", "medium", "high", "xhigh", "max")}
 
 # CSI sequences (colours, cursor) and OSC sequences (hyperlinks, titles).
-_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _TERMINAL_TYPES = ("turn.completed", "turn.failed")
 
 __all__ = ["CodexCliHarness", "HarnessError", "EFFORT_MAP", "STRIPPED_ENV_VARS"]
@@ -164,8 +164,9 @@ def _find_rollout(thread_id: str) -> str | None:
     (``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<thread_id>.jsonl``)."""
     if not thread_id:
         return None
-    pattern = str(
-        _codex_home() / "sessions" / "*" / "*" / "*" / f"rollout-*-{glob.escape(thread_id)}.jsonl"
+    pattern = os.path.join(
+        glob.escape(str(_codex_home())),
+        "sessions", "*", "*", "*", f"rollout-*-{glob.escape(thread_id)}.jsonl",
     )
     matches = sorted(glob.glob(pattern))
     return matches[-1] if matches else None
@@ -369,14 +370,17 @@ class CodexCliHarness(Harness):
                 f"`codex login status` did not answer within {PREFLIGHT_TIMEOUT_SECONDS}s"
             ) from exc
         combined = _strip_ansi(f"{proc.stdout or ''}\n{proc.stderr or ''}")
+        lines = [ln.strip() for ln in combined.splitlines() if ln.strip()]
         mode_line = next(
-            (ln.strip() for ln in combined.splitlines() if "ogged in" in ln),
-            combined.strip()[:200],
+            (ln for ln in lines if SUBSCRIPTION_MODE_LINE in ln),
+            next((ln for ln in lines if "ogged in" in ln), combined.strip()[:200]),
         )
+        # Keep only the mode, never whatever follows " - " (an API-key login
+        # line carries a redacted key fragment there). This is what gets
+        # raised on failure AND recorded in raw["auth_mode"] on success.
+        mode_line = mode_line.split(" - ", 1)[0]
         if proc.returncode != 0 or SUBSCRIPTION_MODE_LINE not in combined:
-            # Keep only the mode, not whatever follows " - " (an API-key login
-            # line carries a redacted key fragment there).
-            shown = mode_line.split(" - ", 1)[0]
+            shown = mode_line
             raise HarnessError(
                 "codex is not logged in with a ChatGPT subscription "
                 f"(`codex login status` exited {proc.returncode}: {shown!r}). "
@@ -403,8 +407,8 @@ class CodexCliHarness(Harness):
         try:
             stdout, stderr = proc.communicate(input=stdin_text, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
-            _kill_group(proc)
             try:
+                _kill_group(proc)
                 proc.communicate(timeout=DRAIN_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
@@ -417,8 +421,10 @@ class CodexCliHarness(Harness):
             # KeyboardInterrupt or anything else: the child is in its own
             # process group, so the terminal's SIGINT never reaches it — kill
             # the group ourselves rather than orphaning a live agent.
-            _kill_group(proc)
-            _close_pipes(proc)
+            try:
+                _kill_group(proc)
+            finally:
+                _close_pipes(proc)
             raise
         wall = time.monotonic() - started
         return _Leg(stdout or "", stderr or "", proc.returncode, wall)

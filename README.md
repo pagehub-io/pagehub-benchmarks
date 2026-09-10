@@ -136,7 +136,7 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
 - **Sandbox:** `--sandbox workspace-write` (never `danger-full-access`) with
   network enabled inside the sandbox. Compared with Claude Code (which runs
   unsandboxed with `--dangerously-skip-permissions`), the codex agent can
-  write only the worktree and `/tmp`, sees the worktree's `.git` read-only,
+  write only the worktree, `/tmp` and `$TMPDIR`, sees the worktree's `.git` read-only,
   and can only `pip install` into a venv under the worktree or `/tmp` (prefer
   `/tmp` — a venv left in the worktree is committed and pushed with the build).
   It can read the whole filesystem and reach the network — the same exposure
