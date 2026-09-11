@@ -377,9 +377,9 @@ def test_throwaway_home_base_is_outside_the_sandbox_writable_roots(monkeypatch):
     monkeypatch.delenv("TMPDIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.setenv("HOME", "/home/someone")
-    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes")
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes").resolve()
     monkeypatch.setenv("XDG_CACHE_HOME", "/srv/cache")
-    assert codex_cli._throwaway_home_base() == Path("/srv/cache/pagehub-benchmarks/codex-homes")
+    assert codex_cli._throwaway_home_base() == Path("/srv/cache/pagehub-benchmarks/codex-homes").resolve()
     monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache")
     with pytest.raises(HarnessError, match="writable to the agent"):
         codex_cli._throwaway_home_base()
@@ -1146,7 +1146,7 @@ def test_throwaway_home_base_resolves_dotdot_and_ignores_relative_xdg(monkeypatc
     with pytest.raises(HarnessError, match="writable to the agent"):
         codex_cli._throwaway_home_base()
     monkeypatch.setenv("XDG_CACHE_HOME", "relative/cache")  # invalid per the XDG spec → ignored
-    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes")
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes").resolve()
 
 
 def test_rate_limit_print_never_fails_a_completed_leg(monkeypatch, tmp_path, isolated_env, capsys):
@@ -1261,13 +1261,52 @@ def test_cache_writes_partitioned_out_of_input_on_the_start_leg(monkeypatch, tmp
 
 
 def test_cache_writes_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, isolated_env):
-    legs = _Legs([(OK_START, "", 0), (_with_cache_write(OK_RESUME, 1000), "", 0)])
+    """The start leg writes 300, the resume stream reports a thread total of
+    1300 → the resume leg's share is 1000 (not the 1300 total). (Review
+    round 6: with a 0-write start leg, share and total coincide.)"""
+    legs = _Legs([(_with_cache_write(OK_START, 300), "", 0), (_with_cache_write(OK_RESUME, 1300), "", 0)])
     _install(monkeypatch, legs)
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "again")
-    assert r2.input_tokens == 16119 - 12160 - 1000 == 2959
-    assert r2.cache_creation_tokens == 1000 and r2.cache_read_tokens == 12160
+    assert r1.cache_creation_tokens == 300 and r1.input_tokens == 15359 - 12160 - 300
+    assert r2.cache_creation_tokens == 1000
+    assert r2.input_tokens == 16119 - 12160 - 1000 == 2959 and r2.cache_read_tokens == 12160
+
+
+def test_cache_writes_on_the_rollout_path_and_the_next_delta(monkeypatch, tmp_path, isolated_env):
+    """Failure path: the failed turn's writes (400, from the rollout) are
+    recorded as writes — not dropped, not counted as reads — and the thread
+    total advances by them, so the next leg's delta holds only its own 100.
+    (Contributed by the round-6 reviewer; SYNTHETIC write counts on real lines.)"""
+    lines = []
+    for ln in _rollout_lines():
+        o = json.loads(ln)
+        if o.get("type") == "token_usage_record":
+            o["payload"]["turn_token_usage"]["cache_write_input_tokens"] = 400
+        lines.append(json.dumps(o, separators=(",", ":")))
+    _write_rollout(tmp_path, lines)
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    failed_resume = "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    tot2 = dict(_usage_line(OK_RESUME), cache_write_input_tokens=400)
+    tot3 = dict(tot2, input_tokens=tot2["input_tokens"] + 1000,
+                cached_input_tokens=tot2["cached_input_tokens"] + 800,
+                cache_write_input_tokens=tot2["cache_write_input_tokens"] + 100,
+                output_tokens=tot2["output_tokens"] + 7)
+    ok3 = _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")), json.dumps(tot3, separators=(",", ":")))
+    assert json.dumps(tot3, separators=(",", ":")) in ok3
+    legs = _Legs([(OK_START, "", 0), (failed_resume, "", 1), (ok3, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "x")
+    r3 = h.continue_build(r1.session_handle, "y")
+    assert r2.raw["usage_source"] == "rollout"
+    assert (r2.input_tokens, r2.cache_creation_tokens, r2.cache_read_tokens) == (16119 - 12160 - 400, 400, 12160)
+    assert (r3.input_tokens, r3.cache_creation_tokens, r3.cache_read_tokens) == (100, 100, 800)
 
 
 def test_cache_writes_priced_once_at_the_write_rate_through_the_runner(monkeypatch, tmp_path, isolated_env):
@@ -1362,3 +1401,19 @@ def test_reasoning_tokens_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_pa
     r2 = h.continue_build(r1.session_handle, "again")
     assert r1.raw["reasoning_output_tokens"] == 4
     assert r2.raw["reasoning_output_tokens"] == 3
+
+
+
+def test_a_failing_rate_limit_display_never_fails_the_leg(monkeypatch, tmp_path, isolated_env):
+    """The print is display-only: even if it raises, the completed leg's
+    AttemptResult is returned and its rate_limits recorded."""
+    _write_rollout(tmp_path, _rollout_lines())
+
+    def boom(*_a, **_k):
+        raise OverflowError("display failed")
+
+    monkeypatch.setattr(codex_cli, "_print_rate_limits", boom)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "stream" and r.raw["rate_limits"]["plan_type"] == "plus"

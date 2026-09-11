@@ -248,8 +248,9 @@ def _throwaway_home_base() -> Path:
     ``~/.cache`` was verified read-only to the sandboxed agent). Refuses a
     base under ``/tmp`` or ``$TMPDIR`` (compared after resolving symlinks and
     ``..``) rather than silently using a writable location. The worktree is
-    not checked: the runner creates worktrees under the repo's ``.worktrees/``,
-    which a cache directory cannot coincide with.
+    not checked: the runner creates worktrees under ``.worktrees/`` (or
+    ``--worktrees-dir``), and pointing that at the cache directory is not a
+    supported configuration.
     """
     xdg = os.environ.get("XDG_CACHE_HOME", "")
     # The XDG spec says a relative XDG_CACHE_HOME is invalid and must be ignored.
@@ -555,8 +556,11 @@ def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
 
     ``input_tokens`` is the whole prompt; ``cached_input_tokens`` and
     ``cache_write_input_tokens`` are the slices of it billed at the cache
-    rates (the rollout's ``total_tokens == input_tokens + output_tokens`` on
-    both recorded turns confirms the subset reading). ``output_tokens``
+    rates. For cached reads the recordings confirm it (the rollout's
+    ``total_tokens == input_tokens + output_tokens``, with cached > 0). For
+    cache writes no recording has yet shown a non-zero value; the reading
+    rests on OpenAI's pricing page ("Input tokens are either Input, Cached
+    Input, or Cache Write and writes are not an additive fee"). ``output_tokens``
     already includes ``reasoning_output_tokens``: on every real rollout usage
     object with reasoning > 0 on the development box (gpt-5.6-sol,
     2026-09-11; dozens across ``usage`` / ``turn_token_usage`` /
