@@ -150,7 +150,10 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   `~/.codex/shell_snapshots/` in plaintext, values included) and filters
   inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — a probe
   agent then saw no secret-named variables where it previously listed 37 from
-  `~/.bashrc`. Claude Code has no equivalent and sees everything, so keeping
+  `~/.bashrc`. (That throwaway HOME holds one `.bash_profile` line restoring
+  your locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and
+  the resulting `setlocale` warnings would flood every command's output.)
+  Claude Code has no equivalent and sees everything, so keeping
   secrets out of `~/.bashrc` on the runner box (or benchmarking under a
   dedicated user) is still the right hygiene. Codex also prepends its
   own instructions (bundled skills, a multi-agent role; proactive sub-agent

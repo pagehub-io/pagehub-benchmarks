@@ -42,7 +42,9 @@ from the runner, and — the layer that actually closes the hole — a throwaway
 ``HOME`` for the codex subprocess with ``CODEX_HOME`` pinned to the real
 login directory: codex runs the agent's commands with ``bash -lc``, and with
 the operator's HOME that re-sourced ``~/.bashrc`` and its secrets into the
-agent's shell; with an empty HOME the probe reported none.
+agent's shell; with an empty HOME the probe reported none. The throwaway HOME
+holds only a ``.bash_profile`` restoring the runner's locale (codex forces
+``C.UTF-8``, which some boxes' bash cannot load — see ``_prepare_home``).
 
 **Auth — subscription only.** ``CODEX_API_KEY`` (a live runtime auth source
 that would silently move the run onto metered API billing), ``CODEX_ACCESS_TOKEN``
@@ -91,6 +93,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import tempfile
@@ -206,6 +209,31 @@ def _map_effort(config: dict[str, Any] | None) -> str:
 
 def _codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser()
+
+
+def _prepare_home(home: str) -> None:
+    """Seed the throwaway HOME with a login profile that sets only the locale.
+
+    ``codex exec`` forces ``LANG``/``LC_ALL``/``LC_CTYPE=C.UTF-8`` for the
+    agent's commands and ignores ``shell_environment_policy.set`` for them
+    (verified 2026-09-11). On boxes where the ``bash`` that PATH resolves
+    cannot load ``C.UTF-8`` (linuxbrew bash 5.3 here), every bash-script shim
+    — pyenv's ``python3``/``pip``/``pytest`` — then printed ~20 ``setlocale``
+    warnings into the agent's command output: noise, tokens and a confound
+    the Claude agent never sees. Codex runs commands with ``/bin/bash -lc``,
+    which reads ``~/.bash_profile`` *after* codex's env injection, so
+    exporting the runner's own locale there (``LC_ALL`` or else ``LANG`` — what
+    the Claude agent inherits) removes it: 39 warnings → 0 for one pip + one
+    pytest call. Nothing else goes in the file; with no runner locale set the
+    HOME stays empty.
+    """
+    locale = os.environ.get("LC_ALL") or os.environ.get("LANG")
+    if not locale:
+        return
+    quoted = shlex.quote(locale)
+    Path(home, ".bash_profile").write_text(
+        f"export LANG={quoted} LC_ALL={quoted} LC_CTYPE={quoted}\n", encoding="utf-8"
+    )
 
 
 def _find_rollout(thread_id: str) -> str | None:
@@ -855,6 +883,7 @@ class CodexCliHarness(Harness):
     ) -> AttemptResult:
         effort = _map_effort(config)  # before any subprocess
         self._home_override = tempfile.mkdtemp(prefix="pagehub-benchmarks-codex-home-")
+        _prepare_home(self._home_override)
         self._auth_mode = self._preflight()
         self._thread_total = None
         self._worktree_dir = worktree_dir

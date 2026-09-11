@@ -289,6 +289,8 @@ def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_p
     HOME that re-sources ~/.bashrc and its secrets into the agent's shell.
     The subprocess gets an empty HOME, while CODEX_HOME still points at the
     real login directory (verified 2026-09-11: secrets NONE, login works)."""
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    monkeypatch.delenv("LC_ALL", raising=False)
     legs = _Legs([(NON_DEAD_START, "", 1), (NON_DEAD_RESUME, "", 1)])
     preflight = _install(monkeypatch, legs)
     h = CodexCliHarness()
@@ -300,9 +302,34 @@ def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_p
     home = Path(homes.pop())
     assert home.is_dir() and home != Path(os.environ["HOME"])
     assert home.name.startswith("pagehub-benchmarks-codex-home-")
-    assert not any(home.iterdir())  # empty: no profile, no secrets
+    # nothing but the locale profile: no secrets, no operator dotfiles
+    assert [p.name for p in home.iterdir()] == [".bash_profile"]
+    assert (home / ".bash_profile").read_text() == (
+        "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8\n"
+    )
     for e in envs:
         assert e["CODEX_HOME"] == os.environ["CODEX_HOME"]  # the real codex home, not <HOME>/.codex
+
+
+def test_home_profile_restores_runner_locale_lc_all_first(monkeypatch, tmp_path):
+    """codex forces C.UTF-8; the profile re-exports the runner's locale,
+    preferring LC_ALL over LANG, shell-quoted."""
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
+    codex_cli._prepare_home(str(tmp_path))
+    assert (tmp_path / ".bash_profile").read_text() == (
+        "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 LC_CTYPE=de_DE.UTF-8\n"
+    )
+    monkeypatch.setenv("LC_ALL", "x; touch /tmp/pwned")  # hostile value is quoted, never executed
+    codex_cli._prepare_home(str(tmp_path))
+    assert "LC_ALL='x; touch /tmp/pwned'" in (tmp_path / ".bash_profile").read_text()
+
+
+def test_home_stays_empty_without_a_runner_locale(monkeypatch, tmp_path):
+    monkeypatch.delenv("LANG", raising=False)
+    monkeypatch.delenv("LC_ALL", raising=False)
+    codex_cli._prepare_home(str(tmp_path))
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_codex_home_defaults_to_runner_home_dot_codex_when_unset(monkeypatch, tmp_path):
