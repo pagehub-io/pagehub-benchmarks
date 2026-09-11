@@ -1,6 +1,6 @@
 # Tech spec — Codex CLI harness (`codex-cli`, GPT-6 Astra) for pagehub-benchmarks
 
-Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). **Amended 2026-09-11 for Stage 2:** U1–U8 answered by execution (§3.4; U3 only as "not observed today"), usage mapping finalised (§4.5), three verified findings folded in — the stream's usage is the thread total; operator `AGENTS.md`/skills are not suppressed (pre-flight guard, rule 1); codex exposes the runner's secret-named env vars and writes login-shell snapshots to disk (§4.4 env policy, §4.10). **Amended again after PR #29 review round 3:** throwaway HOME moved out of the sandbox's writable roots and now also restores `PATH`; guard extended to `AGENTS.override.md` / `instructions.md`; resume legs must report the handle's thread id; `rate_limits` trimmed; `cache_tokens_reported` reflects the field's presence; §4.8 lists the new tests. Review history: round 1 on v1 (1 critical,
+Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). **Amended 2026-09-11 for Stage 2:** U1–U8 answered by execution (§3.4; U3 only as "not observed today"; U8's hooks/plugins/rules halves not exercised — none exist on the development box), usage mapping finalised (§4.5), three verified findings folded in — the stream's usage is the thread total; operator `AGENTS.md`/skills are not suppressed (pre-flight guard, rule 1); codex exposes the runner's secret-named env vars and writes login-shell snapshots to disk (§4.4 env policy, §4.10). **Amended again after PR #29 review round 3:** throwaway HOME moved out of the sandbox's writable roots and now also restores `PATH`; guard extended to `AGENTS.override.md` / `instructions.md`; resume legs must report the handle's thread id; `rate_limits` trimmed; `cache_tokens_reported` reflects the field's presence; §4.8 lists the new tests. **And after round 4 (passed, nits swept):** profile appends codex's own PATH after the runner's; HOME-base guard compares resolved paths; `BASH_ENV`/`ENV`/`ZDOTDIR` stripped; login vs non-login shells documented (§3.4); §4.11 step 3 folded into the first real run. Review history: round 1 on v1 (1 critical,
 11 important, 10 nits) → v2; round 2 on v2 (0 critical, 5 important, 10 nits)
 → v3; round 3 on v3 (0 critical, 2 important, 11 nits) → v4; round 4 on v4
 (0 critical, 2 important — both caused by v4's Stage-1 guard, now removed —
@@ -129,6 +129,7 @@ both turns' rollout usage payloads (0.4).
 | U7b | **Complete mitigation found:** give the codex subprocess a throwaway `HOME` (empty temp dir) with `CODEX_HOME` pinned to the real login directory. `bash -lc` then sources an empty profile: the same probe reported **NONE** secret-named variables (bashrc exports and inherited ones alike), login still worked via `CODEX_HOME`, `pip` and network still worked, no snapshot written. (First attempt failed harmlessly before any network call — `CODEX_HOME="$HOME/.codex"` expanded against the new HOME; codex refuses a non-existent codex home.) |
 | Locale | `codex exec` forces `LANG`/`LC_ALL`/`LC_CTYPE=C.UTF-8` (plus `NO_COLOR=1`, `PAGER=cat`, `TERM=dumb`) for the agent's commands; `-c shell_environment_policy.set.LC_ALL=…` does **not** override it. This box's PATH resolves `bash` to linuxbrew bash 5.3, which cannot load `C.UTF-8`, so every pyenv shim (`python3`, `pip`, `pytest` are bash scripts) printed ~20 `setlocale` warnings into the agent's command output (21 for one `pip --version`). The throwaway HOME therefore carries one `.bash_profile` line exporting the runner's own locale (`LC_ALL` or `LANG`), which `/bin/bash -lc` reads after codex's injection: 39 → 0 warnings for pip + pytest (simulated), 0 in the real adapter run below. |
 | Adapter smoke | The real adapter (`get_harness("codex-cli")`), real codex, `gpt-5.6-sol` at `low`, start + resume in a git-init'd scratch worktree: pre-flight `Logged in using ChatGPT`; agent `HOME` = the throwaway dir; `LANG`/`LC_ALL=en_US.UTF-8`; 0 setlocale warnings; 0 secret-named variables; fastapi/chess/uvicorn importable (host site-packages are readable); `usage_source="stream"` on both legs; resume delta = thread total − start (62429 − 30184 = 32245 input); `rate_limits` read (5h 3.0 %, weekly 1.0 %). |
+| Login vs non-login shells | The model chooses per command: codex's `exec_command` tool takes `"login": true|false`. Login (the default) runs `/bin/bash -lc` → `/etc/profile` + the throwaway `.bash_profile` (runner PATH first, then codex's PATH; runner locale). Non-login runs `/bin/bash -c` → no profile at all: PATH is codex's own (`…/codex-path`, the `~/.codex/tmp/arg0/…` helper dir with `apply_patch`/`codex-linux-sandbox`, then the runner's PATH — the toolchain is intact) and the locale stays codex's `C.UTF-8`; only bash-script tools resolved through a bash that can't load it warn, and on the development box `python3`/`pip`/`pytest` resolve to real pyenv binaries first (the runner itself runs under `pyenv exec`), so none did. Secret-named variables: 0 in both modes. Verified 2026-09-11 through the real adapter (a `login:false` turn: arg0 dir on PATH, `LC_ALL=C.UTF-8`, 0 warnings, 0 secrets; a login turn: runner locale, 0 warnings, 0 secrets). |
 | Resume preamble | Every resumed turn re-injects codex's `<skills_instructions>` developer message (3,257 chars) — codex's own behaviour, present identically in a thread run without any adapter flags. No `<permissions instructions>` is re-injected with the adapter's identical-settings legs. A per-resume token cost inherent to codex, noted for comparability. |
 | U8 | **Negative.** `--ignore-user-config` suppresses neither a global `$CODEX_HOME/AGENTS.md` (marker instruction was obeyed) nor user skills (marker skill listed). ⇒ pre-flight guard (rule 1). |
 | — | Delegation: turn 1 carries `<multi_agent_mode>` "proactive multi-agent delegation no longer applies — do not spawn sub-agents" at default settings, so Astra will not delegate on its own; `ultra` is the codex level that turns it on (rejected by the effort map; a future opt-in knob if wanted — it multiplies token spend). |
@@ -235,8 +236,10 @@ only what the agent does *during* its turn — see §4.10.
 auth source — would silently switch to metered billing), **`CODEX_ACCESS_TOKEN`**
 (read as an auth source), and **`OPENAI_API_KEY`** (task requirement; not
 read at runtime by 0.154 but harmless and future-proof). **D2 is mandatory.**
-`CODEX_HOME` is left untouched. Nothing is added. The pre-flight (§4.6)
-runs under this same stripped env.
+`CODEX_HOME` is pinned (absolute) to the operator's real codex home, `HOME`
+is swapped for the throwaway directory (D8, below), and `BASH_ENV`/`ENV`/
+`ZDOTDIR` are removed so no operator file can be sourced through them.
+Nothing else is added. The pre-flight (§4.6) runs under this same env.
 
 **Agent shell environment (added 2026-09-11, U7).** `--disable shell_snapshot`
 + `-c shell_environment_policy.experimental_use_profile=false` + the exclude
@@ -312,8 +315,9 @@ rule, as implemented in `_usage_from`:
   `sessions/**/rollout-*-<thread_id>.jsonl`): the last usage-bearing
   `event_msg` (the binary names both `last_token_usage` and
   `total_token_usage`; which to read is settled by the fixture pair, U2)
-  belonging to this leg's turn — matched by `turn_id` if the payload carries
-  one, else **positionally** (payloads after the last `turn_context` line);
+  belonging to this leg's turn, matched **positionally** (the last
+  `token_usage_record` after the last `turn_context` line — the leg that just
+  ran is the last turn appended; a turn with no record yet reads as none);
   `"rollout"`. Neither ⇒ tokens `0`, `"none"`. The rollout is an unstable
   format (§3.1), hence fallback-only and always marked. The raw usage object
   is stored verbatim in `raw["usage"]`.
@@ -479,20 +483,23 @@ make the cause visible.
 `env`, `input`, timeout; return scripted stdout/stderr/returncode; the fake
 must let a test assert process-group kill and drain; `time.sleep` patched):
 
-1. **start argv, byte-exact:** `["codex","exec","--ignore-user-config","-m",
-   model,"--json","-C",wt,"--sandbox","workspace-write","-c",
+1. **start argv, byte-exact:** `["codex","exec","--ignore-user-config",
+   *ENV_POLICY,"-m",model,"--json","-C",wt,"--sandbox","workspace-write","-c",
    'model_reasoning_effort="high"',"-c",
    "sandbox_workspace_write.network_access=true","-"]`; `input` == prompt
    verbatim (multi-line, quotes, braces, non-ASCII); `cwd == wt`.
 2. **resume argv, byte-exact:** `["codex","exec","resume",thread_id,
-   "--ignore-user-config","--json","-m",model,"-c",
+   "--ignore-user-config",*ENV_POLICY,"--json","-m",model,"-c",
    'model_reasoning_effort="high"',"-c",'sandbox_mode="workspace-write"',
    "-c","sandbox_workspace_write.network_access=true","-"]`; no `-C`, no
    `--sandbox`; `cwd == wt`; `input` == follow-up verbatim.
 3. **effort:** all five map; `ultra`, `minimal`, `bogus`, `"High"`, `None`,
    `1`, missing ⇒ `HarnessError`, no subprocess call.
-4. **env:** the three vars absent; `PATH`, `CODEX_HOME` preserved; nothing
-   added; **the pre-flight call also ran under the stripped env**.
+4. **env:** the three auth vars and `BASH_ENV`/`ENV`/`ZDOTDIR` absent; `PATH`
+   preserved; `CODEX_HOME` pinned; `HOME` swapped; nothing else added; **the
+   pre-flight call also ran under the same env**. (`ENV_POLICY` in items 1–2 =
+   `--disable shell_snapshot -c shell_environment_policy.experimental_use_profile=false
+   -c shell_environment_policy.exclude=[…]`.)
 5. **pre-flight:** rc 1 `Not logged in` (on stderr) ⇒ raise; rc 0 `Logged in
    using an API key - …` ⇒ raise (no exec call in either); rc 0 `Logged in
    using ChatGPT` ⇒ the exec leg is invoked and, on a stream that returns,
@@ -579,7 +586,7 @@ computed from `pricing.yaml`, not billed. `.env.example` gets both knobs.
 
 | Actor controlled | Gets | Mitigation / status |
 |---|---|---|
-| **The model** (its tool calls) | Write: worktree (minus `.git`), `/tmp`, `$TMPDIR`. **Read: the entire filesystem** (`~/.ssh`, `~/.codex/auth.json`, `~/.claude/`, any `.env` — by path; `$HOME` in its shell is the empty throwaway dir). Network egress (D1). Subprocess env minus the three auth vars, minus every inherited variable matching `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*`, and a login shell that sources **no** profile (D8) — a probe agent reported no secret-named variables, where before D8 it listed 37 from `~/.bashrc` (production Stripe/JWT/Cloudflare/Supabase credentials and a PEM key). Claude Code sees all of them with no filtering. Can start background processes (verified not to outlive `codex exec`). **And, one step later, arbitrary unsandboxed execution as the runner user with the runner's full environment**: the runner runs the model-authored `make up` / `make down` / compose file on the host with no `env=` filtering. ⇒ read-anything + egress + a secret-laden shell is an exfiltration path **today, for both harnesses**. | During the turn: narrower than the Claude harness (no sandbox there). After the turn: identical to Claude — the host-side `make up` is existing runner behaviour for every harness. Stated plainly in README; the profile-secrets problem needs the operator-side fix below. |
+| **The model** (its tool calls) | Write: worktree (minus `.git`), `/tmp`, `$TMPDIR`. **Read: the entire filesystem** (`~/.ssh`, `~/.codex/auth.json`, `~/.claude/`, any `.env` — by path; `$HOME` in its shell is the empty throwaway dir). Network egress (D1). Subprocess env minus the three auth vars, minus every inherited variable matching `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*`, and shells that source no operator profile (D8: a login shell reads only `/etc/profile` and the throwaway PATH/locale `.bash_profile`; a non-login shell reads nothing) — a probe agent reported no secret-named variables, where before D8 it listed 37 from `~/.bashrc` (production Stripe/JWT/Cloudflare/Supabase credentials and a PEM key). Claude Code sees all of them with no filtering. Can start background processes (verified not to outlive `codex exec`). **And, one step later, arbitrary unsandboxed execution as the runner user with the runner's full environment**: the runner runs the model-authored `make up` / `make down` / compose file on the host with no `env=` filtering. ⇒ read-anything + egress + a secret-laden shell is an exfiltration path **today, for both harnesses**. | During the turn: narrower than the Claude harness (no sandbox there). After the turn: identical to Claude — the host-side `make up` is existing runner behaviour for every harness. Stated plainly in README; the profile-secrets problem needs the operator-side fix below. |
 | **Target repo contents** (`AGENTS.md`, `.codex/`, `.rules` for a non-empty `target_start`) | Instructions/rules codex would load from the checkout. | Moot today: all four benchmarks are `target_start: empty`. `--ignore-rules` exists if a non-empty start is ever added. |
 | **Operator's shell env** | Inherited minus the three auth vars; a `CODEX_API_KEY` would have switched billing silently. Everything `~/.bashrc` exports reaches a login shell started with the operator's HOME — which is what the **Claude** harness gives its agent, and what codex gave it before D8; codex additionally wrote plaintext login-shell snapshots (values included, mode 644) to `$CODEX_HOME/shell_snapshots/` until `--disable shell_snapshot` was added. | Codex: three auth vars stripped, inherited secret-named vars filtered, snapshots disabled, **and a throwaway HOME so the profile is never sourced (verified NONE)**. Claude: unchanged, sees everything. **Operator action still recommended:** move secrets out of `~/.bashrc` (source them on demand) or benchmark under a dedicated user; delete the existing snapshot files. |
 | **Operator's stored login** (`auth.json`) | An API-key login would pass an exit-code-only check and bill the API. | Pre-flight requires `Logged in using ChatGPT`. |
@@ -589,7 +596,7 @@ computed from `pricing.yaml`, not billed. `.env.example` gets both knobs.
 No authn/authz or twin-override surface is added; the harness makes no HTTP
 calls of its own.
 
-### 4.11 Smoke plan (steps 1–2 done 2026-09-11 — §3.4; step 3 pending)
+### 4.11 Smoke plan (steps 1–2 done 2026-09-11 — §3.4; step 3 = the first real run)
 
 Each step is cheap and gates the next. Back up `~/.codex/config.toml` first.
 
@@ -611,7 +618,13 @@ Each step is cheap and gates the next. Back up `~/.codex/config.toml` first.
    it sees them (U8); remove both afterwards. Then one resume on that
    thread; its rollout turn must show **no** `<permissions instructions>`
    injection.
-3. The single-attempt benchmark smoke:
+3. The single-attempt benchmark smoke. **Superseded by budget (2026-09-11):**
+   the operator's ChatGPT Plus plan allows only a handful of full Astra
+   builds, so a throwaway single-attempt smoke is not run separately; the
+   first real run (below, `--max-attempts 3`, recorded) doubles as the smoke
+   and is checked against the same acceptance list before its record is
+   committed. The adapter itself was exercised end to end on real codex with
+   `gpt-5.6-sol` (§3.4). The original command, for reference:
 
 ```
 python -m pagehub_benchmarks run eval-chess-backend \
@@ -620,7 +633,9 @@ python -m pagehub_benchmarks run eval-chess-backend \
   --results-dir /tmp/pagehub-benchmarks-smoke
 ```
 
-`--results-dir` keeps the smoke record out of committed `results/`; drop it
+First real run (recorded, pushed):
+`python -m pagehub_benchmarks run eval-chess-backend --harness codex-cli --model gpt-6-astra --max-attempts 3`.
+`--results-dir` keeps a smoke record out of committed `results/`; drop it
 and `--no-build-site` for a real recorded run. **The push is not optional:**
 `_push_built_tree` pushes the built tree to the real
 `pagehub-io/eval-chess-backend` as `bench/codex-cli/gpt-6-astra/effort-high/<ts>`
@@ -691,5 +706,6 @@ and to leave the default `make run` path untouched in the meantime (**D7**):
   out cumulative across a thread, the function gains a `previous_total`
   argument fed from instance state — its Stage-1 signature is not final); add the matrix
   row; tests 6, 8, 12, 13 (dry-run half); the task's dry-run command passes
-  for both rows; finish README's "what is reported"; then §4.11 step 3. PR
-  review round on the diff.
+  for both rows; finish README's "what is reported". PR review rounds on the
+  diff (rounds 3–5). §4.11 step 3 is folded into the first real run, after
+  merge.

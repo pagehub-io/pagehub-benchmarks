@@ -166,7 +166,11 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   your `PATH` — a stock `/etc/profile` resets it for login shells — and your
   locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and the
   resulting `setlocale` warnings would flood every command's output. The
-  per-run directories are tiny; prune them occasionally.)
+  per-run directories are tiny; prune them occasionally. This assumes codex
+  runs the agent's commands with bash, as it does here — `/bin/bash -lc` by
+  default, or `/bin/bash -c` with no profile at all when the model asks for a
+  non-login shell, in which case codex's own PATH and `C.UTF-8` apply.
+  `BASH_ENV`, `ENV` and `ZDOTDIR` are stripped so no other file is sourced.)
   Claude Code has no equivalent and sees everything, so keeping
   secrets out of `~/.bashrc` on the runner box (or benchmarking under a
   dedicated user) is still the right hygiene. Codex also prepends its

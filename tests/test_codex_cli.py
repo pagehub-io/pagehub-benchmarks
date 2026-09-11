@@ -10,8 +10,8 @@ status`` pre-flight) are faked.
 
 Streams marked SYNTHETIC below are the real envelope with one line changed to
 exercise a classification branch; they assert behaviour of *our* classifier,
-never a shape of codex's output. Token-usage parsing is not tested here until
-the success fixtures exist (plans/codex-cli-harness.md §6).
+never a shape of codex's output. Token usage is tested against the recorded
+success fixtures and rollout further down.
 """
 
 from __future__ import annotations
@@ -307,7 +307,7 @@ def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_p
     # nothing but the PATH + locale profile: no secrets, no operator dotfiles
     assert [p.name for p in home.iterdir()] == [".bash_profile"]
     assert (home / ".bash_profile").read_text() == (
-        "export PATH=/usr/bin\n"
+        'export PATH=/usr/bin:"$PATH"\n'
         "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8\n"
     )
     for e in envs:
@@ -323,7 +323,7 @@ def test_home_profile_restores_runner_path_and_locale(monkeypatch, tmp_path):
     monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
     codex_cli._prepare_home(str(tmp_path))
     assert (tmp_path / ".bash_profile").read_text() == (
-        "export PATH=/opt/py/bin:/usr/bin\n"
+        'export PATH=/opt/py/bin:/usr/bin:"$PATH"\n'
         "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 LC_CTYPE=de_DE.UTF-8\n"
     )
     monkeypatch.setenv("LC_ALL", "x; touch /tmp/pwned")  # hostile values are quoted, never executed
@@ -331,7 +331,7 @@ def test_home_profile_restores_runner_path_and_locale(monkeypatch, tmp_path):
     codex_cli._prepare_home(str(tmp_path))
     text = (tmp_path / ".bash_profile").read_text()
     assert "LC_ALL='x; touch /tmp/pwned'" in text
-    assert "PATH='/usr/bin:$(touch /tmp/pwned)'" in text
+    assert "PATH='/usr/bin:$(touch /tmp/pwned)':\"$PATH\"" in text
 
 
 def test_home_profile_really_restores_path_and_locale_in_a_login_shell(monkeypatch, tmp_path):
@@ -349,7 +349,11 @@ def test_home_profile_really_restores_path_and_locale_in_a_login_shell(monkeypat
     home.mkdir()
     codex_cli._prepare_home(str(home))
     env = {k: v for k, v in os.environ.items() if k != "WSL_DISTRO_NAME"}
-    env.update(HOME=str(home), LANG="C.UTF-8", LC_ALL="C.UTF-8", LC_CTYPE="C.UTF-8")
+    # Start bash with a reset-like PATH (what a stock /etc/profile leaves), so
+    # the assertion passes only if .bash_profile restores the runner's PATH —
+    # whatever this box's /etc/profile does.
+    env.update(HOME=str(home), PATH="/usr/bin:/bin",
+               LANG="C.UTF-8", LC_ALL="C.UTF-8", LC_CTYPE="C.UTF-8")
     out = subprocess.run(
         ["/bin/bash", "-lc", 'echo "$PATH"; echo "$LC_ALL"'],
         env=env, capture_output=True, text=True, check=True,
@@ -1104,3 +1108,126 @@ def test_rate_limits_are_trimmed_to_budget_fields(monkeypatch, tmp_path, isolate
     assert set(rl) == {"plan_type", "primary", "secondary"}
     assert set(rl["primary"]) == {"used_percent", "window_minutes", "resets_at"}
     assert "credits" not in json.dumps(rl) and "balance" not in json.dumps(rl)
+
+
+
+def test_home_profile_keeps_the_incoming_path_after_the_runners(monkeypatch, tmp_path):
+    """codex prepends its arg0 helper dir (apply_patch, codex-linux-sandbox) to
+    the agent's PATH; the profile must keep it, after the runner's PATH.
+    Sourced directly so the check doesn't depend on this box's /etc/profile."""
+    monkeypatch.setenv("PATH", "/runner/bin:/usr/bin")
+    monkeypatch.delenv("LC_ALL", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
+    codex_cli._prepare_home(str(tmp_path))
+    out = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-c", f'. "{tmp_path}/.bash_profile"; echo "$PATH"'],
+        env={"PATH": "/codex/arg0:/usr/bin:/bin", "HOME": str(tmp_path)},
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert out == "/runner/bin:/usr/bin:/codex/arg0:/usr/bin:/bin"
+
+
+def test_profile_sourcing_env_vars_are_stripped(monkeypatch, tmp_path):
+    """BASH_ENV / ENV / ZDOTDIR would make the agent's shells source an
+    operator file regardless of the throwaway HOME."""
+    for var in codex_cli.PROFILE_ENV_VARS:
+        monkeypatch.setenv(var, str(tmp_path / f"{var}.sh"))
+    env = codex_cli._subprocess_env("/x")
+    assert not set(codex_cli.PROFILE_ENV_VARS) & set(env)
+    assert codex_cli.PROFILE_ENV_VARS == ("BASH_ENV", "ENV", "ZDOTDIR")
+
+
+def test_throwaway_home_base_resolves_dotdot_and_ignores_relative_xdg(monkeypatch):
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/home/someone/../../tmp/cache")  # lexically not under /tmp
+    with pytest.raises(HarnessError, match="writable to the agent"):
+        codex_cli._throwaway_home_base()
+    monkeypatch.setenv("XDG_CACHE_HOME", "relative/cache")  # invalid per the XDG spec → ignored
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes")
+
+
+def test_rate_limit_print_never_fails_a_completed_leg(monkeypatch, tmp_path, isolated_env, capsys):
+    """The rollout is an unstable format: a type drift in used_percent must
+    not turn a completed, token-spending leg into a crash."""
+    _write_rollout(tmp_path, [ln.replace('"used_percent":0.0', '"used_percent":"0.0"') for ln in _rollout_lines()])
+    assert any('"used_percent":"0.0"' in ln for ln in (tmp_path / "codex-home").rglob("*.jsonl").__next__().read_text().splitlines())
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "stream"
+    assert "5h=0.0%" in capsys.readouterr().out
+
+
+def test_dead_legs_do_not_print_stale_rate_limits(monkeypatch, tmp_path, isolated_env, capsys):
+    _write_rollout(tmp_path, _rollout_lines() + [_last_turn_context_line()])
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    capsys.readouterr()
+    with pytest.raises(HarnessError):
+        h.continue_build(OK_THREAD_ID, "fix it")
+    assert "subscription usage" not in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# Mutants that survived round 4's run (M12, M20, M21, M22)
+
+
+def test_rollout_sourced_usage_reports_cache_field_presence(monkeypatch, tmp_path, isolated_env):
+    """M12: cache_tokens_reported on the rollout path follows the field too."""
+    lines = []
+    for ln in _rollout_lines():
+        obj = json.loads(ln)
+        if obj.get("type") == "token_usage_record":
+            obj["payload"]["turn_token_usage"].pop("cached_input_tokens")  # SYNTHETIC: field absent
+        lines.append(json.dumps(obj, separators=(",", ":")))
+    _write_rollout(tmp_path, lines)
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    stream = "\n".join([ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]) + "\n"
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "rollout" and r.raw["cache_tokens_reported"] is False
+
+
+def test_interrupt_during_preflight_removes_home_and_reraises(monkeypatch, tmp_path, isolated_env):
+    """M20: the cleanup must also run for KeyboardInterrupt (BaseException)."""
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, _Preflight(raise_with=KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert list((tmp_path / "codex-homes").iterdir()) == []
+    assert legs.calls == []
+
+
+def test_turn_with_usage_but_no_items_is_not_dead(monkeypatch, tmp_path, isolated_env):
+    """M21: rule 2 is 'no non-error item AND no usage'. A turn that spent
+    tokens (e.g. reasoning only) and then failed is captured, never retried."""
+    _write_rollout(tmp_path, _rollout_lines())
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC: the real success envelope minus its agent_message item and
+    # with turn.completed swapped for the real turn.failed line.
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln and '"item.' not in ln]
+        + [failed_line]
+    ) + "\n"
+    assert '"item.' not in stream
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1
+    assert r.raw["usage_source"] == "rollout" and r.raw["dead_turn_retries"] == 0
+    assert "harness_error" in r.raw
+
+
+def test_thread_total_resets_on_every_start_build(monkeypatch, tmp_path, isolated_env):
+    """M22: a second start_build on the same instance is a new thread; its
+    usage must not be diffed against the previous thread's total."""
+    legs = _Legs([(OK_RESUME, "", 0), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.input_tokens == 15359 - 12160

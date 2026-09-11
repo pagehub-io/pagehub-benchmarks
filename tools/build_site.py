@@ -263,7 +263,8 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         rec["template_var_rows"] = _template_var_rows(rec.get("template_vars") or {})
         # Per-attempt rendered_prompt is also opt-in; default to empty string
         # so the template can `{% if a.rendered_prompt %}` it. Same for
-        # ``raw`` (the full claude -p JSON object): legacy records lack it.
+        # ``raw`` (claude-code: the full claude -p JSON object; codex-cli: a bounded
+        # summary of the codex exec --json stream): legacy records lack it.
         for a in rec.get("per_attempt") or []:
             a.setdefault("rendered_prompt", "")
             a.setdefault("raw", None)

@@ -50,9 +50,12 @@ from the runner, and — the layer that actually closes the hole — a throwaway
 ``HOME`` for the codex subprocess with ``CODEX_HOME`` pinned to the real
 login directory: codex runs the agent's commands with ``bash -lc``, and with
 the operator's HOME that re-sourced ``~/.bashrc`` and its secrets into the
-agent's shell; with an empty HOME the probe reported none. The throwaway HOME
-holds only a ``.bash_profile`` restoring the runner's locale (codex forces
-``C.UTF-8``, which some boxes' bash cannot load — see ``_prepare_home``).
+agent's shell; with the throwaway HOME the probe reported none. That HOME
+holds only a ``.bash_profile`` restoring the runner's ``PATH`` and locale
+(see ``_prepare_home``), and lives outside the sandbox's writable roots. The
+restoration assumes the codex agent's shell is bash (it is ``/bin/bash -lc``
+on the development box); ``BASH_ENV``/``ENV``/``ZDOTDIR`` are stripped so no
+other profile is sourced.
 
 **Auth — subscription only.** ``CODEX_API_KEY`` (a live runtime auth source
 that would silently move the run onto metered API billing), ``CODEX_ACCESS_TOKEN``
@@ -125,6 +128,12 @@ RAW_LIST_LIMIT = 20
 STDERR_TAIL_CHARS = 2000
 SUBSCRIPTION_MODE_LINE = "Logged in using ChatGPT"
 STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
+# Variables that make a shell source an operator file regardless of HOME:
+# bash sources $BASH_ENV for every non-interactive shell (pyenv's shims are
+# bash scripts), sh/dash source $ENV, zsh reads its dotfiles from $ZDOTDIR.
+# Any of them would undo the throwaway HOME (review finding, executed with a
+# synthetic BASH_ENV file; all three are unset on the development box).
+PROFILE_ENV_VARS = ("BASH_ENV", "ENV", "ZDOTDIR")
 # config.effort -> codex model_reasoning_effort. Explicit, not a pass-through:
 # codex accepts any string silently. ``ultra`` (automatic sub-agent delegation)
 # is intentionally absent.
@@ -173,7 +182,9 @@ def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
     ``CODEX_HOME`` is pinned to the operator's real codex home (the env value,
     else ``~/.codex`` of the *runner's* HOME) so the stored ChatGPT login,
     sessions and trust entries stay where they are. ``HOME`` is then pointed
-    at an empty per-run directory: codex runs the agent's commands with
+    at a per-run throwaway directory (see ``_throwaway_home_base`` /
+    ``_prepare_home``), and ``PROFILE_ENV_VARS`` are removed: codex runs the
+    agent's commands with
     ``bash -lc``, which sources the profile of whatever ``HOME`` is — with the
     operator's real HOME that re-exported every secret in ``~/.bashrc`` into
     the agent's shell (37 secret-named variables on this runner box); with an
@@ -181,7 +192,7 @@ def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
     working. Verified 2026-09-11 with gpt-5.6-sol.
     """
     env = dict(os.environ)
-    for key in STRIPPED_ENV_VARS:
+    for key in (*STRIPPED_ENV_VARS, *PROFILE_ENV_VARS):
         env.pop(key, None)
     env["CODEX_HOME"] = str(_codex_home())
     if home_override:
@@ -236,16 +247,20 @@ def _throwaway_home_base() -> Path:
     ``~/.cache`` was verified read-only to the sandboxed agent). Refuses
     rather than silently using a writable location.
     """
-    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    base = (Path(cache).expanduser().absolute() / "pagehub-benchmarks" / "codex-homes")
+    xdg = os.environ.get("XDG_CACHE_HOME", "")
+    # The XDG spec says a relative XDG_CACHE_HOME is invalid and must be ignored.
+    cache = Path(xdg).expanduser() if xdg and Path(xdg).expanduser().is_absolute() else Path.home() / ".cache"
+    # resolve(): compare real locations — a symlink or ``..`` must not route the
+    # HOME back into a writable root (review finding, executed).
+    base = (cache / "pagehub-benchmarks" / "codex-homes").resolve()
     writable_roots = [Path("/tmp")]
     if os.environ.get("TMPDIR"):
         writable_roots.append(Path(os.environ["TMPDIR"]))
     for root in writable_roots:
-        root_abs = root.expanduser().absolute()
-        if base == root_abs or base.is_relative_to(root_abs):
+        root_real = root.expanduser().resolve()
+        if base == root_real or base.is_relative_to(root_real):
             raise HarnessError(
-                f"throwaway codex HOME base {base} is under {root_abs}, which the codex sandbox "
+                f"throwaway codex HOME base {base} is under {root_real}, which the codex sandbox "
                 "makes writable to the agent; set XDG_CACHE_HOME to a directory outside /tmp "
                 "and $TMPDIR"
             )
@@ -261,8 +276,12 @@ def _prepare_home(home: str) -> None:
     reset only because ``WSL_DISTRO_NAME`` is set), and with an empty HOME
     nothing would restore pyenv / linuxbrew / ``~/.local/bin`` — the agent
     would lose the runner's toolchain (review finding, reproduced with
-    ``WSL_DISTRO_NAME`` unset). Exporting the runner's own ``PATH`` keeps
-    tool resolution identical to the runner's and the Claude agent's.
+    ``WSL_DISTRO_NAME`` unset). The profile puts the runner's ``PATH`` first
+    and then appends whatever PATH the login shell has at that point — so the
+    helper directory codex itself prepends (``~/.codex/tmp/arg0/…``:
+    ``apply_patch``, ``codex-linux-sandbox``) survives wherever
+    ``/etc/profile`` does not reset PATH (review finding: a plain
+    ``export PATH=<runner>`` dropped it).
 
     Locale:
     ``codex exec`` forces ``LANG``/``LC_ALL``/``LC_CTYPE=C.UTF-8`` for the
@@ -271,11 +290,19 @@ def _prepare_home(home: str) -> None:
     cannot load ``C.UTF-8`` (linuxbrew bash 5.3 here), every bash-script shim
     — pyenv's ``python3``/``pip``/``pytest`` — then printed ~20 ``setlocale``
     warnings into the agent's command output: noise, tokens and a confound
-    the Claude agent never sees. Codex runs commands with ``/bin/bash -lc``,
-    which reads ``~/.bash_profile`` *after* codex's env injection, so
-    exporting the runner's own locale there (``LC_ALL`` or else ``LANG`` — what
-    the Claude agent inherits) removes it: 39 warnings → 0 for one pip + one
-    pytest call.
+    the Claude agent never sees. Codex runs commands with ``/bin/bash -lc``
+    by default, which reads ``~/.bash_profile`` *after* codex's env
+    injection, so exporting the runner's own locale there (``LC_ALL`` or else
+    ``LANG`` — what the Claude agent inherits) removes it: 39 warnings → 0 for
+    one pip + one pytest call.
+
+    Non-login commands: the model may ask codex's ``exec_command`` tool for
+    ``login: false``; codex then runs ``/bin/bash -c``, which reads no
+    profile at all. That shell keeps codex's own PATH (its helper dirs, then
+    the runner's PATH — toolchain intact) and codex's ``C.UTF-8``; only
+    bash-script tools resolved through a bash that can't load it would warn
+    (none did on the development box, where the runner's ``pyenv exec`` puts
+    real ``python3``/``pip`` binaries first). Verified 2026-09-11.
 
     Values are shell-quoted; nothing else goes in the file, and with neither
     ``PATH`` nor a locale set no file is written.
@@ -283,7 +310,7 @@ def _prepare_home(home: str) -> None:
     lines: list[str] = []
     path = os.environ.get("PATH")
     if path:
-        lines.append(f"export PATH={shlex.quote(path)}")
+        lines.append(f'export PATH={shlex.quote(path)}:"$PATH"')
     locale = os.environ.get("LC_ALL") or os.environ.get("LANG")
     if locale:
         quoted = shlex.quote(locale)
@@ -526,10 +553,11 @@ def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
     ``cache_write_input_tokens`` are the slices of it billed at the cache
     rates (the rollout's ``total_tokens == input_tokens + output_tokens`` on
     both recorded turns confirms the subset reading). ``output_tokens``
-    already includes ``reasoning_output_tokens``: on the 15 real rollout
-    records with reasoning > 0 on the development box (gpt-5.6-sol,
-    2026-09-11) ``total_tokens == input_tokens + output_tokens`` held every
-    time, so reasoning is recorded but not added.
+    already includes ``reasoning_output_tokens``: on every real rollout usage
+    object with reasoning > 0 on the development box (gpt-5.6-sol,
+    2026-09-11; dozens across ``usage`` / ``turn_token_usage`` /
+    ``thread_token_usage``) ``total_tokens == input_tokens + output_tokens``
+    held, so reasoning is recorded but not added.
     """
     cached = usage["cached_input_tokens"]
     cache_write = usage["cache_write_input_tokens"]
@@ -639,9 +667,12 @@ def _refuse_operator_instructions() -> None:
 
 def _print_rate_limits(leg_name: str, rate_limits: dict[str, Any]) -> None:
     def _pct(window: Any) -> str:
-        if isinstance(window, dict) and window.get("used_percent") is not None:
-            return f"{window['used_percent']:.1f}%"
-        return "?"
+        # Best-effort display only: the rollout is an unstable format, and a
+        # type drift here must never fail a leg that already spent tokens.
+        value = window.get("used_percent") if isinstance(window, dict) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "?" if value is None else f"{value}%"
+        return f"{value:.1f}%"
 
     print(
         f"(codex-cli: {leg_name} leg done; subscription usage 5h={_pct(rate_limits.get('primary'))} "
@@ -837,8 +868,6 @@ class CodexCliHarness(Harness):
             terminal = _terminal_event(events)
             rollout_path = _find_rollout(thread_id)
             usage = _usage_from(events, rollout_path, previous_thread_total=self._thread_total)
-            if usage.rate_limits:
-                _print_rate_limits(leg_name, usage.rate_limits)
             errors = _error_messages(events)
             completed = terminal is not None and terminal.get("type") == "turn.completed"
             if completed:
@@ -920,6 +949,10 @@ class CodexCliHarness(Harness):
     ) -> AttemptResult:
         if usage.thread_total is not None:
             self._thread_total = usage.thread_total
+        if usage.rate_limits:
+            # Printed only for legs that return: a dead leg's rollout shows
+            # the previous turn's (stale) figures.
+            _print_rate_limits("start" if is_start else "resume", usage.rate_limits)
         raw: dict[str, Any] = {
             "thread_id": thread_id,
             "exit_code": leg.returncode,
