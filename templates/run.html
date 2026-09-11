@@ -111,7 +111,7 @@
 {% set has_raw = r.per_attempt|selectattr('raw_pretty')|list %}
 {% if has_raw %}
 <h2>Raw harness JSON (per attempt)</h2>
-<p class="muted">The full <code>claude -p --output-format json</code> response captured for each attempt — <code>modelUsage</code>, <code>usage</code>, <code>total_cost_usd</code>, <code>session_id</code>, etc. Preserved verbatim so usage-parsing bugs can be back-filled without re-running. Older records (before this feature) won't have it.</p>
+<p class="muted">What the harness returned for each attempt. Claude Code: the full <code>claude -p --output-format json</code> response (<code>modelUsage</code>, <code>usage</code>, <code>total_cost_usd</code>, <code>session_id</code>, …), verbatim. Codex CLI: a bounded summary of the <code>codex exec --json</code> stream (<code>thread_id</code>, the verbatim <code>usage</code> object and this attempt's <code>usage_delta</code>, errors, subscription <code>rate_limits</code>, <code>rollout_path</code> to codex's own transcript). Kept so usage-parsing bugs can be back-filled without re-running. Older records (before this feature) won't have it.</p>
 {% for a in r.per_attempt %}
   {% if a.raw_pretty %}
   <details class="raw-json">

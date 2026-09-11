@@ -74,15 +74,24 @@ make site                          # regenerate docs/ from results/**/*.json
 make run BENCHMARK=eval-chess-backend DRY_RUN=1
 #   == python -m pagehub_benchmarks run eval-chess-backend --dry-run
 
-# Real run (builds the target repo for real — costs tokens):
+# Real run (builds the target repo for real — costs tokens). With no filter it
+# runs EVERY row of the benchmark's matrix in order — for eval-chess-backend that
+# is Claude Code and then Codex CLI (up to max_attempts high-effort gpt-6-astra
+# attempts on your ChatGPT plan). Use --harness / --model to pick one row.
 make run BENCHMARK=eval-chess-backend
 #   == python -m pagehub_benchmarks run eval-chess-backend
 python -m pagehub_benchmarks run eval-chess-backend --harness claude-code --model claude-opus-4-7 \
     --config effort=xhigh --max-attempts 5 --results-dir results
+python -m pagehub_benchmarks run eval-chess-backend --harness codex-cli --model gpt-6-astra \
+    --max-attempts 3
 ```
 
-A real run needs:
+A real run needs (per matrix row: a row whose harness can't start — CLI missing,
+not logged in — fails the run at that row; records of earlier rows are already
+written and pushed, but the site rebuild is skipped, so run `make site`):
 
+- **`codex` on PATH**, logged in with a ChatGPT subscription, for `codex-cli`
+  rows — see [Codex CLI harness](#codex-cli-harness-codex-cli) below.
 - **`claude` on PATH**, already logged in. Runs execute under the CLI's
   *existing subscription auth* (flat-rate) — the adapter explicitly **unsets
   `ANTHROPIC_API_KEY`** in the subprocess so a stray env key can't divert the
@@ -122,7 +131,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   are unset in the subprocess — an API key would silently move the run onto
   metered billing. As for Claude, **`cost_usd` is a computed figure** (tokens ×
   `pricing.yaml`), not a bill. The pre-flight also refuses to run while a
-  global `~/.codex/AGENTS.md` or user skills under `~/.codex/skills/` exist:
+  global `~/.codex/AGENTS.md`, `AGENTS.override.md` or legacy
+  `instructions.md`, or user skills under `~/.codex/skills/`, exist:
   `--ignore-user-config` does not suppress them (verified), and they would
   change what every run measures.
 - **Effort is required and explicit.** `config.effort` (`low|medium|high|xhigh|max`)
@@ -144,21 +154,26 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   It can read the whole filesystem and reach the network — the same exposure
   as Claude. **Secrets in your shell profile reach an agent's login shell**:
   codex runs commands with `bash -lc`, which sources the profile of whatever
-  `HOME` is. The adapter therefore gives every codex subprocess an **empty
-  throwaway `HOME`** (with `CODEX_HOME` pinned to your real login directory),
+  `HOME` is. The adapter therefore gives every codex subprocess a **throwaway
+  `HOME`** under `~/.cache/pagehub-benchmarks/codex-homes/` — outside the
+  sandbox's writable roots, so the agent cannot plant skills or edit it for
+  its later turns — with `CODEX_HOME` pinned to your real login directory,
   disables codex's login-shell snapshot (otherwise written to
   `~/.codex/shell_snapshots/` in plaintext, values included) and filters
   inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — a probe
   agent then saw no secret-named variables where it previously listed 37 from
-  `~/.bashrc`. (That throwaway HOME holds one `.bash_profile` line restoring
-  your locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and
-  the resulting `setlocale` warnings would flood every command's output.)
+  `~/.bashrc`. (That throwaway HOME holds only a `.bash_profile` restoring
+  your `PATH` — a stock `/etc/profile` resets it for login shells — and your
+  locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and the
+  resulting `setlocale` warnings would flood every command's output. The
+  per-run directories are tiny; prune them occasionally.)
   Claude Code has no equivalent and sees everything, so keeping
   secrets out of `~/.bashrc` on the runner box (or benchmarking under a
   dedicated user) is still the right hygiene. Codex also prepends its
-  own instructions (bundled skills, a multi-agent role; proactive sub-agent
-  delegation is off at the default effort levels) to every thread, as Claude
-  Code does its system prompt. After each attempt the **runner** executes the
+  own instructions (bundled skills, apps and plugins instructions, a
+  multi-agent role; proactive sub-agent delegation is off at the default
+  effort levels) to every thread and re-injects its skills instructions on
+  every resumed turn, as Claude Code does its system prompt. After each attempt the **runner** executes the
   built `Makefile` (`make up`) on the host, outside any sandbox, for both
   harnesses.
 - **What is recorded:** `session_handle` is the codex `thread_id`; attempt 2+
@@ -183,8 +198,10 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   then failed is recorded as a failed attempt with the error text under
   `raw.harness_error`, graded as-is, and the thread is resumed.
   `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each `codex exec` leg
-  (a retried attempt is several legs).
-- **Matrix note:** the planned `eval-chess-backend` row runs codex at
+  (a retried attempt is several legs). Ctrl-C during a leg kills the whole
+  codex process group (it runs in its own session, so the terminal's SIGINT
+  would not reach it otherwise).
+- **Matrix note:** the `eval-chess-backend` row runs codex at
   `effort: high` while the existing Claude row is `xhigh`; both models accept
   `xhigh` — add a matching row on either side for a like-for-like comparison.
 

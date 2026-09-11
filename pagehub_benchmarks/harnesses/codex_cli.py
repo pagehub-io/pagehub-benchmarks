@@ -3,14 +3,22 @@
 Drives OpenAI's ``codex`` CLI headlessly (``codex exec``), the way
 :mod:`pagehub_benchmarks.harnesses.claude_code` drives ``claude -p``::
 
-    start_build:    codex exec --ignore-user-config -m <model> --json -C <worktree> \\
-                        --sandbox workspace-write \\
+    start_build:    codex exec --ignore-user-config <ENV_POLICY> -m <model> --json \\
+                        -C <worktree> --sandbox workspace-write \\
                         -c 'model_reasoning_effort="<effort>"' \\
                         -c 'sandbox_workspace_write.network_access=true' -
-    continue_build: codex exec resume <thread_id> --ignore-user-config --json \\
-                        -m <model> -c 'model_reasoning_effort="<effort>"' \\
+    continue_build: codex exec resume <thread_id> --ignore-user-config <ENV_POLICY> \\
+                        --json -m <model> -c 'model_reasoning_effort="<effort>"' \\
                         -c 'sandbox_mode="workspace-write"' \\
                         -c 'sandbox_workspace_write.network_access=true' -
+
+    <ENV_POLICY> = --disable shell_snapshot \\
+                   -c 'shell_environment_policy.experimental_use_profile=false' \\
+                   -c 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]'
+
+Every codex subprocess runs with ``HOME`` = a per-run directory under
+``~/.cache/pagehub-benchmarks/codex-homes`` (read-only to the sandboxed agent)
+and ``CODEX_HOME`` pinned to the operator's real codex home.
 
 Design notes (the full rationale, with what was verified how, is in
 ``plans/codex-cli-harness.md``):
@@ -94,6 +102,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -125,8 +134,10 @@ EFFORT_MAP: dict[str, str] = {e: e for e in ("low", "medium", "high", "xhigh", "
 # and ``experimental_use_profile=false`` this hides every matching variable
 # inherited from the runner process and stops codex writing a plaintext
 # snapshot of the login-shell environment to ``$CODEX_HOME/shell_snapshots``.
-# It is PARTIAL: codex still runs commands with ``bash -lc``, which re-sources
-# ``~/.bashrc`` — anything exported there reaches the agent regardless.
+# On its own it is partial — ``bash -lc`` would re-source the operator's
+# ``~/.bashrc`` — which is why every codex subprocess also gets a throwaway
+# HOME (``_throwaway_home_base`` / ``_prepare_home``); with both, a probe
+# agent saw no secret-named variables.
 SHELL_ENV_EXCLUDE = ("*KEY*", "*SECRET*", "*TOKEN*", "*PASSWORD*")
 _SHELL_ENV_EXCLUDE_TOML = "shell_environment_policy.exclude=[" + ",".join(f'"{p}"' for p in SHELL_ENV_EXCLUDE) + "]"
 _ENV_POLICY_ARGS = [
@@ -208,12 +219,52 @@ def _map_effort(config: dict[str, Any] | None) -> str:
 
 
 def _codex_home() -> Path:
-    return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser()
+    """The operator's codex home, absolute (a relative ``CODEX_HOME`` would
+    otherwise be re-resolved against the worktree by the codex subprocess)."""
+    return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser().absolute()
+
+
+def _throwaway_home_base() -> Path:
+    """Where per-run throwaway HOMEs are created:
+    ``${XDG_CACHE_HOME:-~/.cache}/pagehub-benchmarks/codex-homes``.
+
+    It must lie OUTSIDE the sandbox's writable roots (the worktree, ``/tmp``,
+    ``$TMPDIR``): a HOME the agent can write lets it plant
+    ``$HOME/.agents/skills/*`` or edit ``.bash_profile`` for its later
+    resumed turns (review finding, 2026-09-11 — reproduced with ``codex
+    sandbox`` for a ``mkdtemp()`` under ``/tmp``; a directory under
+    ``~/.cache`` was verified read-only to the sandboxed agent). Refuses
+    rather than silently using a writable location.
+    """
+    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    base = (Path(cache).expanduser().absolute() / "pagehub-benchmarks" / "codex-homes")
+    writable_roots = [Path("/tmp")]
+    if os.environ.get("TMPDIR"):
+        writable_roots.append(Path(os.environ["TMPDIR"]))
+    for root in writable_roots:
+        root_abs = root.expanduser().absolute()
+        if base == root_abs or base.is_relative_to(root_abs):
+            raise HarnessError(
+                f"throwaway codex HOME base {base} is under {root_abs}, which the codex sandbox "
+                "makes writable to the agent; set XDG_CACHE_HOME to a directory outside /tmp "
+                "and $TMPDIR"
+            )
+    return base
 
 
 def _prepare_home(home: str) -> None:
-    """Seed the throwaway HOME with a login profile that sets only the locale.
+    """Seed the throwaway HOME with a login profile that restores only the
+    runner's ``PATH`` and locale.
 
+    ``PATH``: codex runs commands with ``/bin/bash -lc``; a stock Debian/Ubuntu
+    ``/etc/profile`` resets ``PATH`` for login shells (this WSL box skips the
+    reset only because ``WSL_DISTRO_NAME`` is set), and with an empty HOME
+    nothing would restore pyenv / linuxbrew / ``~/.local/bin`` — the agent
+    would lose the runner's toolchain (review finding, reproduced with
+    ``WSL_DISTRO_NAME`` unset). Exporting the runner's own ``PATH`` keeps
+    tool resolution identical to the runner's and the Claude agent's.
+
+    Locale:
     ``codex exec`` forces ``LANG``/``LC_ALL``/``LC_CTYPE=C.UTF-8`` for the
     agent's commands and ignores ``shell_environment_policy.set`` for them
     (verified 2026-09-11). On boxes where the ``bash`` that PATH resolves
@@ -224,16 +275,21 @@ def _prepare_home(home: str) -> None:
     which reads ``~/.bash_profile`` *after* codex's env injection, so
     exporting the runner's own locale there (``LC_ALL`` or else ``LANG`` — what
     the Claude agent inherits) removes it: 39 warnings → 0 for one pip + one
-    pytest call. Nothing else goes in the file; with no runner locale set the
-    HOME stays empty.
+    pytest call.
+
+    Values are shell-quoted; nothing else goes in the file, and with neither
+    ``PATH`` nor a locale set no file is written.
     """
+    lines: list[str] = []
+    path = os.environ.get("PATH")
+    if path:
+        lines.append(f"export PATH={shlex.quote(path)}")
     locale = os.environ.get("LC_ALL") or os.environ.get("LANG")
-    if not locale:
-        return
-    quoted = shlex.quote(locale)
-    Path(home, ".bash_profile").write_text(
-        f"export LANG={quoted} LC_ALL={quoted} LC_CTYPE={quoted}\n", encoding="utf-8"
-    )
+    if locale:
+        quoted = shlex.quote(locale)
+        lines.append(f"export LANG={quoted} LC_ALL={quoted} LC_CTYPE={quoted}")
+    if lines:
+        Path(home, ".bash_profile").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _find_rollout(thread_id: str) -> str | None:
@@ -446,8 +502,21 @@ def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict
             and payload.get("type") == "token_count"
             and isinstance(payload.get("rate_limits"), dict)
         ):
-            rate_limits = payload["rate_limits"]
+            rate_limits = _trim_rate_limits(payload["rate_limits"])
     return turn_usage, rate_limits
+
+
+def _trim_rate_limits(rate_limits: dict[str, Any]) -> dict[str, Any]:
+    """Keep the subscription-budget fields and nothing else (the raw object
+    also carries credit balances and account flags; the record is published)."""
+    out: dict[str, Any] = {"plan_type": rate_limits.get("plan_type")}
+    for window in ("primary", "secondary"):
+        w = rate_limits.get(window)
+        if isinstance(w, dict):
+            out[window] = {
+                k: w.get(k) for k in ("used_percent", "window_minutes", "resets_at") if k in w
+            }
+    return out
 
 
 def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
@@ -457,8 +526,10 @@ def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
     ``cache_write_input_tokens`` are the slices of it billed at the cache
     rates (the rollout's ``total_tokens == input_tokens + output_tokens`` on
     both recorded turns confirms the subset reading). ``output_tokens``
-    already includes ``reasoning_output_tokens`` (same identity; OpenAI's
-    documented convention) so reasoning is recorded but not added.
+    already includes ``reasoning_output_tokens``: on the 15 real rollout
+    records with reasoning > 0 on the development box (gpt-5.6-sol,
+    2026-09-11) ``total_tokens == input_tokens + output_tokens`` held every
+    time, so reasoning is recorded but not added.
     """
     cached = usage["cached_input_tokens"]
     cache_write = usage["cache_write_input_tokens"]
@@ -509,7 +580,7 @@ def _usage_from(
             output_tokens=out,
             cache_creation_tokens=cache_write,
             cache_read_tokens=cached,
-            cache_tokens_reported=True,
+            cache_tokens_reported="cached_input_tokens" in (verbatim or {}),
             reasoning_output_tokens=delta["reasoning_output_tokens"],
             delta=delta,
             thread_total=total,
@@ -525,7 +596,7 @@ def _usage_from(
             output_tokens=out,
             cache_creation_tokens=cache_write,
             cache_read_tokens=cached,
-            cache_tokens_reported=True,
+            cache_tokens_reported="cached_input_tokens" in (rollout_turn or {}),
             reasoning_output_tokens=turn["reasoning_output_tokens"],
             delta=turn,
             thread_total={k: prev.get(k, 0) + turn[k] for k in _USAGE_KEYS},
@@ -545,12 +616,16 @@ def _refuse_operator_instructions() -> None:
     ``skills/.system`` and are part of the product, not operator input.
     """
     home = _codex_home()
-    agents = home / "AGENTS.md"
-    if agents.is_file():
-        raise HarnessError(
-            f"{agents} exists and would be injected into every codex turn "
-            "(--ignore-user-config does not suppress it); move it aside before benchmarking"
-        )
+    # AGENTS.md verified (marker obeyed); AGENTS.override.md takes precedence
+    # over it in codex's global scope and instructions.md is the legacy global
+    # file — both are named in the 0.154 binary.
+    for name in ("AGENTS.override.md", "AGENTS.md", "instructions.md"):
+        path = home / name
+        if path.is_file():
+            raise HarnessError(
+                f"{path} exists and would be injected into every codex turn "
+                "(--ignore-user-config does not suppress it); move it aside before benchmarking"
+            )
     skills = home / "skills"
     if skills.is_dir():
         extra = sorted(p.name for p in skills.iterdir() if p.name != ".system")
@@ -600,7 +675,7 @@ class _Leg:
     wall_time_seconds: float
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
+def _kill_group(proc: subprocess.Popen[str]) -> None:
     """SIGTERM the whole process group, wait, SIGKILL if still alive — mirrors
     ``runner.workspace._kill_group``. A plain ``subprocess.run(timeout=)`` only
     kills the direct child and then blocks while a sandbox helper or a
@@ -614,7 +689,7 @@ def _kill_group(proc: subprocess.Popen) -> None:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
-def _close_pipes(proc: subprocess.Popen) -> None:
+def _close_pipes(proc: subprocess.Popen[str]) -> None:
     for pipe in (proc.stdin, proc.stdout, proc.stderr):
         if pipe is not None:
             with contextlib.suppress(OSError, ValueError):
@@ -726,8 +801,20 @@ class CodexCliHarness(Harness):
         wall = time.monotonic() - started
         return _Leg(stdout or "", stderr or "", proc.returncode, wall)
 
-    def _attempt(self, cmd: list[str], cwd: str, stdin_text: str, *, is_start: bool) -> AttemptResult:
-        """Run one leg, retrying dead turns, and classify the outcome."""
+    def _attempt(
+        self,
+        cmd: list[str],
+        cwd: str,
+        stdin_text: str,
+        *,
+        is_start: bool,
+        expected_thread_id: str | None = None,
+    ) -> AttemptResult:
+        """Run one leg, retrying dead turns, and classify the outcome.
+
+        ``expected_thread_id`` (resume legs): the thread the stream must report.
+        A different id would mean codex resumed or forked something else, and
+        the thread-total delta would be taken against the wrong baseline."""
         retries = _dead_turn_retries()
         total_wall = 0.0
         dead_legs = 0
@@ -742,6 +829,10 @@ class CodexCliHarness(Harness):
                 raise HarnessError(
                     f"codex ({leg_name}) produced no thread.started event, exit {leg.returncode}: "
                     f"stderr={_stderr_tail(leg.stderr)[-1000:]!r} stdout={leg.stdout[:500]!r}"
+                )
+            if expected_thread_id is not None and thread_id != expected_thread_id:
+                raise HarnessError(
+                    f"codex resume reported thread {thread_id}, expected {expected_thread_id}"
                 )
             terminal = _terminal_event(events)
             rollout_path = _find_rollout(thread_id)
@@ -882,9 +973,17 @@ class CodexCliHarness(Harness):
         config: dict[str, Any],
     ) -> AttemptResult:
         effort = _map_effort(config)  # before any subprocess
-        self._home_override = tempfile.mkdtemp(prefix="pagehub-benchmarks-codex-home-")
-        _prepare_home(self._home_override)
-        self._auth_mode = self._preflight()
+        base = _throwaway_home_base()
+        base.mkdir(parents=True, exist_ok=True)
+        home = tempfile.mkdtemp(prefix="run-", dir=base)
+        try:
+            _prepare_home(home)
+            self._home_override = home
+            self._auth_mode = self._preflight()
+        except BaseException:
+            self._home_override = None
+            shutil.rmtree(home, ignore_errors=True)
+            raise
         self._thread_total = None
         self._worktree_dir = worktree_dir
         self._model = model
@@ -938,4 +1037,10 @@ class CodexCliHarness(Harness):
             "sandbox_workspace_write.network_access=true",
             "-",
         ]
-        return self._attempt(cmd, self._worktree_dir, followup_prompt, is_start=False)
+        return self._attempt(
+            cmd,
+            self._worktree_dir,
+            followup_prompt,
+            is_start=False,
+            expected_thread_id=session_handle,
+        )

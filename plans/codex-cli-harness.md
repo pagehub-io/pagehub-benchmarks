@@ -1,6 +1,6 @@
 # Tech spec — Codex CLI harness (`codex-cli`, GPT-6 Astra) for pagehub-benchmarks
 
-Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). **Amended 2026-09-11 for Stage 2:** U1–U8 resolved by execution (§3.4), usage mapping finalised (§4.5), three verified findings folded in — the stream's usage is the thread total; operator `AGENTS.md`/skills are not suppressed (pre-flight guard, rule 1); codex exposes the runner's secret-named env vars and writes login-shell snapshots to disk (§4.4 env policy, §4.10). Review history: round 1 on v1 (1 critical,
+Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). **Amended 2026-09-11 for Stage 2:** U1–U8 answered by execution (§3.4; U3 only as "not observed today"), usage mapping finalised (§4.5), three verified findings folded in — the stream's usage is the thread total; operator `AGENTS.md`/skills are not suppressed (pre-flight guard, rule 1); codex exposes the runner's secret-named env vars and writes login-shell snapshots to disk (§4.4 env policy, §4.10). **Amended again after PR #29 review round 3:** throwaway HOME moved out of the sandbox's writable roots and now also restores `PATH`; guard extended to `AGENTS.override.md` / `instructions.md`; resume legs must report the handle's thread id; `rate_limits` trimmed; `cache_tokens_reported` reflects the field's presence; §4.8 lists the new tests. Review history: round 1 on v1 (1 critical,
 11 important, 10 nits) → v2; round 2 on v2 (0 critical, 5 important, 10 nits)
 → v3; round 3 on v3 (0 critical, 2 important, 11 nits) → v4; round 4 on v4
 (0 critical, 2 important — both caused by v4's Stage-1 guard, now removed —
@@ -245,23 +245,35 @@ secret-named variable inherited from the runner process and to stop codex
 writing plaintext login-shell snapshots under `$CODEX_HOME/shell_snapshots`.
 Those two are partial (codex runs `bash -lc`, which re-sources the profile of
 whatever `HOME` is). The layer that closes the hole (**D8**, verified U7b):
-the codex subprocess — pre-flight and both legs — gets **`HOME` = an empty
-per-run temp dir** (`tempfile.mkdtemp(prefix="pagehub-benchmarks-codex-home-")`)
-with **`CODEX_HOME` pinned** to the operator's real codex home (env value, else
-`~/.codex` of the runner's HOME), so login, sessions and trust entries stay
-put while the agent's login shell finds no operator profile to source. The
-throwaway HOME holds exactly one file, a `.bash_profile` that re-exports the
-runner's locale (see the Locale row of §3.4); nothing else. Side effects:
-the agent has no `~/.gitconfig`, `~/.ssh`, `~/.npmrc`, pip cache etc. —
-appropriate for a benchmark build from an empty repo, and `.git` is read-only
-in the sandbox anyway; the temp dir is left behind (tiny). Operator-side
+the codex subprocess — pre-flight and both legs — gets **`HOME` = a fresh
+per-run directory** `${XDG_CACHE_HOME:-~/.cache}/pagehub-benchmarks/codex-homes/run-XXXX`
+with **`CODEX_HOME` pinned** (absolute) to the operator's real codex home (env
+value, else `~/.codex` of the runner's HOME), so login, sessions and trust
+entries stay put while the agent's login shell finds no operator profile to
+source. The base **must lie outside the sandbox's writable roots** (worktree,
+`/tmp`, `$TMPDIR`) — the adapter refuses otherwise: review round 3 showed,
+with `codex sandbox`, that a `mkdtemp()` under `/tmp` let the agent create
+`$HOME/.agents/skills/*` and append to `.bash_profile` for its later resumed
+turns; the same probes against `~/.cache/…` were denied (read-only). The
+throwaway HOME holds only a `.bash_profile` that re-exports the runner's
+`PATH` (a stock `/etc/profile` resets it for login shells — this WSL box
+skips that reset only because `WSL_DISTRO_NAME` is set; reproduced with it
+unset) and the runner's locale (see the Locale row of §3.4); nothing else.
+The directory is removed if the pre-flight fails; otherwise it is left
+behind (one tiny file per run). Side effects: the agent has no
+`~/.gitconfig`, `~/.ssh`, `~/.npmrc`, pip cache etc. — appropriate for a
+benchmark build from an empty repo, and `.git` is read-only in the sandbox
+anyway. Operator-side
 hygiene (secrets out of `~/.bashrc`) is still recommended because the Claude
 harness has no equivalent.
 
 **Operator instructions (added 2026-09-11, U8).** Because
 `--ignore-user-config` does not cover them, the pre-flight refuses to run
-while `$CODEX_HOME/AGENTS.md` exists or `$CODEX_HOME/skills/` holds anything
-besides codex's bundled `.system` (rule 1).
+while `$CODEX_HOME/AGENTS.md` (verified injected), `AGENTS.override.md`
+(takes precedence over it in codex's global scope) or the legacy
+`instructions.md` (both named in the 0.154 binary; not executed) exists, or
+`$CODEX_HOME/skills/` holds anything besides codex's bundled `.system`
+(rule 1).
 
 **D3: `--ignore-user-config` on both legs.** Verified offline that `-c`
 overrides still apply and both legs run. A benchmark should not inherit the
@@ -339,7 +351,11 @@ rule, as implemented in `_usage_from`:
 "harness_error"?, "dead_turn_retries", "dead_turn_errors": [first 20 messages
 from the dead legs] + "dead_turn_errors_total", "rollout_path": str|None,
 "unparsed_lines": [first 20] + "unparsed_total", "stderr_tail": str (last
-2000 chars, ANSI-stripped)}`.
+2000 chars, ANSI-stripped), "usage_delta": this leg's share,
+"reasoning_output_tokens", "rate_limits": {plan_type, primary/secondary:
+{used_percent, window_minutes, resets_at}} — trimmed, no credit balances}`.
+`cache_tokens_reported` is true only when codex's usage object carries
+`cached_input_tokens`.
 Plain JSON types only; must round-trip through `RunRecord.write`.
 
 ### 4.6 Failure semantics — decision D4 (symmetric)
@@ -366,9 +382,10 @@ error text**, and treats "the model never ran" the same on every attempt:
    `Logged in using ChatGPT` in either stream; anything else (`Not logged
    in`, `Logged in using an API key - …` from a stored `auth.json` key,
    access token, timeout) ⇒ `HarnessError` naming the mode seen, before codex
-   touches the worktree. Then refuse while `$CODEX_HOME/AGENTS.md` exists or
-   `$CODEX_HOME/skills/` has entries other than `.system` (U8: not suppressed
-   by `--ignore-user-config`). A missing `codex` binary raises `FileNotFoundError`
+   touches the worktree. Then refuse while `$CODEX_HOME/AGENTS.md`,
+   `AGENTS.override.md` or `instructions.md` exists or `$CODEX_HOME/skills/`
+   has entries other than `.system` (U8: not suppressed by
+   `--ignore-user-config`). A missing `codex` binary raises `FileNotFoundError`
    from the subprocess call and is **not** wrapped — exactly as the Claude
    adapter; `__main__.main` already prints it as `error: …` with exit 2. Mode line recorded in `raw["auth_mode"]` of attempt 1.
 2. **Run the leg.** If the stream has **no `thread.started`** at all ⇒
@@ -520,7 +537,25 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
 13. **registry:** `get_harness("codex-cli")` is a `CodexCliHarness`; unknown
     name lists both. **Dry run** (Stage 2, with the matrix row):
     `dry_run_report` with the two-row `eval-chess-backend` matrix passes.
-14. `continue_build` before `start_build`, and with `""` ⇒ `HarnessError`.
+14. `continue_build` before `start_build`, and with `""` ⇒ `HarnessError`; a
+    resume stream reporting a different thread id ⇒ `HarnessError`.
+15. **Parser rules pinned from the real rollout lines** (review round 3 —
+    each was shown to survive the suite as a mutation before these existed):
+    a turn whose `turn_context` has no usage record reads as *no usage* (not
+    the previous turn's), end to end a dead resume with the real rollout on
+    disk is retried then raises; after a rollout-sourced failure the thread
+    total advances so the next leg's delta is exactly its own turn; within a
+    turn the **last** `token_usage_record` wins.
+16. **Throwaway HOME:** under the configured base, shared by pre-flight and
+    both legs, contains only the PATH + locale profile; the base refuses
+    `/tmp` and `$TMPDIR`; removed when the pre-flight fails; a real
+    `/bin/bash -lc` with codex's C.UTF-8 env and `WSL_DISTRO_NAME` unset ends
+    up with the runner's PATH and locale; hostile values stay quoted;
+    relative `CODEX_HOME` made absolute.
+17. Guard covers `AGENTS.override.md` and `instructions.md`;
+    `cache_tokens_reported` false when the field is absent; `rate_limits`
+    trimmed; `gpt-6-astra` prices pinned; the two-row dry run runs against a
+    stub bundle (so it runs in CI).
 
 `make test` and `make lint` green at each stage (§6).
 
@@ -594,7 +629,9 @@ exactly as every Claude run does. Needs pagehub-evals on `:8002` and `:8003`
 free. Acceptance: the runner's host-side `make up` starts the
 codex-built service; `raw.usage` matches the fixture-derived rule;
 `raw.usage_source == "stream"`; the pushed tree contains no venv or
-`site-packages`.
+`site-packages`; no attempt raised "thread usage went backwards" (if codex's
+context compaction ever resets the thread total, the adapter fails loudly
+rather than mis-recording — record it as a finding and revisit the delta rule).
 
 ### 4.12 Deliberate deviations from "mirror claude_code.py one-for-one"
 
@@ -627,7 +664,7 @@ layout, `_subprocess_env`, `_build_timeout`, `_run`, remembered state,
 - **D4** failure semantics: **pre-flight ChatGPT-mode check; dead-after-retries raises on any attempt; non-dead failures captured** (§4.6). Alternative rejected: capture dead turns after attempt 1 (v2) — launders mid-run auth/limit failures into FAIL records and pushes.
 - **D5** dead-turn retries: **2**, 5 s apart, env-tunable.
 - **D6** matrix row effort: **`high` as the task specifies**; mismatch with Claude's `xhigh` documented.
-- **D8** throwaway `HOME` + pinned `CODEX_HOME` for every codex subprocess: **yes** (U7b; the only layer that fully hides profile-exported secrets).
+- **D8** throwaway `HOME` (outside the sandbox's writable roots; restores only PATH + locale) + pinned `CODEX_HOME` for every codex subprocess: **yes** (U7b; the only layer that fully hides profile-exported secrets).
 - **D7** staging: **Stage 1 ships the adapter registered but without the matrix row**; the row lands in Stage 2 with the calibrated parser (§6). Registration alone cannot spend tokens — only a YAML row selects a harness — so no guard is needed and the unfiltered `make run BENCHMARK=eval-chess-backend` is unaffected during Stage 1. The one exception is an operator-authored YAML path carrying a `codex-cli` row: in Stage 1 a real success then raises under rule 8 (tokens spent, but never a `$0` record) and a non-dead failure records zeros with the warning.
 
 ## 6. Implementation sequencing

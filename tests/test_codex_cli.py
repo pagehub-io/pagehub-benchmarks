@@ -164,6 +164,8 @@ def isolated_env(monkeypatch, tmp_path):
     monkeypatch.delenv("CODEX_BUILD_TIMEOUT_SECONDS", raising=False)
     for var in STRIPPED_ENV_VARS:
         monkeypatch.setenv(var, f"{var.lower()}-should-be-dropped")
+    homes = tmp_path / "codex-homes"
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: homes)
     sleeps: list[float] = []
     monkeypatch.setattr(codex_cli.time, "sleep", lambda s: sleeps.append(s))
     return sleeps
@@ -301,35 +303,99 @@ def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_p
     assert len(homes) == 1  # one throwaway HOME per run, shared by pre-flight and both legs
     home = Path(homes.pop())
     assert home.is_dir() and home != Path(os.environ["HOME"])
-    assert home.name.startswith("pagehub-benchmarks-codex-home-")
-    # nothing but the locale profile: no secrets, no operator dotfiles
+    assert home.parent == tmp_path / "codex-homes" and home.name.startswith("run-")
+    # nothing but the PATH + locale profile: no secrets, no operator dotfiles
     assert [p.name for p in home.iterdir()] == [".bash_profile"]
     assert (home / ".bash_profile").read_text() == (
+        "export PATH=/usr/bin\n"
         "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8\n"
     )
     for e in envs:
         assert e["CODEX_HOME"] == os.environ["CODEX_HOME"]  # the real codex home, not <HOME>/.codex
 
 
-def test_home_profile_restores_runner_locale_lc_all_first(monkeypatch, tmp_path):
-    """codex forces C.UTF-8; the profile re-exports the runner's locale,
-    preferring LC_ALL over LANG, shell-quoted."""
+def test_home_profile_restores_runner_path_and_locale(monkeypatch, tmp_path):
+    """codex forces C.UTF-8 and a stock /etc/profile resets PATH for login
+    shells; the profile re-exports the runner's PATH and locale (LC_ALL over
+    LANG), shell-quoted."""
+    monkeypatch.setenv("PATH", "/opt/py/bin:/usr/bin")
     monkeypatch.setenv("LANG", "en_US.UTF-8")
     monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
     codex_cli._prepare_home(str(tmp_path))
     assert (tmp_path / ".bash_profile").read_text() == (
+        "export PATH=/opt/py/bin:/usr/bin\n"
         "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 LC_CTYPE=de_DE.UTF-8\n"
     )
-    monkeypatch.setenv("LC_ALL", "x; touch /tmp/pwned")  # hostile value is quoted, never executed
+    monkeypatch.setenv("LC_ALL", "x; touch /tmp/pwned")  # hostile values are quoted, never executed
+    monkeypatch.setenv("PATH", "/usr/bin:$(touch /tmp/pwned)")
     codex_cli._prepare_home(str(tmp_path))
-    assert "LC_ALL='x; touch /tmp/pwned'" in (tmp_path / ".bash_profile").read_text()
+    text = (tmp_path / ".bash_profile").read_text()
+    assert "LC_ALL='x; touch /tmp/pwned'" in text
+    assert "PATH='/usr/bin:$(touch /tmp/pwned)'" in text
 
 
-def test_home_stays_empty_without_a_runner_locale(monkeypatch, tmp_path):
+def test_home_profile_really_restores_path_and_locale_in_a_login_shell(monkeypatch, tmp_path):
+    """Execute it: a real `/bin/bash -lc` with codex's forced C.UTF-8 env and
+    WSL_DISTRO_NAME unset (so a stock /etc/profile resets PATH) must end up
+    with the runner's PATH and locale."""
+    import shutil as _shutil
+
+    if not Path("/bin/bash").exists() or _shutil.which("bash") is None:
+        pytest.skip("no bash")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'runner-bin'}:{os.environ['PATH']}")
+    monkeypatch.setenv("LANG", "C")  # a locale every box can load
+    monkeypatch.delenv("LC_ALL", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_cli._prepare_home(str(home))
+    env = {k: v for k, v in os.environ.items() if k != "WSL_DISTRO_NAME"}
+    env.update(HOME=str(home), LANG="C.UTF-8", LC_ALL="C.UTF-8", LC_CTYPE="C.UTF-8")
+    out = subprocess.run(
+        ["/bin/bash", "-lc", 'echo "$PATH"; echo "$LC_ALL"'],
+        env=env, capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    assert out[0].split(":")[0] == str(tmp_path / "runner-bin")
+    assert out[1] == "C"
+
+
+def test_home_stays_empty_without_path_or_locale(monkeypatch, tmp_path):
+    monkeypatch.delenv("PATH", raising=False)
     monkeypatch.delenv("LANG", raising=False)
     monkeypatch.delenv("LC_ALL", raising=False)
     codex_cli._prepare_home(str(tmp_path))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_throwaway_home_base_is_outside_the_sandbox_writable_roots(monkeypatch):
+    """A HOME under /tmp or $TMPDIR is writable by the sandboxed agent (it
+    could plant $HOME/.agents/skills for its later turns) — refuse it."""
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/srv/cache")
+    assert codex_cli._throwaway_home_base() == Path("/srv/cache/pagehub-benchmarks/codex-homes")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache")
+    with pytest.raises(HarnessError, match="writable to the agent"):
+        codex_cli._throwaway_home_base()
+    monkeypatch.setenv("TMPDIR", "/var/scratch")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/var/scratch/c")
+    with pytest.raises(HarnessError, match="/var/scratch"):
+        codex_cli._throwaway_home_base()
+
+
+def test_throwaway_home_removed_when_preflight_fails(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(stdout="", stderr="Not logged in\n", returncode=1))
+    with pytest.raises(HarnessError):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert list((tmp_path / "codex-homes").iterdir()) == []
+
+
+def test_relative_codex_home_is_made_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", "rel-codex")
+    assert codex_cli._subprocess_env("/x")["CODEX_HOME"] == str(tmp_path / "rel-codex")
 
 
 def test_codex_home_defaults_to_runner_home_dot_codex_when_unset(monkeypatch, tmp_path):
@@ -836,6 +902,18 @@ def test_preflight_refuses_global_agents_md(monkeypatch, tmp_path, isolated_env)
     assert legs.calls == []
 
 
+@pytest.mark.parametrize("name", ["AGENTS.override.md", "instructions.md"])
+def test_preflight_refuses_other_global_instruction_files(monkeypatch, tmp_path, isolated_env, name):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / name).write_text("x\n")
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match=name.replace(".", r"\.")):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
 def test_preflight_refuses_user_skills_but_allows_bundled_system_skills(monkeypatch, tmp_path, isolated_env):
     home = tmp_path / "codex-home"
     (home / "skills" / ".system" / "bundled").mkdir(parents=True)
@@ -848,15 +926,181 @@ def test_preflight_refuses_user_skills_but_allows_bundled_system_skills(monkeypa
     assert len(legs.calls) == 1
 
 
-def test_dry_run_validates_the_two_row_matrix(monkeypatch):
+def test_dry_run_validates_the_two_row_matrix(monkeypatch, tmp_path):
     """The task's dry-run command: the committed eval-chess-backend matrix now
     carries both harnesses and both models must price."""
     from pagehub_benchmarks.config import load_benchmark
     from pagehub_benchmarks.runner.run import dry_run_report
 
-    evals_repo = Path("~/github/pagehub-io/pagehub-evals").expanduser()
-    if not (evals_repo / "fixtures" / "eval-chess-backend.json").is_file():
-        pytest.skip("pagehub-evals checkout not present")
+    evals_repo = tmp_path / "pagehub-evals"  # stub bundle: runs in CI, which has no checkout
+    (evals_repo / "fixtures").mkdir(parents=True)
+    (evals_repo / "fixtures" / "eval-chess-backend.json").write_text(
+        json.dumps({"version": 1, "collections": [{"name": "eval-chess-backend", "items": []}]})
+    )
     monkeypatch.setenv("PAGEHUB_EVALS_REPO", str(evals_repo))
     text = "\n".join(dry_run_report(load_benchmark("eval-chess-backend")))
     assert "harness=claude-code" in text and "harness=codex-cli model=gpt-6-astra" in text
+
+
+def test_gpt_6_astra_prices_are_pinned():
+    """Standard tier, short context — developers.openai.com/api/docs/pricing, 2026-09-10."""
+    from pagehub_benchmarks.config import load_pricing
+
+    p = load_pricing()["gpt-6-astra"]
+    assert (p.input, p.output, p.cache_write, p.cache_read) == (10.0, 50.0, 12.5, 1.0)
+
+
+
+# --------------------------------------------------------------------------
+# Parser rules that a mutation of _read_rollout / _thread_total would break
+# (review round 3). All built from the REAL rollout lines.
+
+
+def _rollout_lines() -> list[str]:
+    return OK_ROLLOUT.splitlines()
+
+
+def _write_rollout(tmp_path: Path, lines: list[str], thread_id: str = OK_THREAD_ID) -> Path:
+    d = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "11"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"rollout-2026-09-11T10-08-21-{thread_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _with_thread_id(stream: str, thread_id: str) -> str:
+    out = []
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "thread.started":
+            obj["thread_id"] = thread_id
+        out.append(json.dumps(obj, separators=(",", ":")))
+    return "\n".join(out) + "\n"
+
+
+def _last_turn_context_line() -> str:
+    return [ln for ln in _rollout_lines() if json.loads(ln).get("type") == "turn_context"][-1]
+
+
+def test_read_rollout_ignores_usage_from_earlier_turns():
+    """A resumed turn that 401s gets a turn_context line appended to the
+    rollout but no usage record. Its usage must read as NONE — not as the
+    previous turn's — or a dead resume would be captured with stale tokens."""
+    import tempfile as _tf
+
+    lines = _rollout_lines() + [_last_turn_context_line()]  # SYNTHETIC tail: the dead turn's context line
+    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+        fh.write("\n".join(lines) + "\n")
+    turn, rate_limits = codex_cli._read_rollout(fh.name)
+    os.unlink(fh.name)
+    assert turn is None
+    assert rate_limits is not None and rate_limits["plan_type"] == "plus"
+
+
+def test_dead_resume_with_real_rollout_is_retried_then_raises(monkeypatch, tmp_path, isolated_env):
+    """End to end: start leg OK; the resume 401s (real dead envelope, thread id
+    rewritten to the thread under test) while the rollout on disk holds turn
+    1–2 usage plus the dead turn's turn_context. Must be dead → retried →
+    HarnessError, never a captured attempt carrying turn 2's tokens."""
+    _write_rollout(tmp_path, _rollout_lines() + [_last_turn_context_line()])
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_thread_total_advances_after_rollout_sourced_failure(monkeypatch, tmp_path, isolated_env):
+    """Leg 2 fails after model activity (usage from the rollout: turn 2).
+    Leg 3's stream reports the new thread total; its delta must be exactly
+    turn 3 — the failed turn must not be counted twice."""
+    _write_rollout(tmp_path, _rollout_lines())
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC: the real success envelope of the resume with turn.completed
+    # swapped for the real turn.failed line.
+    failed_resume = "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    total_after_turn2 = _usage_line(OK_RESUME)
+    turn3 = {"input_tokens": 1000, "cached_input_tokens": 800, "cache_write_input_tokens": 0,
+             "output_tokens": 7, "reasoning_output_tokens": 3}  # SYNTHETIC turn-3 increment
+    total_after_turn3 = {k: total_after_turn2[k] + turn3[k] for k in turn3}
+    ok_turn3 = _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")),
+        json.dumps(total_after_turn3, separators=(",", ":")),
+    )
+    assert json.dumps(total_after_turn3, separators=(",", ":")) in ok_turn3
+    legs = _Legs([(OK_START, "", 0), (failed_resume, "", 1), (ok_turn3, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "fix it again")
+    turn2 = _rollout_turn_usages()[1]
+    assert r2.raw["usage_source"] == "rollout" and r2.input_tokens == 16119 - 12160
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"] == turn3
+    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
+    # all three attempts sum to the thread total — nothing double- or under-counted
+    assert r1.input_tokens + r1.cache_read_tokens + r2.input_tokens + r2.cache_read_tokens \
+        + r3.input_tokens + r3.cache_read_tokens == total_after_turn3["input_tokens"]
+    assert turn2["input_tokens"] == 16119
+
+
+def test_read_rollout_takes_the_last_usage_record_of_the_turn():
+    """A build turn makes many model requests; each token_usage_record carries
+    the turn's RUNNING total, so the last one is the turn's usage."""
+    import tempfile as _tf
+
+    lines = _rollout_lines()
+    idx = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    real = json.loads(lines[idx])
+    earlier = json.loads(lines[idx])  # SYNTHETIC: an earlier, smaller running total in the same turn
+    earlier["payload"]["turn_token_usage"] = {
+        k: (v // 2 if isinstance(v, int) else v) for k, v in real["payload"]["turn_token_usage"].items()
+    }
+    lines.insert(idx, json.dumps(earlier, separators=(",", ":")))
+    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+        fh.write("\n".join(lines) + "\n")
+    turn, _ = codex_cli._read_rollout(fh.name)
+    os.unlink(fh.name)
+    assert turn == real["payload"]["turn_token_usage"]
+
+
+# --------------------------------------------------------------------------
+# misc (review round 3 nits)
+
+
+def test_resume_reporting_a_different_thread_raises(monkeypatch, tmp_path, isolated_env):
+    other = _with_thread_id(OK_RESUME, "00000000-0000-0000-0000-000000000000")
+    legs = _Legs([(OK_START, "", 0), (other, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="expected " + OK_THREAD_ID):
+        h.continue_build(r1.session_handle, "again")
+
+
+def test_cache_tokens_reported_false_when_codex_omits_the_cached_field(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC: a usage object without cached_input_tokens.
+    no_cache = OK_START.replace('"cached_input_tokens":12160,', "")
+    assert '"cached_input_tokens"' not in no_cache
+    legs = _Legs([(no_cache, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["cache_tokens_reported"] is False
+    assert r.cache_read_tokens == 0 and r.input_tokens == 15359
+
+
+def test_rate_limits_are_trimmed_to_budget_fields(monkeypatch, tmp_path, isolated_env):
+    _write_rollout(tmp_path, _rollout_lines())
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    rl = r.raw["rate_limits"]
+    assert set(rl) == {"plan_type", "primary", "secondary"}
+    assert set(rl["primary"]) == {"used_percent", "window_minutes", "resets_at"}
+    assert "credits" not in json.dumps(rl) and "balance" not in json.dumps(rl)
