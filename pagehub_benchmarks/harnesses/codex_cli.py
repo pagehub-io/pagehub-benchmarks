@@ -34,13 +34,15 @@ message into the thread when they change). ``--ignore-user-config`` on both
 legs keeps the operator's ``~/.codex/config.toml`` out of the run; the two
 things that matter for comparability (effort, sandbox) are pinned explicitly.
 
-**Agent shell environment.** ``--disable shell_snapshot`` plus a
-``shell_environment_policy`` exclude list (``*KEY*``, ``*SECRET*``, ``*TOKEN*``,
-``*PASSWORD*``) on both legs: verified to hide matching variables inherited
-from the runner process and to stop codex writing a plaintext snapshot of the
-login-shell environment under ``$CODEX_HOME/shell_snapshots``. Partial by
-nature — codex runs commands with ``bash -lc``, so anything ``~/.bashrc``
-exports still reaches the agent; keep secrets out of the runner's profile.
+**Agent shell environment.** Three layers, all verified 2026-09-11:
+``--disable shell_snapshot`` (no plaintext login-shell snapshot under
+``$CODEX_HOME/shell_snapshots``), a ``shell_environment_policy`` exclude list
+(``*KEY*``, ``*SECRET*``, ``*TOKEN*``, ``*PASSWORD*``) for variables inherited
+from the runner, and — the layer that actually closes the hole — a throwaway
+``HOME`` for the codex subprocess with ``CODEX_HOME`` pinned to the real
+login directory: codex runs the agent's commands with ``bash -lc``, and with
+the operator's HOME that re-sourced ``~/.bashrc`` and its secrets into the
+agent's shell; with an empty HOME the probe reported none.
 
 **Auth — subscription only.** ``CODEX_API_KEY`` (a live runtime auth source
 that would silently move the run onto metered API billing), ``CODEX_ACCESS_TOKEN``
@@ -91,6 +93,7 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -142,19 +145,33 @@ __all__ = ["CodexCliHarness", "HarnessError", "EFFORT_MAP", "STRIPPED_ENV_VARS"]
 # -- environment / config helpers -------------------------------------------
 
 
-def _subprocess_env() -> dict[str, str]:
-    """A copy of the current env minus every codex auth env var.
+def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
+    """A copy of the current env minus every codex auth env var, with codex's
+    home pinned and — when ``home_override`` is given — ``HOME`` swapped for a
+    throwaway directory.
 
     ``CODEX_API_KEY`` is a live runtime credential in codex 0.154 (verified: a
     bogus value changes the 401 to "Incorrect API key provided"), so leaving
     it in place would divert a run onto metered API billing. ``CODEX_ACCESS_TOKEN``
     is read as an auth source too. ``OPENAI_API_KEY`` is not read at runtime
     by 0.154 but is stripped as well (task requirement; future-proof).
-    ``CODEX_HOME`` is left alone — that is where the operator's login lives.
+
+    ``CODEX_HOME`` is pinned to the operator's real codex home (the env value,
+    else ``~/.codex`` of the *runner's* HOME) so the stored ChatGPT login,
+    sessions and trust entries stay where they are. ``HOME`` is then pointed
+    at an empty per-run directory: codex runs the agent's commands with
+    ``bash -lc``, which sources the profile of whatever ``HOME`` is — with the
+    operator's real HOME that re-exported every secret in ``~/.bashrc`` into
+    the agent's shell (37 secret-named variables on this runner box); with an
+    empty HOME the same probe reported NONE, and login / pip / network kept
+    working. Verified 2026-09-11 with gpt-5.6-sol.
     """
     env = dict(os.environ)
     for key in STRIPPED_ENV_VARS:
         env.pop(key, None)
+    env["CODEX_HOME"] = str(_codex_home())
+    if home_override:
+        env["HOME"] = home_override
     return env
 
 
@@ -593,6 +610,9 @@ class CodexCliHarness(Harness):
         # own share is the delta against this. Reset per start_build (new
         # thread).
         self._thread_total: dict[str, int] | None = None
+        # Empty directory used as HOME for every codex subprocess of this run
+        # (see _subprocess_env). Created in start_build, reused by resumes.
+        self._home_override: str | None = None
 
     # -- helpers ---------------------------------------------------------
 
@@ -606,7 +626,7 @@ class CodexCliHarness(Harness):
         try:
             proc = subprocess.run(  # noqa: S603 — args are constructed, not shell
                 ["codex", "login", "status"],
-                env=_subprocess_env(),
+                env=_subprocess_env(self._home_override),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -644,7 +664,7 @@ class CodexCliHarness(Harness):
         proc = subprocess.Popen(  # noqa: S603 — args are constructed, not shell
             cmd,
             cwd=cwd,
-            env=_subprocess_env(),
+            env=_subprocess_env(self._home_override),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -834,6 +854,7 @@ class CodexCliHarness(Harness):
         config: dict[str, Any],
     ) -> AttemptResult:
         effort = _map_effort(config)  # before any subprocess
+        self._home_override = tempfile.mkdtemp(prefix="pagehub-benchmarks-codex-home-")
         self._auth_mode = self._preflight()
         self._thread_total = None
         self._worktree_dir = worktree_dir

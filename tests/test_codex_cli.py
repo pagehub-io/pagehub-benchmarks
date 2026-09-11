@@ -275,12 +275,42 @@ def test_env_strips_all_three_auth_vars_on_legs_and_preflight(monkeypatch, tmp_p
         for var in STRIPPED_ENV_VARS:
             assert var not in env
         assert env["PATH"] == "/usr/bin"
-        assert env["CODEX_HOME"].endswith("codex-home")
+        assert env["CODEX_HOME"].endswith("codex-home")  # pinned to the (test) codex home
     assert STRIPPED_ENV_VARS == ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-    # nothing added beyond the inherited env — on the leg AND the pre-flight
-    expected = {k for k in os.environ if k not in STRIPPED_ENV_VARS}
+    # nothing added beyond the inherited env except the pinned CODEX_HOME — on
+    # the leg AND the pre-flight; HOME is swapped, never dropped
+    expected = {k for k in os.environ if k not in STRIPPED_ENV_VARS} | {"CODEX_HOME", "HOME"}
     assert set(legs.calls[0]["env"]) == expected
     assert set(preflight.calls[0]["env"]) == expected
+
+
+def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_path, isolated_env):
+    """codex runs the agent's commands with `bash -lc`; with the operator's
+    HOME that re-sources ~/.bashrc and its secrets into the agent's shell.
+    The subprocess gets an empty HOME, while CODEX_HOME still points at the
+    real login directory (verified 2026-09-11: secrets NONE, login works)."""
+    legs = _Legs([(NON_DEAD_START, "", 1), (NON_DEAD_RESUME, "", 1)])
+    preflight = _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    h.continue_build(r1.session_handle, "again")
+    envs = [preflight.calls[0]["env"], legs.calls[0]["env"], legs.calls[1]["env"]]
+    homes = {e["HOME"] for e in envs}
+    assert len(homes) == 1  # one throwaway HOME per run, shared by pre-flight and both legs
+    home = Path(homes.pop())
+    assert home.is_dir() and home != Path(os.environ["HOME"])
+    assert home.name.startswith("pagehub-benchmarks-codex-home-")
+    assert not any(home.iterdir())  # empty: no profile, no secrets
+    for e in envs:
+        assert e["CODEX_HOME"] == os.environ["CODEX_HOME"]  # the real codex home, not <HOME>/.codex
+
+
+def test_codex_home_defaults_to_runner_home_dot_codex_when_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    env = codex_cli._subprocess_env("/tmp/throwaway")
+    assert env["CODEX_HOME"] == str(tmp_path / ".codex")
+    assert env["HOME"] == "/tmp/throwaway"
 
 
 # --------------------------------------------------------------------------

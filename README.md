@@ -142,13 +142,17 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   and can only `pip install` into a venv under the worktree or `/tmp` (prefer
   `/tmp` — a venv left in the worktree is committed and pushed with the build).
   It can read the whole filesystem and reach the network — the same exposure
-  as Claude. **Secrets in your shell profile reach the agent** (both
-  harnesses): codex runs commands with `bash -lc`, which re-sources
-  `~/.bashrc`. The adapter disables codex's login-shell snapshot (which is
-  otherwise written to `~/.codex/shell_snapshots/` in plaintext) and filters
-  inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*`, but it
-  cannot undo what the profile exports — keep secrets out of `~/.bashrc` on
-  the runner box, or benchmark under a dedicated user. Codex also prepends its
+  as Claude. **Secrets in your shell profile reach an agent's login shell**:
+  codex runs commands with `bash -lc`, which sources the profile of whatever
+  `HOME` is. The adapter therefore gives every codex subprocess an **empty
+  throwaway `HOME`** (with `CODEX_HOME` pinned to your real login directory),
+  disables codex's login-shell snapshot (otherwise written to
+  `~/.codex/shell_snapshots/` in plaintext, values included) and filters
+  inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — a probe
+  agent then saw no secret-named variables where it previously listed 37 from
+  `~/.bashrc`. Claude Code has no equivalent and sees everything, so keeping
+  secrets out of `~/.bashrc` on the runner box (or benchmarking under a
+  dedicated user) is still the right hygiene. Codex also prepends its
   own instructions (bundled skills, a multi-agent role; proactive sub-agent
   delegation is off at the default effort levels) to every thread, as Claude
   Code does its system prompt. After each attempt the **runner** executes the
