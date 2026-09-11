@@ -130,7 +130,8 @@ SUBSCRIPTION_MODE_LINE = "Logged in using ChatGPT"
 STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 # Variables that make a shell source an operator file regardless of HOME:
 # bash sources $BASH_ENV for every non-interactive shell (pyenv's shims are
-# bash scripts), sh/dash source $ENV, zsh reads its dotfiles from $ZDOTDIR.
+# bash scripts) — the one that matters here; interactive sh/dash source $ENV;
+# zsh reads its dotfiles from $ZDOTDIR.
 # Any of them would undo the throwaway HOME (review finding, executed with a
 # synthetic BASH_ENV file; all three are unset on the development box).
 PROFILE_ENV_VARS = ("BASH_ENV", "ENV", "ZDOTDIR")
@@ -244,8 +245,11 @@ def _throwaway_home_base() -> Path:
     ``$HOME/.agents/skills/*`` or edit ``.bash_profile`` for its later
     resumed turns (review finding, 2026-09-11 — reproduced with ``codex
     sandbox`` for a ``mkdtemp()`` under ``/tmp``; a directory under
-    ``~/.cache`` was verified read-only to the sandboxed agent). Refuses
-    rather than silently using a writable location.
+    ``~/.cache`` was verified read-only to the sandboxed agent). Refuses a
+    base under ``/tmp`` or ``$TMPDIR`` (compared after resolving symlinks and
+    ``..``) rather than silently using a writable location. The worktree is
+    not checked: the runner creates worktrees under the repo's ``.worktrees/``,
+    which a cache directory cannot coincide with.
     """
     xdg = os.environ.get("XDG_CACHE_HOME", "")
     # The XDG spec says a relative XDG_CACHE_HOME is invalid and must be ignored.
@@ -952,7 +956,8 @@ class CodexCliHarness(Harness):
         if usage.rate_limits:
             # Printed only for legs that return: a dead leg's rollout shows
             # the previous turn's (stale) figures.
-            _print_rate_limits("start" if is_start else "resume", usage.rate_limits)
+            with contextlib.suppress(Exception):  # display only; never fails a spent leg
+                _print_rate_limits("start" if is_start else "resume", usage.rate_limits)
         raw: dict[str, Any] = {
             "thread_id": thread_id,
             "exit_code": leg.returncode,

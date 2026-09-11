@@ -254,7 +254,9 @@ with **`CODEX_HOME` pinned** (absolute) to the operator's real codex home (env
 value, else `~/.codex` of the runner's HOME), so login, sessions and trust
 entries stay put while the agent's login shell finds no operator profile to
 source. The base **must lie outside the sandbox's writable roots** (worktree,
-`/tmp`, `$TMPDIR`) — the adapter refuses otherwise: review round 3 showed,
+`/tmp`, `$TMPDIR`) — the adapter refuses a base under `/tmp` or `$TMPDIR`
+(resolved paths); the worktree case can't arise, since worktrees live under
+the repo's `.worktrees/`. Review round 3 showed,
 with `codex sandbox`, that a `mkdtemp()` under `/tmp` let the agent create
 `$HOME/.agents/skills/*` and append to `.bash_profile` for its later resumed
 turns; the same probes against `~/.cache/…` were denied (read-only). The
@@ -563,6 +565,16 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     `cache_tokens_reported` false when the field is absent; `rate_limits`
     trimmed; `gpt-6-astra` prices pinned; the two-row dry run runs against a
     stub bundle (so it runs in CI).
+18. **Cache writes** (review round 5 — every recorded usage object has
+    `cache_write_input_tokens == 0`, so these use SYNTHETIC writes on the real
+    envelopes): a start leg with 1000 writes records 2199 non-cached input +
+    1000 cache-creation; a resume leg records its own share; through the
+    runner with real pricing `cost_usd == $0.0469` (writes priced once, at
+    the write rate). Also pinned: the pre-flight needs exit 0 even when the
+    ChatGPT line is present; `harness_error` falls back to the LAST error;
+    `rate_limits` come from the LAST `token_count`; `stderr_tail` keeps the
+    end; a resume leg's `reasoning_output_tokens` is its share of the thread
+    total. Each rule was shown to survive the suite as a mutation first.
 
 `make test` and `make lint` green at each stage (§6).
 

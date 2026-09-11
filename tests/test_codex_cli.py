@@ -281,7 +281,8 @@ def test_env_strips_all_three_auth_vars_on_legs_and_preflight(monkeypatch, tmp_p
     assert STRIPPED_ENV_VARS == ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
     # nothing added beyond the inherited env except the pinned CODEX_HOME — on
     # the leg AND the pre-flight; HOME is swapped, never dropped
-    expected = {k for k in os.environ if k not in STRIPPED_ENV_VARS} | {"CODEX_HOME", "HOME"}
+    removed = set(STRIPPED_ENV_VARS) | set(codex_cli.PROFILE_ENV_VARS)
+    expected = {k for k in os.environ if k not in removed} | {"CODEX_HOME", "HOME"}
     assert set(legs.calls[0]["env"]) == expected
     assert set(preflight.calls[0]["env"]) == expected
 
@@ -1048,6 +1049,7 @@ def test_thread_total_advances_after_rollout_sourced_failure(monkeypatch, tmp_pa
     assert r3.raw["usage_source"] == "stream"
     assert r3.raw["usage_delta"] == turn3
     assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
+    assert r3.raw["reasoning_output_tokens"] == 3  # the leg's share, not the thread total
     # all three attempts sum to the thread total — nothing double- or under-counted
     assert r1.input_tokens + r1.cache_read_tokens + r2.input_tokens + r2.cache_read_tokens \
         + r3.input_tokens + r3.cache_read_tokens == total_after_turn3["input_tokens"]
@@ -1231,3 +1233,132 @@ def test_thread_total_resets_on_every_start_build(monkeypatch, tmp_path, isolate
     h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert r.input_tokens == 15359 - 12160
+
+
+
+# --------------------------------------------------------------------------
+# Cache writes (review round 5, I-1). Every recorded usage object so far has
+# cache_write_input_tokens == 0, so these streams are SYNTHETIC: the real
+# success envelope with cache_write_input_tokens set to 1000. They pin the
+# partition rule — writes are a slice of input_tokens, recorded as
+# cache_creation_tokens and priced at the write rate, never also as input.
+
+
+def _with_cache_write(stream: str, writes: int) -> str:
+    return stream.replace('"cache_write_input_tokens":0', f'"cache_write_input_tokens":{writes}')
+
+
+def test_cache_writes_partitioned_out_of_input_on_the_start_leg(monkeypatch, tmp_path, isolated_env):
+    stream = _with_cache_write(OK_START, 1000)
+    assert '"cache_write_input_tokens":1000' in stream
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.input_tokens == 15359 - 12160 - 1000 == 2199
+    assert r.cache_creation_tokens == 1000
+    assert r.cache_read_tokens == 12160
+    assert r.output_tokens == 5
+
+
+def test_cache_writes_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(OK_START, "", 0), (_with_cache_write(OK_RESUME, 1000), "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    assert r2.input_tokens == 16119 - 12160 - 1000 == 2959
+    assert r2.cache_creation_tokens == 1000 and r2.cache_read_tokens == 12160
+
+
+def test_cache_writes_priced_once_at_the_write_rate_through_the_runner(monkeypatch, tmp_path, isolated_env):
+    """cost_usd = 2199 in × $10 + 5 out × $50 + 1000 writes × $12.50 + 12160
+    reads × $1 per 1M = $0.0469. Billing writes also as input (or dropping
+    them) would give $0.0569 (or $0.0344)."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo. Get the tests passing — that is all.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 1,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    legs = _Legs([(_with_cache_write(OK_START, 1000), "", 0)])
+    _install(monkeypatch, legs)
+    rec = execute_benchmark_run(
+        spec=spec, harness_spec=spec.harnesses[0], harness=CodexCliHarness(),
+        grader=FakeGrader([gr(True)]), worktree_dir=tmp_path / "wt", pricing=load_pricing(),
+        fixture_fetcher=FakeFixtureFetcher(), built_sha="deadbeef",
+    )
+    assert (rec.total_input_tokens, rec.total_output_tokens, rec.total_cache_tokens) == (2199, 5, 13160)
+    assert rec.cost_usd == pytest.approx(0.0469)
+
+
+# --------------------------------------------------------------------------
+# More rules a mutation survived in round 5 (N-2)
+
+
+def test_preflight_requires_exit_zero_even_with_the_chatgpt_line(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, _Preflight(stdout="", stderr=CHATGPT_LINE + "\n", returncode=1))
+    with pytest.raises(HarnessError, match="exited 1"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
+def test_harness_error_is_the_last_error_when_no_turn_failed(monkeypatch, tmp_path, isolated_env):
+    """Rule 5: the turn.failed message, else the LAST error event's message."""
+    # SYNTHETIC: the non-dead failure envelope with its turn.failed line removed
+    # (rule 7: no terminal event is still a failure).
+    stream = "\n".join(ln for ln in NON_DEAD_START.splitlines() if '"turn.failed"' not in ln) + "\n"
+    errors = codex_cli._error_messages(_parse_jsonl(stream)[0])
+    assert len(set(errors)) > 1
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["harness_error"] == errors[-1] != errors[0]
+
+
+def test_rate_limits_come_from_the_last_token_count(tmp_path):
+    import tempfile as _tf
+
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if '"token_count"' in ln)
+    # SYNTHETIC: the last token_count reports a different figure than the first.
+    lines[last] = lines[last].replace('"used_percent":0.0', '"used_percent":7.0', 1)
+    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+        fh.write("\n".join(lines) + "\n")
+    _, rate_limits = codex_cli._read_rollout(fh.name)
+    os.unlink(fh.name)
+    assert rate_limits["primary"]["used_percent"] == 7.0
+
+
+def test_stderr_tail_keeps_the_end(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "HEAD-MARKER " + "x" * 3000 + " TAIL-MARKER", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["stderr_tail"].endswith("TAIL-MARKER") and "HEAD-MARKER" not in r.raw["stderr_tail"]
+
+
+def test_reasoning_tokens_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, isolated_env):
+    """SYNTHETIC reasoning counts on the real envelopes: start reasons 4, the
+    resume stream reports a thread total of 7 → the resume leg's share is 3."""
+    start = OK_START.replace('"reasoning_output_tokens":0', '"reasoning_output_tokens":4')
+    resume = OK_RESUME.replace('"reasoning_output_tokens":0', '"reasoning_output_tokens":7')
+    assert '"reasoning_output_tokens":4' in start and '"reasoning_output_tokens":7' in resume
+    legs = _Legs([(start, "", 0), (resume, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    assert r1.raw["reasoning_output_tokens"] == 4
+    assert r2.raw["reasoning_output_tokens"] == 3
