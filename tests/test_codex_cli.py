@@ -193,7 +193,11 @@ def test_start_argv_byte_exact_and_prompt_on_stdin(monkeypatch, tmp_path, isolat
 
     call = legs.calls[0]
     assert call["cmd"] == [
-        "codex", "exec", "--ignore-user-config", "-m", "gpt-6-astra", "--json",
+        "codex", "exec", "--ignore-user-config",
+        "--disable", "shell_snapshot",
+        "-c", "shell_environment_policy.experimental_use_profile=false",
+        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+        "-m", "gpt-6-astra", "--json",
         "-C", str(tmp_path), "--sandbox", "workspace-write",
         "-c", 'model_reasoning_effort="high"',
         "-c", "sandbox_workspace_write.network_access=true",
@@ -216,7 +220,11 @@ def test_resume_argv_byte_exact(monkeypatch, tmp_path, isolated_env):
 
     call = legs.calls[1]
     assert call["cmd"] == [
-        "codex", "exec", "resume", START_THREAD_ID, "--ignore-user-config", "--json",
+        "codex", "exec", "resume", START_THREAD_ID, "--ignore-user-config",
+        "--disable", "shell_snapshot",
+        "-c", "shell_environment_policy.experimental_use_profile=false",
+        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+        "--json",
         "-m", "gpt-6-astra",
         "-c", 'model_reasoning_effort="xhigh"',
         "-c", 'sandbox_mode="workspace-write"',
@@ -238,7 +246,8 @@ def test_effort_maps_one_to_one(monkeypatch, tmp_path, isolated_env, effort):
     _install(monkeypatch, legs)
     CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": effort})
     cmd = legs.calls[0]["cmd"]
-    assert cmd[cmd.index("-c") + 1] == f'model_reasoning_effort="{effort}"'
+    assert f'model_reasoning_effort="{effort}"' in cmd
+    assert cmd[cmd.index(f'model_reasoning_effort="{effort}"') - 1] == "-c"
 
 
 @pytest.mark.parametrize(
@@ -552,3 +561,245 @@ def test_continue_with_empty_handle_raises(monkeypatch, tmp_path, isolated_env):
     with pytest.raises(HarnessError, match="empty session handle"):
         h.continue_build("", "p2")
     assert len(legs.calls) == 1
+
+
+# --------------------------------------------------------------------------
+# 6 / 8 / 12: token usage — calibrated against the REAL recorded success
+# streams (codex-cli 0.154.0, gpt-6-astra, 2026-09-11) and the REAL rollout
+# of that same thread (message bodies removed, usage lines verbatim).
+
+OK_START = (FIXTURES / "codex_exec_ok.jsonl").read_text()
+OK_RESUME = (FIXTURES / "codex_exec_resume_ok.jsonl").read_text()
+OK_ROLLOUT = (FIXTURES / "codex_rollout_ok.jsonl").read_text()
+OK_THREAD_ID = _thread_id_of(OK_START)
+
+
+def _usage_line(stream: str) -> dict[str, int]:
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "turn.completed":
+            return obj["usage"]
+    raise AssertionError("no turn.completed in fixture")
+
+
+def _rollout_turn_usages() -> list[dict[str, int]]:
+    out = []
+    for line in OK_ROLLOUT.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "token_usage_record":
+            out.append(obj["payload"]["turn_token_usage"])
+    return out
+
+
+def _install_rollout(tmp_path: Path) -> Path:
+    """Place the recorded rollout where the adapter's glob finds it under
+    the test's CODEX_HOME (isolated_env points CODEX_HOME at tmp_path/codex-home)."""
+    d = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "11"
+    d.mkdir(parents=True)
+    path = d / f"rollout-2026-09-11T10-08-21-{OK_THREAD_ID}.jsonl"
+    path.write_text(OK_ROLLOUT)
+    return path
+
+
+def test_fixture_facts_hold():
+    """Pin the facts the mapping rests on, straight from the fixtures."""
+    start, resume = _usage_line(OK_START), _usage_line(OK_RESUME)
+    turns = _rollout_turn_usages()
+    assert len(turns) == 2
+    # the stream's usage on a fresh thread == that turn's usage
+    assert {k: start[k] for k in turns[0] if k != "total_tokens"} == {k: turns[0][k] for k in turns[0] if k != "total_tokens"}
+    # the stream's usage on a RESUMED thread == the thread total (start + resume turn)
+    for k in ("input_tokens", "cached_input_tokens", "output_tokens"):
+        assert resume[k] == turns[0][k] + turns[1][k]
+    # input_tokens includes the cached slice (total_tokens == input + output)
+    for t in turns:
+        assert t["total_tokens"] == t["input_tokens"] + t["output_tokens"]
+        assert t["cached_input_tokens"] <= t["input_tokens"]
+    assert _thread_id_of(OK_RESUME) == OK_THREAD_ID
+
+
+def test_usage_start_leg_from_stream(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    u = _usage_line(OK_START)
+    assert r.session_handle == OK_THREAD_ID
+    assert r.input_tokens == u["input_tokens"] - u["cached_input_tokens"] - u["cache_write_input_tokens"] == 3199
+    assert r.cache_read_tokens == u["cached_input_tokens"] == 12160
+    assert r.cache_creation_tokens == u["cache_write_input_tokens"] == 0
+    assert r.output_tokens == u["output_tokens"] == 5
+    assert r.cache_tokens == 12160
+    assert r.raw["usage"] == u  # verbatim
+    assert r.raw["usage_source"] == "stream"
+    assert r.raw["cache_tokens_reported"] is True
+    assert r.raw["usage_delta"] == {**u}
+    assert r.raw["reasoning_output_tokens"] == 0
+    assert r.raw["rate_limits"] is None  # no rollout under this CODEX_HOME
+    assert "harness_error" not in r.raw
+    json.dumps(r.raw)
+
+
+def test_usage_resume_leg_is_delta_of_thread_total(monkeypatch, tmp_path, isolated_env):
+    """The resume stream reports the THREAD total; the attempt must record
+    only its own turn — cross-checked against the rollout's turn_token_usage."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    turn2 = _rollout_turn_usages()[1]
+    assert r2.input_tokens == turn2["input_tokens"] - turn2["cached_input_tokens"] == 3959
+    assert r2.cache_read_tokens == turn2["cached_input_tokens"] == 12160
+    assert r2.output_tokens == turn2["output_tokens"] == 5
+    assert r2.raw["usage"] == _usage_line(OK_RESUME)  # verbatim cumulative object
+    assert r2.raw["usage_delta"] == {k: turn2[k] for k in r2.raw["usage_delta"]}
+    assert r2.raw["usage_source"] == "stream"
+
+
+def test_usage_thread_total_going_backwards_raises(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC ordering: a resume that reports LESS than the start leg did.
+    legs = _Legs([(OK_RESUME, "", 0), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="went backwards"):
+        h.continue_build(r1.session_handle, "again")
+
+
+def test_usage_cached_exceeding_input_raises(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC: cached > input breaks the subset partition — refuse, don't mis-price.
+    bad = OK_START.replace('"cached_input_tokens":12160', '"cached_input_tokens":99999')
+    legs = _Legs([(bad, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="subset assumption"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+
+
+def test_rate_limits_recorded_from_rollout_on_success(monkeypatch, tmp_path, isolated_env):
+    rollout = _install_rollout(tmp_path)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["rollout_path"] == str(rollout)
+    rl = r.raw["rate_limits"]
+    assert rl["plan_type"] == "plus"
+    assert rl["primary"]["window_minutes"] == 300 and rl["primary"]["used_percent"] == 0.0
+    assert rl["secondary"]["window_minutes"] == 10080
+    assert r.raw["usage_source"] == "stream"  # the rollout is NOT the usage source on success
+
+
+def test_non_dead_failure_takes_usage_from_rollout(monkeypatch, tmp_path, isolated_env):
+    """SYNTHETIC stream: the real success envelope with turn.completed swapped
+    for the real turn.failed line (model produced an item, then the turn
+    failed — a failed turn carries no usage on the stream). Usage must come
+    from the rollout's turn_token_usage of the LAST turn."""
+    _install_rollout(tmp_path)
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    turn2 = _rollout_turn_usages()[1]  # last turn_context in the rollout is turn 2
+    assert len(legs.calls) == 1  # non-dead: not retried
+    assert r.raw["usage_source"] == "rollout"
+    assert r.raw["usage"] == turn2  # verbatim turn_token_usage
+    assert r.input_tokens == turn2["input_tokens"] - turn2["cached_input_tokens"]
+    assert r.cache_read_tokens == turn2["cached_input_tokens"]
+    assert r.output_tokens == turn2["output_tokens"]
+    assert "401 Unauthorized" in r.raw["harness_error"]
+    assert r.raw["rate_limits"]["plan_type"] == "plus"
+
+
+def test_attempt_chain_through_runner_records_per_turn_usage(monkeypatch, tmp_path, isolated_env):
+    """Attempt 1 (start fixture) → grader fails → attempt 2 (resume fixture)
+    → grader passes, through execute_benchmark_run with real pricing."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo. Get the tests passing — that is all.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 3,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    pricing = load_pricing()
+    rec = execute_benchmark_run(
+        spec=spec,
+        harness_spec=spec.harnesses[0],
+        harness=CodexCliHarness(),
+        grader=FakeGrader([gr(False, ["thing broke"]), gr(True)]),
+        worktree_dir=tmp_path / "wt",
+        pricing=pricing,
+        fixture_fetcher=FakeFixtureFetcher(),
+        built_sha="deadbeef",
+    )
+    assert rec.passed is True and rec.attempts == 2
+    # attempt 2 resumed attempt 1's thread with the failing-eval follow-up
+    assert legs.calls[1]["cmd"][2:4] == ["resume", OK_THREAD_ID]
+    assert "thing broke" in legs.procs[1].communicate_calls[0]["input"]
+    a1, a2 = rec.per_attempt
+    assert (a1.input_tokens, a1.output_tokens, a1.cache_tokens) == (3199, 5, 12160)
+    assert (a2.input_tokens, a2.output_tokens, a2.cache_tokens) == (3959, 5, 12160)
+    assert rec.total_input_tokens == 7158 and rec.total_output_tokens == 10 and rec.total_cache_tokens == 24320
+    p = pricing["gpt-6-astra"]
+    assert rec.cost_usd == pytest.approx((7158 * p.input + 10 * p.output + 24320 * p.cache_read) / 1_000_000)
+    assert rec.per_attempt[0].raw["auth_mode"] == CHATGPT_LINE and "auth_mode" not in rec.per_attempt[1].raw
+    # the record round-trips to disk as plain JSON
+    out = rec.write(tmp_path / "results")
+    back = json.loads(out.read_text())
+    assert back["per_attempt"][1]["raw"]["usage_source"] == "stream"
+    assert back["per_attempt"][1]["raw"]["usage"] == _usage_line(OK_RESUME)
+
+
+# --------------------------------------------------------------------------
+# pre-flight guard: operator-level instructions are refused
+
+
+def test_preflight_refuses_global_agents_md(monkeypatch, tmp_path, isolated_env):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "AGENTS.md").write_text("Begin every reply with PINEAPPLE.\n")
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="AGENTS.md"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
+def test_preflight_refuses_user_skills_but_allows_bundled_system_skills(monkeypatch, tmp_path, isolated_env):
+    home = tmp_path / "codex-home"
+    (home / "skills" / ".system" / "bundled").mkdir(parents=True)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})  # .system only: fine
+    (home / "skills" / "zzmarker").mkdir()
+    with pytest.raises(HarnessError, match="zzmarker"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1
+
+
+def test_dry_run_validates_the_two_row_matrix(monkeypatch):
+    """The task's dry-run command: the committed eval-chess-backend matrix now
+    carries both harnesses and both models must price."""
+    from pagehub_benchmarks.config import load_benchmark
+    from pagehub_benchmarks.runner.run import dry_run_report
+
+    evals_repo = Path("~/github/pagehub-io/pagehub-evals").expanduser()
+    if not (evals_repo / "fixtures" / "eval-chess-backend.json").is_file():
+        pytest.skip("pagehub-evals checkout not present")
+    monkeypatch.setenv("PAGEHUB_EVALS_REPO", str(evals_repo))
+    text = "\n".join(dry_run_report(load_benchmark("eval-chess-backend")))
+    assert "harness=claude-code" in text and "harness=codex-cli model=gpt-6-astra" in text

@@ -1,6 +1,6 @@
 # Tech spec — Codex CLI harness (`codex-cli`, GPT-6 Astra) for pagehub-benchmarks
 
-Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). Review history: round 1 on v1 (1 critical,
+Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swept in this text) — 2026-09-10. Amended after PR #29 review round 1 (raw keys, rule 3/5 wording, pricing tier note, Stage-2 prose list). **Amended 2026-09-11 for Stage 2:** U1–U8 resolved by execution (§3.4), usage mapping finalised (§4.5), three verified findings folded in — the stream's usage is the thread total; operator `AGENTS.md`/skills are not suppressed (pre-flight guard, rule 1); codex exposes the runner's secret-named env vars and writes login-shell snapshots to disk (§4.4 env policy, §4.10). Review history: round 1 on v1 (1 critical,
 11 important, 10 nits) → v2; round 2 on v2 (0 critical, 5 important, 10 nits)
 → v3; round 3 on v3 (0 critical, 2 important, 11 nits) → v4; round 4 on v4
 (0 critical, 2 important — both caused by v4's Stage-1 guard, now removed —
@@ -116,6 +116,20 @@ both turns' rollout usage payloads (0.4).
 | `invalid_prompt` (openai/codex #43237, open, filed 2026-09-06) | gpt-6-astra with ChatGPT-subscription auth rejects prompts with exit **1** and error text "Invalid prompt: your prompt was flagged as potentially violating our usage policy…". The original post reproduces it **consistently** (even for `hi`, isolated `CODEX_HOME`, `--ignore-user-config`); a 2026-09-07 commenter reports it **intermittent** ("10 failures in ~40 min across projects", `high`/`xhigh`/`max`, while `gpt-5.6-sol` turns succeeded); 2026-09-08 commenters report it **account-scoped and total** ("began rejecting every prompt", Pro plan at 0 % usage, `sol` fine). So on a given account it may be absent, intermittent, or total. The OP's repro also passed `--disable multi_agent --disable apps --disable plugins`, which the adapter does not. No `--json` sample exists; it arrives as ordinary error text (the binary also carries a second wording, "Invalid prompt: we've limited access…"). Re-checked 2026-09-10: still open. |
 | pricing | `https://developers.openai.com/api/docs/pricing` — the page also lists a "Fast mode" (priority) tier at 2× the standard rates; the adapter pins no service tier, so runs are priced as standard (Stage 2 may record `turn_context.service_tier` from the rollout to confirm). (openai.com/api/pricing 403s for bots; platform.openai.com/docs/pricing 301s here). Table header **Input · Cached input · Cache writes · Output**, tiers "Short context (≤272K input tokens)" / "Long context (>272K input tokens)". `gpt-6-astra` standard short: **$10.00 · $1.00 · $12.50 · $50.00** per 1M; long: $20 · $2 · $25 · $75. Tooltip: "Input tokens are either Input, Cached Input, or Cache Write and writes are not an additive fee." |
 
+### 3.4 Resolved on 2026-09-11 (after `codex login`; ChatGPT Plus, 5h/weekly usage 0% at start)
+
+| # | Result |
+|---|---|
+| U1 | `turn.completed{usage:{input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens}}` on the stream (`tests/fixtures/codex_exec_ok.jsonl`); the rollout additionally writes `token_usage_record{usage, turn_token_usage, thread_token_usage, turn_id}` and `event_msg token_count{info:{total_token_usage,last_token_usage}, rate_limits}` (`codex_rollout_ok.jsonl`, message bodies removed). A `turn.failed` was not observed with usage (unchanged assumption; rollout fallback stands). |
+| U2 | **The stream's usage on a resumed thread is the thread total** (resume fixture: 31478 = 15359 + 16119 input; matches `thread_token_usage`) ⇒ per-leg delta on the instance. `total_tokens == input_tokens + output_tokens` on both turns ⇒ cached (and cache-write) are subsets of input; `output_tokens` includes reasoning. `cache_write_input_tokens` was 0. Sub-agent tokens: unobserved (delegation is off by default — see below). |
+| U3/U4 | No `invalid_prompt` on this account today (both Astra turns completed). `gpt-5.6-sol` works (used for the CLI-mechanics probes to spare Astra allowance). |
+| U5 | Sandbox executes commands: `/tmp` writable, `$HOME` read-only, `pip` and network work, a backgrounded `http.server 8003` did **not** outlive `codex exec`. |
+| U6 | `codex login status` → `Logged in using ChatGPT` on **stderr**, exit 0; `--ignore-user-config` leaves the login working on both legs. |
+| U7 | **Negative.** No default env filtering in exec mode: the agent listed 37 secret-named variables from the runner's shell (Stripe/JWT/Cloudflare/Supabase production credentials, a PEM private key exported as a variable). Root cause: they are exported by `~/.bashrc`, and codex runs commands with `bash -lc`. `-c shell_environment_policy.exclude=[…]` alone changed nothing; `--disable shell_snapshot` + `experimental_use_profile=false` + the exclude list hides every matching variable **inherited from the runner** and stops the snapshot files, but `~/.bashrc`'s own exports still reach the agent. Codex also writes `$CODEX_HOME/shell_snapshots/<thread>.sh` (mode 644) containing the full login-shell environment with values — 8 such files existed after the probes. |
+| U8 | **Negative.** `--ignore-user-config` suppresses neither a global `$CODEX_HOME/AGENTS.md` (marker instruction was obeyed) nor user skills (marker skill listed). ⇒ pre-flight guard (rule 1). |
+| — | Delegation: turn 1 carries `<multi_agent_mode>` "proactive multi-agent delegation no longer applies — do not spawn sub-agents" at default settings, so Astra will not delegate on its own; `ultra` is the codex level that turns it on (rejected by the effort map; a future opt-in knob if wanted — it multiplies token spend). |
+| — | Rate limits: after two tiny Astra turns and four `sol` probe turns, 5-hour window 1.0% used, weekly 0.0%. |
+
 ## 4. Design
 
 ### 4.1 Invocation
@@ -126,8 +140,11 @@ inject a `<permissions instructions>` message mid-thread (§3.1).
 `start_build(worktree_dir, prompt, model, config)`:
 
 ```
-codex exec --ignore-user-config -m <model> --json -C <worktree> \
-  --sandbox workspace-write \
+codex exec --ignore-user-config \
+  --disable shell_snapshot \
+  -c 'shell_environment_policy.experimental_use_profile=false' \
+  -c 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]' \
+  -m <model> --json -C <worktree> --sandbox workspace-write \
   -c 'model_reasoning_effort="<effort>"' \
   -c 'sandbox_workspace_write.network_access=true' \
   -
@@ -136,7 +153,11 @@ codex exec --ignore-user-config -m <model> --json -C <worktree> \
 `continue_build(session_handle, followup_prompt)`:
 
 ```
-codex exec resume <thread_id> --ignore-user-config --json -m <model> \
+codex exec resume <thread_id> --ignore-user-config \
+  --disable shell_snapshot \
+  -c 'shell_environment_policy.experimental_use_profile=false' \
+  -c 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]' \
+  --json -m <model> \
   -c 'model_reasoning_effort="<effort>"' \
   -c 'sandbox_mode="workspace-write"' \
   -c 'sandbox_workspace_write.network_access=true' \
@@ -213,6 +234,22 @@ read at runtime by 0.154 but harmless and future-proof). **D2 is mandatory.**
 `CODEX_HOME` is left untouched. Nothing is added. The pre-flight (§4.6)
 runs under this same stripped env.
 
+**Agent shell environment (added 2026-09-11, U7).** `--disable shell_snapshot`
++ `-c shell_environment_policy.experimental_use_profile=false` + the exclude
+list above, on both legs — the exact combination verified to hide every
+secret-named variable inherited from the runner process and to stop codex
+writing plaintext login-shell snapshots under `$CODEX_HOME/shell_snapshots`.
+It is **partial**: codex still runs `bash -lc`, which re-sources `~/.bashrc`;
+its exports reach the agent regardless. The complete fix is operator-side —
+keep secrets out of the runner's shell profile or run benchmarks under a
+dedicated user (§4.10). A variable whose *name* doesn't match the patterns
+(e.g. a PEM key in `FOO_PEM`) is not filtered either.
+
+**Operator instructions (added 2026-09-11, U8).** Because
+`--ignore-user-config` does not cover them, the pre-flight refuses to run
+while `$CODEX_HOME/AGENTS.md` exists or `$CODEX_HOME/skills/` holds anything
+besides codex's bundled `.system` (rule 1).
+
 **D3: `--ignore-user-config` on both legs.** Verified offline that `-c`
 overrides still apply and both legs run. A benchmark should not inherit the
 operator's MCP servers, personality, model-provider or reasoning-summary
@@ -240,8 +277,8 @@ Verified fields:
   Claude adapter's).
 - `reported_cost_usd = None` (codex reports no cost figure).
 
-Usage — **the mapping rule is provisional until both success fixtures exist
-(U1/U2)**; only the shape below is committed:
+Usage — **calibrated 2026-09-11 against the recorded fixtures** (§3.4). The
+rule, as implemented in `_usage_from`:
 
 - `raw["usage_source"] ∈ {"stream", "rollout", "none"}`. Primary: the usage
   object on the stream's terminal event (expected `turn.completed`, U1).
@@ -261,10 +298,15 @@ Usage — **the mapping rule is provisional until both success fixtures exist
   for a real success would be silent mis-recording. Capture-with-zeros is
   allowed only for the non-dead **failure** path (§4.6 rule 5), with a
   console warning.
-- Per-turn vs. thread-total (U2): if the reported usage on a resumed thread
-  is cumulative, the adapter records the delta against the previous leg's
-  total (kept on the instance) and documents it the way `_usage_from`
-  documents `modelUsage`. Determined from the start+resume fixture pair.
+- **The stream's usage is the thread total** (verified, U2): the adapter keeps
+  the last total on the instance (reset per `start_build`) and records each
+  leg's delta; a total that goes backwards ⇒ `HarnessError`. After a
+  rollout-sourced failed leg the total is advanced by that turn's usage so the
+  next delta stays attributable. `raw["usage"]` is the verbatim stream object
+  (cumulative); `raw["usage_delta"]` is this leg's share.
+- `raw["rate_limits"]` (5-hour + weekly `used_percent`, `plan_type`) is read
+  from the rollout's last `token_count` on every leg, best-effort, and printed
+  to the console — the only place codex reports subscription budget.
 - `cached_input_tokens` → `cache_read_tokens`; `cache_write_input_tokens` →
   `cache_creation_tokens` (never dropped — `pricing.yaml` carries the $12.50
   write rate and writes are billed *instead of* the input rate, which is how
@@ -311,7 +353,9 @@ error text**, and treats "the model never ran" the same on every attempt:
    `Logged in using ChatGPT` in either stream; anything else (`Not logged
    in`, `Logged in using an API key - …` from a stored `auth.json` key,
    access token, timeout) ⇒ `HarnessError` naming the mode seen, before codex
-   touches the worktree. A missing `codex` binary raises `FileNotFoundError`
+   touches the worktree. Then refuse while `$CODEX_HOME/AGENTS.md` exists or
+   `$CODEX_HOME/skills/` has entries other than `.system` (U8: not suppressed
+   by `--ignore-user-config`). A missing `codex` binary raises `FileNotFoundError`
    from the subprocess call and is **not** wrapped — exactly as the Claude
    adapter; `__main__.main` already prints it as `error: …` with exit 2. Mode line recorded in `raw["auth_mode"]` of attempt 1.
 2. **Run the leg.** If the stream has **no `thread.started`** at all ⇒
@@ -487,9 +531,9 @@ computed from `pricing.yaml`, not billed. `.env.example` gets both knobs.
 
 | Actor controlled | Gets | Mitigation / status |
 |---|---|---|
-| **The model** (its tool calls) | Write: worktree (minus `.git`), `/tmp`, `$TMPDIR`. **Read: the entire filesystem** (`~/.ssh`, `~/.codex/auth.json`, `~/.claude/`, any `.env`). Network egress (D1). Subprocess env minus the three auth vars; codex's default `shell_environment_policy` additionally filters `*KEY*`/`*SECRET*`/`*TOKEN*` names from the agent's shell (U7), which Claude Code does not. ⇒ read-anything + egress is an exfiltration path. Can start background processes; whether they outlive `codex exec` is U5. **And, one step later, arbitrary unsandboxed execution as the runner user with the runner's full environment** (`PAGEHUB_EVALS_TOKEN`, `PAGEHUB_BROWSER_ADMIN_TOKEN`, `GATEWAY_AUTH_TOKEN`, …): the runner runs the model-authored `make up` / `make down` / compose file on the host with no `env=` filtering — U7 does not apply there. | During the turn: same or narrower than the Claude harness (no sandbox). After the turn: identical to Claude — the host-side `make up` is existing runner behaviour for every harness. Stated plainly in README; changing it is a runner change out of scope. |
+| **The model** (its tool calls) | Write: worktree (minus `.git`), `/tmp`, `$TMPDIR`. **Read: the entire filesystem** (`~/.ssh`, `~/.codex/auth.json`, `~/.claude/`, any `.env`). Network egress (D1). Subprocess env minus the three auth vars, minus (verified) every inherited variable matching `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — **but** `bash -lc` re-sources `~/.bashrc`, and on this runner box that file exports production Stripe/JWT/Cloudflare/Supabase credentials and a PEM key (37 secret-named variables were listed by a probe agent). Claude Code sees all of them with no filtering. Can start background processes (verified not to outlive `codex exec`). **And, one step later, arbitrary unsandboxed execution as the runner user with the runner's full environment**: the runner runs the model-authored `make up` / `make down` / compose file on the host with no `env=` filtering. ⇒ read-anything + egress + a secret-laden shell is an exfiltration path **today, for both harnesses**. | During the turn: narrower than the Claude harness (no sandbox there). After the turn: identical to Claude — the host-side `make up` is existing runner behaviour for every harness. Stated plainly in README; the profile-secrets problem needs the operator-side fix below. |
 | **Target repo contents** (`AGENTS.md`, `.codex/`, `.rules` for a non-empty `target_start`) | Instructions/rules codex would load from the checkout. | Moot today: all four benchmarks are `target_start: empty`. `--ignore-rules` exists if a non-empty start is ever added. |
-| **Operator's shell env** | Inherited minus the three vars; a `CODEX_API_KEY` would have switched billing silently. | Stripped. |
+| **Operator's shell env** | Inherited minus the three auth vars; a `CODEX_API_KEY` would have switched billing silently. Everything `~/.bashrc` exports reaches the agent's login shell (both harnesses); codex additionally wrote plaintext login-shell snapshots (values included, mode 644) to `$CODEX_HOME/shell_snapshots/` until `--disable shell_snapshot` was added. | Three auth vars stripped; inherited secret-named vars filtered and snapshots disabled for codex (partial, §4.4). **Operator action required:** move secrets out of `~/.bashrc` (source them on demand) or benchmark under a dedicated user; delete the existing snapshot files. |
 | **Operator's stored login** (`auth.json`) | An API-key login would pass an exit-code-only check and bill the API. | Pre-flight requires `Logged in using ChatGPT`. |
 | **Operator** (runs it) | Spends subscription allowance; trust entries appended to `~/.codex/config.toml`; a captured FAIL pushes a `bench/…` branch (existing behaviour); a mid-run usage-limit exhaustion **crashes** the run (no record, no push) rather than laundering it; their shell secrets reach the model-authored `Makefile` via the host-side `make up` (existing behaviour, both harnesses). | Documented; no real run without go-ahead; run the benchmark from a shell without unrelated secrets. |
 | **CI** | Nothing: fixtures are inert JSONL; subprocess is faked; no network. | Enforced by the tests' fake layer. |
@@ -497,7 +541,7 @@ computed from `pricing.yaml`, not billed. `.env.example` gets both knobs.
 No authn/authz or twin-override surface is added; the harness makes no HTTP
 calls of its own.
 
-### 4.11 Smoke plan (needs operator go-ahead; burns subscription allowance)
+### 4.11 Smoke plan (steps 1–2 done 2026-09-11 — §3.4; step 3 pending)
 
 Each step is cheap and gates the next. Back up `~/.codex/config.toml` first.
 
@@ -591,7 +635,7 @@ and to leave the default `make run` path untouched in the meantime (**D7**):
   (marked "pending calibration" where token reporting is described), tests
   1–5, 7, 9–11, 13 (registry half), 14. `make test` / `make lint` green. PR
   review round on this diff.
-- **Stage 2 (after login + §4.11 steps 1–2):** commit both success fixtures
+- **Stage 2 (done 2026-09-11 on PR #29):** commit both success fixtures
   verbatim; implement the confirmed mapping in `_usage_from` (if usage turns
   out cumulative across a thread, the function gains a `previous_total`
   argument fed from instance state — its Stage-1 signature is not final); add the matrix

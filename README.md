@@ -113,16 +113,18 @@ record. The adapter is `pagehub_benchmarks/harnesses/codex_cli.py`; the design
 and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
 
 - **Version:** `codex` ≥ 0.153.0 on PATH (developed and tested against
-  0.154.0; `npm i -g @openai/codex`). No matrix row selects it yet — the
-  token-usage parser is calibrated against recorded fixtures first
-  (`plans/codex-cli-harness.md` §6), then the `eval-chess-backend` row lands.
+  0.154.0; `npm i -g @openai/codex`). `benchmarks/eval-chess-backend.yaml`
+  carries a `codex-cli` / `gpt-6-astra` row.
 - **Login:** `codex login` (or `codex login --device-auth` on a headless box).
   Runs require the **ChatGPT-subscription** login: before the first attempt the
   adapter runs `codex login status` and refuses unless it reports `Logged in
   using ChatGPT`. `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` and `OPENAI_API_KEY`
   are unset in the subprocess — an API key would silently move the run onto
   metered billing. As for Claude, **`cost_usd` is a computed figure** (tokens ×
-  `pricing.yaml`), not a bill.
+  `pricing.yaml`), not a bill. The pre-flight also refuses to run while a
+  global `~/.codex/AGENTS.md` or user skills under `~/.codex/skills/` exist:
+  `--ignore-user-config` does not suppress them (verified), and they would
+  change what every run measures.
 - **Effort is required and explicit.** `config.effort` (`low|medium|high|xhigh|max`)
   is passed as `-c model_reasoning_effort=…` on **every** attempt. Codex would
   otherwise inherit `~/.codex/config.toml` or the model default (a bare
@@ -140,18 +142,32 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   and can only `pip install` into a venv under the worktree or `/tmp` (prefer
   `/tmp` — a venv left in the worktree is committed and pushed with the build).
   It can read the whole filesystem and reach the network — the same exposure
-  as Claude. Codex also prepends its own instructions (bundled skills, a
-  multi-agent role) to every thread, as Claude Code does its system prompt.
-  After each attempt the **runner** executes the built `Makefile` (`make up`)
-  on the host, outside any sandbox, for both harnesses.
+  as Claude. **Secrets in your shell profile reach the agent** (both
+  harnesses): codex runs commands with `bash -lc`, which re-sources
+  `~/.bashrc`. The adapter disables codex's login-shell snapshot (which is
+  otherwise written to `~/.codex/shell_snapshots/` in plaintext) and filters
+  inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*`, but it
+  cannot undo what the profile exports — keep secrets out of `~/.bashrc` on
+  the runner box, or benchmark under a dedicated user. Codex also prepends its
+  own instructions (bundled skills, a multi-agent role; proactive sub-agent
+  delegation is off at the default effort levels) to every thread, as Claude
+  Code does its system prompt. After each attempt the **runner** executes the
+  built `Makefile` (`make up`) on the host, outside any sandbox, for both
+  harnesses.
 - **What is recorded:** `session_handle` is the codex `thread_id`; attempt 2+
   runs `codex exec resume <thread_id>` with the failing-eval output. Token
-  counts come from the `--json` stream; if codex reports no cache-token split,
-  the cache columns show `0` and `per_attempt[].raw.cache_tokens_reported` is
-  `false`. `raw` is a bounded summary (`thread_id`, `usage`, `usage_source`,
-  terminal event, error messages, `rollout_path` to codex's own transcript).
-  *Token reporting details are filled in once the success fixtures are
-  recorded — pending calibration.*
+  counts come from the `--json` stream's `turn.completed.usage`, which on a
+  resumed thread is the **thread total** — the adapter records each attempt's
+  delta (`raw.usage` is the verbatim cumulative object, `raw.usage_delta` the
+  attempt's share). `input_tokens` in the record is the non-cached slice;
+  `cached_input_tokens` → cache reads, `cache_write_input_tokens` → cache
+  writes (priced at OpenAI's write rate); `output_tokens` includes reasoning
+  (`raw.reasoning_output_tokens` is recorded separately). A failed turn
+  carries no usage on the stream, so that path reads the turn's usage from
+  codex's rollout (`raw.usage_source: "rollout"`). `raw.rate_limits` carries
+  codex's 5-hour and weekly `used_percent` for the subscription — watch it on
+  a Plus plan. If codex ever reports no cache split, the cache columns show
+  `0` and `raw.cache_tokens_reported` is `false`.
 - **When a run crashes vs. records:** a turn in which the model never ran
   (not logged in, usage limit hit, provider outage, a rejected prompt — see
   openai/codex#43237) is retried `CODEX_DEAD_TURN_RETRIES` times (default 2)

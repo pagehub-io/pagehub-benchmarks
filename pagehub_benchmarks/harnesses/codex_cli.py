@@ -34,6 +34,14 @@ message into the thread when they change). ``--ignore-user-config`` on both
 legs keeps the operator's ``~/.codex/config.toml`` out of the run; the two
 things that matter for comparability (effort, sandbox) are pinned explicitly.
 
+**Agent shell environment.** ``--disable shell_snapshot`` plus a
+``shell_environment_policy`` exclude list (``*KEY*``, ``*SECRET*``, ``*TOKEN*``,
+``*PASSWORD*``) on both legs: verified to hide matching variables inherited
+from the runner process and to stop codex writing a plaintext snapshot of the
+login-shell environment under ``$CODEX_HOME/shell_snapshots``. Partial by
+nature — codex runs commands with ``bash -lc``, so anything ``~/.bashrc``
+exports still reaches the agent; keep secrets out of the runner's profile.
+
 **Auth — subscription only.** ``CODEX_API_KEY`` (a live runtime auth source
 that would silently move the run onto metered API billing), ``CODEX_ACCESS_TOKEN``
 and ``OPENAI_API_KEY`` are removed from the subprocess environment. Before the
@@ -61,10 +69,17 @@ stream, never by matching error text:
   process group, drains the pipes and raises.
 
 **Token usage.** ``_usage_from`` is the single place the event stream is
-mapped onto token counts. It is calibrated against recorded fixtures
-(``tests/fixtures/codex_exec_ok.jsonl`` / ``codex_exec_resume_ok.jsonl``), not
-against docs; until those fixtures exist it finds no usage and returns
-``usage_source="none"`` (see ``plans/codex-cli-harness.md`` §6).
+mapped onto token counts, calibrated against recorded fixtures
+(``tests/fixtures/codex_exec_ok.jsonl``, ``codex_exec_resume_ok.jsonl``,
+``codex_rollout_ok.jsonl``), not against docs. ``turn.completed.usage`` is the
+**thread total** (verified: the resume fixture reports start + resume), so
+each leg records the delta against the previous total; ``input_tokens``
+includes the cached and cache-write slices (partitioned out for pricing);
+``output_tokens`` includes reasoning. A failed turn carries no usage on the
+stream, so that path reads this turn's ``turn_token_usage`` from codex's
+rollout file. ``rate_limits`` (5-hour and weekly ``used_percent``) is read
+from the rollout on every leg and recorded — the only place codex reports
+subscription budget.
 """
 
 from __future__ import annotations
@@ -99,6 +114,23 @@ STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 # codex accepts any string silently. ``ultra`` (automatic sub-agent delegation)
 # is intentionally absent.
 EFFORT_MAP: dict[str, str] = {e: e for e in ("low", "medium", "high", "xhigh", "max")}
+# Env-name patterns codex must not expose to the agent's shell. Verified
+# 2026-09-11 (gpt-5.6-sol probes): together with ``--disable shell_snapshot``
+# and ``experimental_use_profile=false`` this hides every matching variable
+# inherited from the runner process and stops codex writing a plaintext
+# snapshot of the login-shell environment to ``$CODEX_HOME/shell_snapshots``.
+# It is PARTIAL: codex still runs commands with ``bash -lc``, which re-sources
+# ``~/.bashrc`` — anything exported there reaches the agent regardless.
+SHELL_ENV_EXCLUDE = ("*KEY*", "*SECRET*", "*TOKEN*", "*PASSWORD*")
+_SHELL_ENV_EXCLUDE_TOML = "shell_environment_policy.exclude=[" + ",".join(f'"{p}"' for p in SHELL_ENV_EXCLUDE) + "]"
+_ENV_POLICY_ARGS = [
+    "--disable",
+    "shell_snapshot",
+    "-c",
+    "shell_environment_policy.experimental_use_profile=false",
+    "-c",
+    _SHELL_ENV_EXCLUDE_TOML,
+]
 
 # CSI sequences (colours, cursor) and OSC sequences (hyperlinks, titles).
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -254,9 +286,26 @@ def _error_messages(events: list[dict[str, Any]]) -> list[str]:
     return out
 
 
+_USAGE_KEYS = (
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
+)
+
+
 @dataclass(frozen=True)
 class _Usage:
-    """Token counts extracted for one leg, plus where they came from."""
+    """Token counts extracted for one leg, plus where they came from.
+
+    ``raw`` is the usage object exactly as codex reported it (on the stream:
+    the thread-cumulative object; from the rollout: this turn's
+    ``turn_token_usage``). ``delta`` is this leg's share after partitioning —
+    the numbers that go into the :class:`AttemptResult`. ``thread_total`` is
+    the cumulative thread usage after this leg, remembered on the harness so
+    the next leg's delta can be taken.
+    """
 
     raw: dict[str, Any] | None
     source: str  # "stream" | "rollout" | "none"
@@ -265,25 +314,219 @@ class _Usage:
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     cache_tokens_reported: bool = False
+    reasoning_output_tokens: int = 0
+    delta: dict[str, int] | None = None
+    thread_total: dict[str, int] | None = None
+    rate_limits: dict[str, Any] | None = None
 
 
-_NO_USAGE = _Usage(raw=None, source="none")
+def _as_usage(obj: Any) -> dict[str, int] | None:
+    """Normalise a codex usage object to the five known integer fields, or
+    ``None`` if it isn't one (missing/invalid ``input_tokens``/``output_tokens``)."""
+    if not isinstance(obj, dict) or "input_tokens" not in obj or "output_tokens" not in obj:
+        return None
+    out: dict[str, int] = {}
+    for key in _USAGE_KEYS:
+        try:
+            out[key] = int(obj.get(key) or 0)
+        except (TypeError, ValueError):
+            return None
+    return out
 
 
-def _usage_from(events: list[dict[str, Any]], rollout_path: str | None) -> _Usage:
-    """Map the event stream (and, for failed turns, codex's rollout file) onto
-    token counts.
+def _stream_usage(events: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, dict[str, int] | None]:
+    """``(verbatim usage object, normalised)`` from the terminal ``turn.completed``.
 
-    **Not yet calibrated.** The mapping is written against recorded fixtures
-    (``tests/fixtures/codex_exec_ok.jsonl`` and ``codex_exec_resume_ok.jsonl``),
-    never against documentation or memory of the format; until those fixtures
-    exist this returns "no usage found" (``source="none"``), which is the true
-    state of the failure fixtures we do have. A ``turn.completed`` leg that
-    lands here raises in :meth:`CodexCliHarness._attempt` rather than
-    recording a zero-token success. See ``plans/codex-cli-harness.md`` §4.5/§6.
+    Recorded shape (``tests/fixtures/codex_exec_ok.jsonl``, codex-cli 0.154.0)::
+
+        {"type":"turn.completed","usage":{"input_tokens":15359,"cached_input_tokens":12160,
+         "cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}
+
+    On a **resumed** thread this object is the thread-cumulative total, not the
+    turn's (``codex_exec_resume_ok.jsonl``: 31478 = 15359 + 16119 input,
+    matching the rollout's ``thread_token_usage``). Hence the delta logic in
+    :func:`_usage_from`.
     """
-    del events, rollout_path  # calibrated in Stage 2
-    return _NO_USAGE
+    terminal = _terminal_event(events)
+    if terminal is None or terminal.get("type") != "turn.completed":
+        return None, None
+    verbatim = terminal.get("usage")
+    return (verbatim if isinstance(verbatim, dict) else None), _as_usage(verbatim)
+
+
+def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """``(this turn's turn_token_usage, last rate_limits)`` from codex's rollout.
+
+    Recorded shape (``tests/fixtures/codex_rollout_ok.jsonl``): top-level
+    ``{"type":"token_usage_record","payload":{"turn_id":…,"usage":…,
+    "turn_token_usage":…,"thread_token_usage":…}}`` after each model response,
+    and ``{"type":"event_msg","payload":{"type":"token_count","info":{…},
+    "rate_limits":{"primary":{"used_percent":…,"window_minutes":300,…},
+    "secondary":{…"window_minutes":10080…},"plan_type":…}}}``. "This turn" =
+    the lines after the last ``turn_context`` (the leg that just ran is the
+    last turn appended); the last ``token_usage_record`` there carries the
+    turn's running total. Best-effort: any read/parse problem ⇒ ``(None, None)``.
+    The on-disk format is codex-internal and may change — this is the
+    failure-path fallback and the rate-limit source, never the primary usage
+    source.
+    """
+    if not rollout_path:
+        return None, None
+    try:
+        lines = Path(rollout_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None, None
+    turn_usage: dict[str, Any] | None = None
+    rate_limits: dict[str, Any] | None = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        payload = obj.get("payload")
+        if obj.get("type") == "turn_context":
+            turn_usage = None  # a new turn starts; only its own records count
+        elif obj.get("type") == "token_usage_record" and isinstance(payload, dict):
+            candidate = payload.get("turn_token_usage")
+            if isinstance(candidate, dict):
+                turn_usage = candidate
+        elif (
+            obj.get("type") == "event_msg"
+            and isinstance(payload, dict)
+            and payload.get("type") == "token_count"
+            and isinstance(payload.get("rate_limits"), dict)
+        ):
+            rate_limits = payload["rate_limits"]
+    return turn_usage, rate_limits
+
+
+def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
+    """``(non-cached input, output, cache writes, cache reads)``.
+
+    ``input_tokens`` is the whole prompt; ``cached_input_tokens`` and
+    ``cache_write_input_tokens`` are the slices of it billed at the cache
+    rates (the rollout's ``total_tokens == input_tokens + output_tokens`` on
+    both recorded turns confirms the subset reading). ``output_tokens``
+    already includes ``reasoning_output_tokens`` (same identity; OpenAI's
+    documented convention) so reasoning is recorded but not added.
+    """
+    cached = usage["cached_input_tokens"]
+    cache_write = usage["cache_write_input_tokens"]
+    non_cached = usage["input_tokens"] - cached - cache_write
+    if non_cached < 0:
+        raise HarnessError(
+            f"codex usage is inconsistent: cached ({cached}) + cache-write ({cache_write}) "
+            f"exceed input_tokens ({usage['input_tokens']}) — the subset assumption "
+            "in _partition no longer holds; refusing to record a wrong cost"
+        )
+    return non_cached, usage["output_tokens"], cache_write, cached
+
+
+def _usage_from(
+    events: list[dict[str, Any]],
+    rollout_path: str | None,
+    *,
+    previous_thread_total: dict[str, int] | None,
+) -> _Usage:
+    """Map one leg's event stream (and, for failed turns, codex's rollout)
+    onto token counts. Calibrated against the recorded fixtures named in
+    :func:`_stream_usage` / :func:`_read_rollout`, not against docs.
+
+    Primary source: ``turn.completed.usage`` on the stream — the thread
+    total, so this leg = total − ``previous_thread_total`` (zero for the
+    first leg of a thread). Failure path (``turn.failed`` carries no usage):
+    this turn's ``turn_token_usage`` from the rollout. Neither ⇒
+    ``source="none"`` with zeros (a *completed* turn landing here raises in
+    :meth:`CodexCliHarness._attempt`). ``rate_limits`` is read from the
+    rollout on every leg, best-effort — it is the only place codex reports
+    subscription usage (5-hour and weekly ``used_percent``).
+    """
+    prev = previous_thread_total or {k: 0 for k in _USAGE_KEYS}
+    verbatim, total = _stream_usage(events)
+    rollout_turn, rate_limits = _read_rollout(rollout_path)
+    if total is not None:
+        delta = {k: total[k] - prev.get(k, 0) for k in _USAGE_KEYS}
+        if any(v < 0 for v in delta.values()):
+            raise HarnessError(
+                f"codex thread usage went backwards (previous total {prev}, now {total}) — "
+                "the cumulative reading in _usage_from no longer holds; refusing to record"
+            )
+        non_cached, out, cache_write, cached = _partition(delta)
+        return _Usage(
+            raw=verbatim,
+            source="stream",
+            input_tokens=non_cached,
+            output_tokens=out,
+            cache_creation_tokens=cache_write,
+            cache_read_tokens=cached,
+            cache_tokens_reported=True,
+            reasoning_output_tokens=delta["reasoning_output_tokens"],
+            delta=delta,
+            thread_total=total,
+            rate_limits=rate_limits,
+        )
+    turn = _as_usage(rollout_turn)
+    if turn is not None:
+        non_cached, out, cache_write, cached = _partition(turn)
+        return _Usage(
+            raw=rollout_turn,
+            source="rollout",
+            input_tokens=non_cached,
+            output_tokens=out,
+            cache_creation_tokens=cache_write,
+            cache_read_tokens=cached,
+            cache_tokens_reported=True,
+            reasoning_output_tokens=turn["reasoning_output_tokens"],
+            delta=turn,
+            thread_total={k: prev.get(k, 0) + turn[k] for k in _USAGE_KEYS},
+            rate_limits=rate_limits,
+        )
+    return _Usage(raw=None, source="none", thread_total=previous_thread_total, rate_limits=rate_limits)
+
+
+def _refuse_operator_instructions() -> None:
+    """Refuse to run while operator-level instructions would be injected.
+
+    ``--ignore-user-config`` covers ``config.toml`` only: a global
+    ``$CODEX_HOME/AGENTS.md`` and user skills under ``$CODEX_HOME/skills/``
+    were verified (2026-09-11, marker files) to still reach the model. Either
+    would silently change what every run measures, so the harness refuses
+    until they are moved aside. Codex's own bundled skills live under
+    ``skills/.system`` and are part of the product, not operator input.
+    """
+    home = _codex_home()
+    agents = home / "AGENTS.md"
+    if agents.is_file():
+        raise HarnessError(
+            f"{agents} exists and would be injected into every codex turn "
+            "(--ignore-user-config does not suppress it); move it aside before benchmarking"
+        )
+    skills = home / "skills"
+    if skills.is_dir():
+        extra = sorted(p.name for p in skills.iterdir() if p.name != ".system")
+        if extra:
+            raise HarnessError(
+                f"user skills {extra} under {skills} would be offered to the model in every "
+                "codex turn (--ignore-user-config does not suppress them); move them aside "
+                "before benchmarking"
+            )
+
+
+def _print_rate_limits(leg_name: str, rate_limits: dict[str, Any]) -> None:
+    def _pct(window: Any) -> str:
+        if isinstance(window, dict) and window.get("used_percent") is not None:
+            return f"{window['used_percent']:.1f}%"
+        return "?"
+
+    print(
+        f"(codex-cli: {leg_name} leg done; subscription usage 5h={_pct(rate_limits.get('primary'))} "
+        f"weekly={_pct(rate_limits.get('secondary'))} plan={rate_limits.get('plan_type')})"
+    )
 
 
 def _harness_error_text(
@@ -345,6 +588,11 @@ class CodexCliHarness(Harness):
         # The ``Logged in using ...`` line the pre-flight saw; recorded in
         # attempt 1's raw.
         self._auth_mode: str | None = None
+        # Thread-cumulative usage after the last leg that reported any: the
+        # stream's turn.completed.usage is the thread total, so each leg's
+        # own share is the delta against this. Reset per start_build (new
+        # thread).
+        self._thread_total: dict[str, int] | None = None
 
     # -- helpers ---------------------------------------------------------
 
@@ -387,6 +635,7 @@ class CodexCliHarness(Harness):
                 "Run `codex login` (or `codex login --device-auth` on a headless box); "
                 "do not log in with an API key — runs must stay on subscription auth."
             )
+        _refuse_operator_instructions()
         return mode_line
 
     def _run_leg(self, cmd: list[str], cwd: str, stdin_text: str) -> _Leg:
@@ -448,7 +697,9 @@ class CodexCliHarness(Harness):
                 )
             terminal = _terminal_event(events)
             rollout_path = _find_rollout(thread_id)
-            usage = _usage_from(events, rollout_path)
+            usage = _usage_from(events, rollout_path, previous_thread_total=self._thread_total)
+            if usage.rate_limits:
+                _print_rate_limits(leg_name, usage.rate_limits)
             errors = _error_messages(events)
             completed = terminal is not None and terminal.get("type") == "turn.completed"
             if completed:
@@ -528,11 +779,19 @@ class CodexCliHarness(Harness):
         is_start: bool,
         harness_error: str | None,
     ) -> AttemptResult:
+        if usage.thread_total is not None:
+            self._thread_total = usage.thread_total
         raw: dict[str, Any] = {
             "thread_id": thread_id,
             "exit_code": leg.returncode,
             "usage": usage.raw,
             "usage_source": usage.source,
+            # This leg's own share (the stream reports the thread total).
+            "usage_delta": usage.delta,
+            "reasoning_output_tokens": usage.reasoning_output_tokens,
+            # Subscription budget as codex last reported it (5-hour + weekly
+            # windows, used_percent) — best-effort from the rollout.
+            "rate_limits": usage.rate_limits,
             "final_event": terminal,
             "event_counts": dict(Counter(str(ev.get("type")) for ev in events)),
             "errors": errors[:RAW_LIST_LIMIT],
@@ -576,6 +835,7 @@ class CodexCliHarness(Harness):
     ) -> AttemptResult:
         effort = _map_effort(config)  # before any subprocess
         self._auth_mode = self._preflight()
+        self._thread_total = None
         self._worktree_dir = worktree_dir
         self._model = model
         self._effort = effort
@@ -583,6 +843,7 @@ class CodexCliHarness(Harness):
             "codex",
             "exec",
             "--ignore-user-config",
+            *_ENV_POLICY_ARGS,
             "-m",
             model,
             "--json",
@@ -615,6 +876,7 @@ class CodexCliHarness(Harness):
             "resume",
             session_handle,
             "--ignore-user-config",
+            *_ENV_POLICY_ARGS,
             "--json",
             "-m",
             self._model,
