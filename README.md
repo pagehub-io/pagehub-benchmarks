@@ -324,9 +324,13 @@ derived from the attempts: a run is short if any `per_attempt[].raw.usage_caveat
 contains `"missing"` or `"dead_leg_unmeasured"` (spend that left the record),
 and whole if the only caveat is `"absorbed_missing_leg"` (spend that merely
 moved between attempt rows). That is the rule the site renders as `≥`
-(`RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`); a consumer reading
-the JSON directly has to apply it, and reading `cost_usd` without it will
-sometimes understate a run.
+(`RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`, pinned by
+`test_missing_makes_the_run_total_a_lower_bound` and
+`test_an_abandoned_thread_is_flagged_on_the_published_page` for the two
+caveats that shorten a total and by
+`test_absorbed_missing_leg_alone_does_not_shorten_the_run_total` for the one
+that does not); a consumer reading the JSON directly has to apply it, and
+reading `cost_usd` without it will sometimes understate a run.
 
 ## The first benchmark — `eval-chess-backend`
 

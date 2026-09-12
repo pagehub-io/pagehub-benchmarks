@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from tools.build_site import (
@@ -386,6 +387,7 @@ def _site(tmp_path: Path, run: dict, *, with_theory: bool = False) -> Path:
             "baseline: eval-chess-backend\n"
             "treatment: eval-chess-frontend\n"
             "metrics:\n  - cost_usd\n  - total_input_tokens\n  - attempts\n"
+            "  - total_wall_time_seconds\n"
             "status: pending\n"
             "---\n\n## Background\n\nnone\n"
         )
@@ -493,6 +495,29 @@ def test_a_faithful_run_carries_no_lower_bound_marking(tmp_path: Path):
         html = (docs / page).read_text()
         assert "&#8805;" not in html, page
         assert "$12.3456" in html or "cost" in html, page
+
+
+def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_path: Path):
+    """The lower bound applies to the token-derived figures and to nothing
+    else (``LOWER_BOUND_METRICS``): wall time, attempts and pass/fail are
+    measured elsewhere and are not short.
+
+    The DANGEROUS direction — dropping a token metric, so a short figure
+    publishes clean — is pinned by the four surface tests above. This pins the
+    other one, which is cheap to ship and hard to notice: round 14 added
+    ``attempts`` and the wall time to the set, the suite as it stood (271
+    tests) stayed green, and a caveated run's theory page rendered
+    ``&#8805;2 &#9888;`` on an attempt count that is complete. A lower-bound marker on a figure that is exact
+    devalues the marker everywhere it is right."""
+    docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"), with_theory=True)
+    theory_html = (docs / "theories" / "cheaper.html").read_text()
+    for metric, figure in (("attempts", "2"), ("total_wall_time_seconds", "1680s")):
+        cell = re.search(rf'<td class="mono">{metric}</td>\s*<td>(.*?)</td>', theory_html, re.S)
+        assert cell, f"the theory comparison has no {metric} row to check"
+        assert cell.group(1).strip() == figure, (metric, cell.group(1))
+    # ...and not vacuously: the token-derived cells of the SAME table ARE
+    # marked, so this really is a run whose totals are a lower bound.
+    assert "&#8805;$12.3456" in theory_html
 
 
 def test_every_harness_caveat_is_classified_for_run_totals():

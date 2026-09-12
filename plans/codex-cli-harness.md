@@ -423,7 +423,9 @@ rule, as implemented in `_usage_from`:
   Why this is not merely a JSON nicety: the results site gates its warning
   marker solely on `usage_caveats`, so before round 11 a published page could
   show an understated cost with no marker at all (executed end to end by the
-  reviewer, and now pinned by a test that renders the record through
+  reviewer, and now pinned by
+  `test_an_abandoned_thread_is_flagged_on_the_published_page`, which carries
+  the record through `execute_benchmark_run`, the results JSON and
   `tools/build_site.py`).
 - **Which caveats make a RUN's totals a lower bound** (*added round 12*).
   Marking the attempt row is not enough: the site also publishes aggregates —
@@ -457,9 +459,10 @@ rule, as implemented in `_usage_from`:
   leg-vs-attempt wording drifted for four consecutive review rounds because
   the instrument kept being a phrase sweep, and prose has no build that fails.
   The standing check is mechanical instead: **for every normative statement in
-  this section, in `README.md`, and in `codex_cli.py`'s docstrings and
-  comments that asserts when `usage_faithful` is false or when a caveat is
-  emitted, name the test that fails if the statement is implemented as
+  this section, in `README.md`, and in the docstrings and comments of
+  `codex_cli.py` and `tools/build_site.py` that asserts when `usage_faithful`
+  is false, when a caveat is emitted, or which figures a caveat makes a lower
+  bound, name the test that fails if the statement is implemented as
   written.** A statement no test can pin is a statement that will drift again,
   and is either wrong or a coverage gap. `test_every_test_named_in_the_docs_exists`
   fails if a name below stops resolving, so the table cannot rot silently.
@@ -471,13 +474,17 @@ rule, as implemented in `_usage_from`:
   | A delta taken against a baseline not known to be whole is marked `"absorbed_missing_leg"` (the reviewer's executed 17119 = own 1000 + lost 16119) | `test_persistently_unreadable_rollout_marks_the_attempt_that_absorbs_it` |
   | Over-marking is the honest direction: a delta against a *repaired* baseline is often exactly right and is still marked | `test_an_unmeasurable_legs_rollout_repairs_the_cumulative_baseline` |
   | …and the marker clears once the baseline is whole again — an always-on marker would be worthless | `test_the_absorbed_marker_clears_once_the_baseline_is_whole_again` |
-  | `"absorbed_missing_leg"` never crosses a run boundary (`start_build` resets the gap) — the premise that lets the site treat it as run-total-neutral | `test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap` |
+  | `"absorbed_missing_leg"` never appears without `"missing"` in the same run — the baseline gap that produces it is set only on the path that publishes `"missing"` (conjunct a) | `test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing`, `test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run` |
+  | …and it never crosses a run boundary, because `start_build` resets the gap (conjunct b). Both conjuncts together are the premise that lets the site treat it as run-total-neutral | `test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap` |
   | A dead **start** leg abandons a thread nothing ever reads, so the attempt is marked `"dead_leg_unmeasured"` and the number itself is untouched | `test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short` |
   | `usage_caveats` is a **list**, not an enum: more than one reason can apply to one attempt | `test_the_dead_leg_caveat_composes_with_the_leg_level_one` |
   | Every ordinary attempt is faithful — the marker is only worth reading if the ordinary paths clear it | `test_every_ordinary_attempt_is_recorded_as_faithful` |
   | **Leg**-level on purpose (round 9): no rollout turn record is *ever* adopted as a leg's share, over all four rollout states | `test_no_rollout_record_is_ever_adopted_as_a_legs_share` |
-  | `"missing"` and `"dead_leg_unmeasured"` make a RUN's totals a lower bound; `"absorbed_missing_leg"` does not; a faithful run carries no marking | `test_missing_makes_the_run_total_a_lower_bound`, `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total`, `test_a_faithful_run_carries_no_lower_bound_marking` |
+  | `"missing"` makes a RUN's totals a lower bound; `"absorbed_missing_leg"` does not; a faithful run carries no marking | `test_missing_makes_the_run_total_a_lower_bound`, `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total`, `test_a_faithful_run_carries_no_lower_bound_marking` |
+  | `"dead_leg_unmeasured"` makes them a lower bound too — its own pin, since dropping it from `RUN_TOTAL_LOWER_BOUND_CAVEATS` leaves the row above green (round 14) | `test_an_abandoned_thread_is_flagged_on_the_published_page`, `test_run_page_headline_presents_a_short_total_as_a_lower_bound` |
   | Every surface publishing a run total renders that lower bound | `test_run_page_headline_presents_a_short_total_as_a_lower_bound`, `test_index_presents_a_short_total_as_a_lower_bound`, `test_benchmark_page_presents_a_short_total_as_a_lower_bound`, `test_theory_page_presents_a_short_total_as_a_lower_bound` |
+  | The per-attempt `⚠` is gated solely on `usage_caveats`, so an attempt the harness marks is marked on the page | `test_build_flags_an_attempt_whose_tokens_are_not_its_own`, `test_an_abandoned_thread_is_flagged_on_the_published_page` |
+  | The lower bound applies to the token-derived figures and to nothing else (`LOWER_BOUND_METRICS`): wall time, attempts and pass/fail are measured elsewhere, so marking them would devalue the marker | `test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds` |
   | The vocabulary is closed and every value is classified for run totals | `test_every_harness_caveat_is_classified_for_run_totals` |
   | A *completed* turn always has usage — zeros there are a defect, not a caveat | `test_turn_completed_without_usage_raises_never_zero_token_success` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
@@ -816,8 +823,9 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     (*round 11*): a dead start leg retried onto a new thread yields
     `usage_faithful: false` / `["dead_leg_unmeasured"]` while a dead *resume*
     leg (same thread, spend inside the next delta) stays faithful — and,
-    because the defect was invisible at the harness boundary, one test carries
-    the record through `execute_benchmark_run`, the results JSON and
+    because the defect was invisible at the harness boundary,
+    `test_an_abandoned_thread_is_flagged_on_the_published_page` carries the
+    record through `execute_benchmark_run`, the results JSON and
     `tools/build_site.py` and asserts the rendered page shows the warning
     marker.
 

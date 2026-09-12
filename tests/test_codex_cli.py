@@ -16,6 +16,7 @@ success fixtures and rollout further down.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
@@ -155,6 +156,21 @@ class _Preflight:
         if self.raise_with is not None:
             raise self.raise_with
         return subprocess.CompletedProcess(cmd, self.returncode, self.stdout, self.stderr)
+
+
+class _PreflightSequence:
+    """``_Preflight`` whose ``codex login status`` answer CHANGES per call, so
+    a second run on the same harness instance can be told apart from the
+    first (review round 14). The last entry repeats."""
+
+    def __init__(self, stderrs: list[str]) -> None:
+        self.stderrs = list(stderrs)
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, cmd, **kwargs):  # noqa: ANN001
+        self.calls.append({"cmd": list(cmd), **kwargs})
+        stderr = self.stderrs[min(len(self.calls) - 1, len(self.stderrs) - 1)]
+        return subprocess.CompletedProcess(cmd, 0, "", stderr)
 
 
 @pytest.fixture
@@ -1866,8 +1882,152 @@ def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
     assert b1.raw["usage_faithful"] is True and b1.raw["usage_caveats"] == []
 
 
+# --------------------------------------------------------------------------
+# Review round 14: the premise that lets the site treat
+# ``absorbed_missing_leg`` as run-total-NEUTRAL has two conjuncts —
+# (a) the baseline gap that produces it is set only on the path that
+# publishes ``"missing"``, and (b) ``start_build`` resets it per run. The test
+# above pins (b); these two pin (a), at the source and end to end.
+
+
+def test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing(tmp_path):
+    """Conjunct (a), pinned structurally: over every branch ``_usage_from``
+    has, ``baseline_gap`` and :data:`USAGE_CAVEAT_MISSING` are set together or
+    not at all.
+
+    Round 14 executed the counterfactual: one line letting the STREAM return
+    set the gap too (``baseline_gap=delta["output_tokens"] > 60``) left the
+    whole suite green, and three clean legs then published
+    ``absorbed_missing_leg`` with no ``"missing"`` anywhere in the run — the
+    exact state the classification in ``RUN_TOTAL_LOWER_BOUND_CAVEATS``
+    assumes cannot happen. Asserting the invariant beats re-deriving it: the
+    gap is what makes the NEXT leg absorb, so a gap no attempt reports as
+    missing is spend that left the record with nothing published saying so."""
+    prev = _usage_line(OK_START)  # the thread total after turn 1
+    after_turn2 = _usage_line(OK_RESUME)
+    # A stream leg whose delta is large enough to trip a size-keyed mutation
+    # of the gap, which is the shape round 14's counterfactual took.
+    big = {**after_turn2, "output_tokens": after_turn2["output_tokens"] + 500}
+    rollout = str(_install_rollout(tmp_path))
+    streams = {
+        "stream, small delta": _with_thread_id(OK_RESUME, OK_THREAD_ID),
+        "stream, large delta": _stream_reporting(big),
+        "no usage, model was active": _failed_resume_stream(),
+        "no usage, dead envelope": _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID),
+    }
+    seen: list[Any] = []
+    for name, stream in streams.items():
+        events, _, _ = _parse_jsonl(stream)
+        for gap in (False, True):
+            for rollout_path in (None, rollout):
+                u = codex_cli._usage_from(
+                    events, rollout_path, previous_thread_total=prev, baseline_has_gap=gap
+                )
+                assert u.baseline_gap == (codex_cli.USAGE_CAVEAT_MISSING in u.caveats), (
+                    f"{name} (baseline_has_gap={gap}, rollout={rollout_path is not None}): "
+                    f"baseline_gap={u.baseline_gap} caveats={u.caveats}"
+                )
+                seen.append(u)
+    # ...and not vacuously: both sides of the biconditional occur, and the
+    # large-delta stream leg the counterfactual keyed on is really in here.
+    assert any(u.baseline_gap for u in seen) and any(not u.baseline_gap for u in seen)
+    assert any(u.source == "stream" and u.delta["output_tokens"] > 60 for u in seen)
+
+
+# One attempt's legs, as scripted subprocess output. A dead leg is retried
+# rather than captured, so the shapes that start with one still end in a
+# captured leg; every leg of a run shares one thread id except the dead START
+# leg, whose whole point is that its thread is abandoned.
+_ABSORBED_SHAPES = ("clean", "missing", "dead_then_clean", "dead_then_failure")
+_MISSING_LEG = _with_thread_id(_synthetic_non_dead_failure(START_FIXTURE), OK_THREAD_ID)
+_PREMISE_TURN = {"input_tokens": 3000, "cached_input_tokens": 2000,
+                 "cache_write_input_tokens": 0, "output_tokens": 500,
+                 "reasoning_output_tokens": 100}
+
+
+def _premise_script(pattern: tuple[str, ...]) -> list[tuple[str, str, int]]:
+    """The scripted legs for a run whose attempts have the shapes ``pattern``."""
+    total = {k: 0 for k in _usage_line(OK_RESUME)}
+    legs: list[tuple[str, str, int]] = []
+    for i, shape in enumerate(pattern):
+        if shape.startswith("dead_then"):
+            legs.append(
+                (_with_thread_id(START_FIXTURE, f"orphan-thread-{i}") if i == 0
+                 else _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)
+            )
+        if shape in ("clean", "dead_then_clean"):
+            total = {**total, **{k: total[k] + v for k, v in _PREMISE_TURN.items()}}
+            legs.append((_stream_reporting(total), "", 0))
+        else:
+            legs.append((_MISSING_LEG, "", 1))
+    return legs
+
+
+def test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Conjunct (a), pinned end to end through the real ``start_build`` /
+    ``continue_build``: over all 64 three-attempt runs built from the four leg
+    shapes, an attempt marked ``absorbed_missing_leg`` always has an EARLIER
+    attempt of the same run marked ``"missing"``.
+
+    That is the whole premise ``build_site.RUN_TOTAL_LOWER_BOUND_CAVEATS``
+    rests on when it classifies ``absorbed_missing_leg`` as leaving a run's
+    total whole: the spend it may have swallowed is spend some attempt of this
+    run already reports as unmeasured, so the run is already marked short. If
+    absorbed could stand alone, a run would publish a total that is short with
+    nothing saying so. Round 13 established this by driving the 64 runs by
+    hand; a hand enumeration protects nothing, so it runs here. The
+    structural sibling above pins the same premise at ``_usage_from``; this
+    one also covers the only place the gap is stored (``_result``, which a
+    dead leg never reaches)."""
+    absorbed_seen = 0
+    for pattern in itertools.product(_ABSORBED_SHAPES, repeat=3):
+        script = _premise_script(pattern)
+        legs = _Legs(script)
+        _install(monkeypatch, legs)
+        h = CodexCliHarness()
+        first = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+        rest = [h.continue_build(first.session_handle, "fix it") for _ in pattern[1:]]
+        caveats = [set(r.raw["usage_caveats"]) for r in (first, *rest)]
+        # Every scripted leg ran and no leg ran twice, so the run really has
+        # the shape the pattern describes (_Legs repeats its last entry).
+        assert len(legs.calls) == len(script), (pattern, len(legs.calls))
+        for i, attempt in enumerate(caveats):
+            if codex_cli.USAGE_CAVEAT_ABSORBED in attempt:
+                absorbed_seen += 1
+                assert any(
+                    codex_cli.USAGE_CAVEAT_MISSING in earlier for earlier in caveats[:i]
+                ), f"{pattern} published {caveats} — absorbed with no earlier missing"
+    # Not vacuous: the marker really is reached by these shapes.
+    assert absorbed_seen >= 16, absorbed_seen
+
+
+def test_a_new_run_refreshes_the_auth_mode_it_publishes(monkeypatch, tmp_path, isolated_env):
+    """``_auth_mode`` is the last per-run attribute on the harness instance
+    with no pin (round 14): unlike ``_thread_total`` and ``_thread_total_gap``
+    it feeds no arithmetic and cannot shorten a total, but it IS published as
+    ``raw["auth_mode"]``, so a stale one is a wrong published fact about which
+    account paid for the run. Making ``start_build`` keep a previous run's
+    mode survived the whole suite; it no longer does."""
+    modes = _PreflightSequence([f"{CHATGPT_LINE} (account-a)\n", f"{CHATGPT_LINE} (account-b)\n"])
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, modes)
+    h = CodexCliHarness()
+    a = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    home_a = h._home_override
+    b = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert a.raw["auth_mode"] == f"{CHATGPT_LINE} (account-a)"
+    assert b.raw["auth_mode"] == f"{CHATGPT_LINE} (account-b)"
+    # ...and the throwaway HOME the mode was read under is this run's own.
+    assert h._home_override != home_a
+
+
 # Files that cite tests by name. Plan §4.5 carries the statement-to-test table
-# the round-13 review asked for; the other three cite individual pins inline.
+# the round-13 review asked for; README.md's run-total rule and the caveat
+# comments in codex_cli.py and tools/build_site.py name their own pins inline.
+# (Round 14: README cited NONE, so every README claim was covered only
+# transitively by a plan row restating the same rule.)
 _DOCS_CITING_TESTS = (
     "plans/codex-cli-harness.md",
     "README.md",
@@ -1898,9 +2058,23 @@ def test_every_test_named_in_the_docs_exists():
 
     missing = {n: where for n, where in cited.items() if n not in defined}
     assert not missing, f"docs name tests that do not exist: {missing}"
-    # A silent regex change that stops matching would make this vacuous.
+
+    # The names resolving is half of it. What the table promises is that EVERY
+    # normative statement carries a pin, so the rows are checked as rows: a
+    # cell emptied of its citation, or a row deleted, fails here rather than
+    # leaving a statement quietly unpinned again (round 14 — the old floor of
+    # 15 against 23 citations left eight rows of slack).
+    plan = (root / "plans" / "codex-cli-harness.md").read_text().splitlines()
+    header = next(i for i, ln in enumerate(plan) if ln.strip() == "| Statement | Pinned by |")
+    rows = list(itertools.takewhile(lambda ln: ln.strip().startswith("|"), plan[header + 2:]))
+    assert len(rows) >= 18, f"§4.5's statement-to-test table has shrunk to {len(rows)} rows"
+    for row in rows:
+        pinned_by = set(re.findall(r"\btest_[a-z0-9_]+", row.rstrip().rstrip("|").rsplit("|", 1)[-1]))
+        assert pinned_by, f"a table row names no test: {row}"
+        assert pinned_by <= defined, f"row cites tests that do not exist: {row}"
+    # A silent regex change that stops matching would make all of it vacuous.
     assert "test_a_dead_resume_leg_leaves_the_attempt_faithful" in cited
-    assert len(cited) >= 15, f"expected the §4.5 table to be cited; found {sorted(cited)}"
+    assert len(cited) >= 28, f"expected the §4.5 table to be cited; found {sorted(cited)}"
 
 
 def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(

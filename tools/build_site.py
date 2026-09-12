@@ -77,7 +77,12 @@ _PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
 #       between attempt rows and the total is unaffected. It also never
 #       appears alone — the baseline gap that produces it is set only on the
 #       path that publishes "missing" (codex_cli._usage_from's source ==
-#       "none" -> _result), and start_build resets it per run.
+#       "none" -> _result), and start_build resets it per run. Both halves of
+#       that premise are pinned, because the classification above is worth
+#       nothing without it (round 14): the first by
+#       test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing
+#       and test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run,
+#       the second by test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap.
 #
 # Blanket-marking every caveated run would make the aggregate marker
 # meaningless, so the two sets are kept apart and
@@ -88,7 +93,10 @@ RUN_TOTAL_NEUTRAL_CAVEATS = frozenset({"absorbed_missing_leg"})
 
 # Aggregates the lower bound applies to: everything derived from token
 # counts. Wall time, attempts and pass/fail are measured elsewhere and are
-# not short.
+# not short — marking them would devalue the marker on the figures it is
+# right about, which is what
+# test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds
+# fails on.
 LOWER_BOUND_METRICS = frozenset(
     {"cost_usd", "total_input_tokens", "total_output_tokens", "total_cache_tokens"}
 )
