@@ -438,9 +438,9 @@ rule, as implemented in `_usage_from`:
   unchanged and still sound, because every leg that can move the cumulative
   under a gapless baseline belongs to the attempt being classified, and the
   attempt — not the leg — is the granularity every decision here is taken at.
-  The corrected form is in `codex_cli.py` `_advances` and `_Usage
-  .active_per_rollout`, and §4.6 rule 2 states it as the `not
-  baseline_has_gap` conjunct.*) Against a baseline with a recorded gap the
+  The corrected form is in `codex_cli.py`'s `_advances` and
+  `_Usage.active_per_rollout`, and §4.6 rule 2 states it as the
+  `not baseline_has_gap` conjunct.*) Against a baseline with a recorded gap the
   same record proves nothing, and the leg
   stays dead. Capturing a dead leg is the failure that corrupts a benchmark's
   headline metric rather than its cost column (review round 9).
