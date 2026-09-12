@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -808,7 +809,8 @@ def test_rate_limits_recorded_from_rollout_on_success(monkeypatch, tmp_path, iso
     legs = _Legs([(OK_START, "", 0)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    assert r.raw["rollout_path"] == str(rollout)
+    # Published relative to $CODEX_HOME — never the operator's absolute path.
+    assert r.raw["rollout_path"] == str(rollout.relative_to(tmp_path / "codex-home"))
     rl = r.raw["rate_limits"]
     assert rl["plan_type"] == "plus"
     assert rl["primary"]["window_minutes"] == 300 and rl["primary"]["used_percent"] == 0.0
@@ -1552,3 +1554,96 @@ def test_rollout_sourced_thread_total_uses_codex_thread_token_usage(
     # reconstruction that baseline was short by turn 2 and leg 4 absorbed it.
     assert r4.raw["usage_source"] == "stream"
     assert r4.raw["usage_delta"] == turn4
+
+
+# --------------------------------------------------------------------------
+# Review round 7 nits: throwaway-HOME reaping, env parsing, published paths,
+# abandoned thread ids.
+
+
+def test_rollout_path_published_without_the_operator_home(monkeypatch, tmp_path, isolated_env):
+    """raw is published to the results site; the absolute rollout path names
+    the operator's home directory, which _trim_rate_limits-grade hygiene says
+    must not ship (review round 7)."""
+    rollout = _install_rollout(tmp_path)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    published = r.raw["rollout_path"]
+    assert published == f"sessions/2026/09/11/{rollout.name}"
+    assert not published.startswith("/") and str(tmp_path) not in published
+
+
+def test_rollout_path_outside_codex_home_falls_back_to_the_basename(tmp_path):
+    outside = tmp_path / "elsewhere" / "rollout-2026-09-11T10-08-21-abc.jsonl"
+    assert codex_cli._publishable_rollout_path(str(outside)) == outside.name
+    assert codex_cli._publishable_rollout_path(None) is None
+
+
+def test_dead_start_legs_record_the_threads_they_abandoned(monkeypatch, tmp_path, isolated_env):
+    """Each dead start leg opens a NEW codex thread and walks away from it.
+    Without the ids an orphaned thread cannot be traced back to its run."""
+    dead_then_ok = _with_thread_id(START_FIXTURE, "abandoned-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.session_handle == OK_THREAD_ID
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_thread_ids"] == ["abandoned-thread-1"]
+    assert r.raw["dead_turn_thread_ids"][0] != r.raw["thread_id"]
+
+
+def test_build_timeout_is_clamped_and_a_typo_is_announced(monkeypatch, capsys):
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "0")
+    assert codex_cli._build_timeout() == 1  # never "time out instantly"
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "-30")
+    assert codex_cli._build_timeout() == 1
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "60m")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out  # not silent
+    monkeypatch.delenv("CODEX_BUILD_TIMEOUT_SECONDS")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+
+
+def test_stale_throwaway_homes_are_reaped_on_the_next_start(monkeypatch, tmp_path, isolated_env):
+    """Nothing tears a throwaway HOME down when a run succeeds, so they are
+    reaped on the next start_build — by age, and only the run-* ones."""
+    base = tmp_path / "cache" / "pagehub-benchmarks" / "codex-homes"
+    base.mkdir(parents=True)
+    stale = base / "run-stale"
+    stale.mkdir()
+    (stale / ".bash_profile").write_text("x")  # non-empty: rmtree, not rmdir
+    fresh = base / "run-fresh"
+    fresh.mkdir()
+    keeper = base / "not-a-run"
+    keeper.mkdir()
+    old = time.time() - codex_cli.THROWAWAY_HOME_TTL_SECONDS - 60
+    os.utime(stale, (old, old))
+    os.utime(keeper, (old, old))
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert not stale.exists()
+    assert fresh.exists() and keeper.exists()
+    assert len(list(base.glob("run-*"))) == 2  # run-fresh + this run's own
+
+
+def test_reaping_never_fails_a_run(monkeypatch, tmp_path, isolated_env):
+    base = tmp_path / "cache" / "codex-homes"
+    base.mkdir(parents=True)
+    stale = base / "run-stale"
+    stale.mkdir()
+    old = time.time() - codex_cli.THROWAWAY_HOME_TTL_SECONDS - 60
+    os.utime(stale, (old, old))
+
+    def refuse(*_a, **_k):
+        raise PermissionError("read-only cache")
+
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
+    monkeypatch.setattr(codex_cli.shutil, "rmtree", refuse)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.session_handle == OK_THREAD_ID and stale.exists()

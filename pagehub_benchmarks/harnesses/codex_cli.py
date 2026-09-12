@@ -129,6 +129,11 @@ PREFLIGHT_TIMEOUT_SECONDS = 30
 KILL_GRACE_SECONDS = 10
 DRAIN_TIMEOUT_SECONDS = 10
 RAW_LIST_LIMIT = 20
+# How long a throwaway codex HOME (see _throwaway_home_base) is kept after its
+# run. Harness has no teardown hook and a run can be Ctrl-C'd out of any
+# try/finally, so the directories are reaped on the NEXT start_build instead —
+# late enough that a just-finished run's HOME is still there to inspect.
+THROWAWAY_HOME_TTL_SECONDS = 7 * 24 * 3600
 STDERR_TAIL_CHARS = 2000
 SUBSCRIPTION_MODE_LINE = "Logged in using ChatGPT"
 STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
@@ -206,17 +211,22 @@ def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
 
 
 def _int_env(name: str, default: int) -> int:
+    """``name`` as an int, else ``default`` — saying so on the console when the
+    value was present but unparsable, so a typo is not silently ignored."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
     try:
         return int(raw)
     except ValueError:
+        print(f"(codex-cli: ignoring {name}={raw!r} — not an integer; using {default})")
         return default
 
 
 def _build_timeout() -> int:
-    return _int_env("CODEX_BUILD_TIMEOUT_SECONDS", DEFAULT_BUILD_TIMEOUT_SECONDS)
+    # Clamped: 0 or a negative value would make every leg time out instantly,
+    # burning the thread rather than the intended "no limit" reading.
+    return max(1, _int_env("CODEX_BUILD_TIMEOUT_SECONDS", DEFAULT_BUILD_TIMEOUT_SECONDS))
 
 
 def _dead_turn_retries() -> int:
@@ -274,6 +284,34 @@ def _throwaway_home_base() -> Path:
                 "and $TMPDIR"
             )
     return base
+
+
+def _reap_throwaway_homes(base: Path) -> int:
+    """Delete ``run-*`` HOMEs under ``base`` older than
+    ``THROWAWAY_HOME_TTL_SECONDS``; return how many went.
+
+    Called from ``start_build`` BEFORE this run's own HOME is created, so the
+    live one is never a candidate. Best-effort: every OS error is swallowed —
+    a run must never fail because an old cache directory could not be removed
+    (a read-only or root-owned leftover, an NFS mount gone away).
+    """
+    removed = 0
+    cutoff = time.time() - THROWAWAY_HOME_TTL_SECONDS
+    try:
+        candidates = sorted(base.glob("run-*"))
+    except OSError:
+        return 0
+    for path in candidates:
+        try:
+            if not path.is_dir() or path.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        with contextlib.suppress(OSError):  # e.g. a root-owned leftover
+            shutil.rmtree(path, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            removed += not path.exists()
+    return removed
 
 
 def _prepare_home(home: str) -> None:
@@ -339,6 +377,22 @@ def _find_rollout(thread_id: str) -> str | None:
     )
     matches = sorted(glob.glob(pattern))
     return matches[-1] if matches else None
+
+
+def _publishable_rollout_path(rollout_path: str | None) -> str | None:
+    """The rollout's location relative to ``$CODEX_HOME`` (else its basename).
+
+    ``raw`` is published to the results site, and the absolute path carries the
+    operator's home directory — the same reason ``_trim_rate_limits`` drops
+    fields. Relative to CODEX_HOME the path is still enough for the operator to
+    find the transcript.
+    """
+    if not rollout_path:
+        return None
+    path = Path(rollout_path)
+    with contextlib.suppress(ValueError):
+        return str(path.relative_to(_codex_home()))
+    return path.name
 
 
 def _strip_ansi(text: str) -> str:
@@ -917,6 +971,10 @@ class CodexCliHarness(Harness):
         total_wall = 0.0
         dead_legs = 0
         dead_leg_errors: list[str] = []
+        # A dead START leg leaves a codex thread behind that nothing else in
+        # the record references; without these ids an orphaned thread cannot
+        # be traced back to the run that created it (review round 7).
+        dead_leg_thread_ids: list[str] = []
         leg_name = "start" if is_start else "resume"
         for leg_no in range(retries + 1):
             leg = self._run_leg(cmd, cwd, stdin_text)
@@ -964,6 +1022,7 @@ class CodexCliHarness(Harness):
                     wall=total_wall,
                     dead_legs=dead_legs,
                     dead_leg_errors=dead_leg_errors,
+                    dead_leg_thread_ids=dead_leg_thread_ids,
                     is_start=is_start,
                     harness_error=None,
                 )
@@ -972,6 +1031,7 @@ class CodexCliHarness(Harness):
             if dead:
                 dead_legs += 1
                 dead_leg_errors.extend(errors or [error_text])
+                dead_leg_thread_ids.append(thread_id)
                 if leg_no < retries:
                     time.sleep(DEAD_TURN_RETRY_PAUSE_SECONDS)
                     continue
@@ -996,6 +1056,7 @@ class CodexCliHarness(Harness):
                 wall=total_wall,
                 dead_legs=dead_legs,
                 dead_leg_errors=dead_leg_errors,
+                dead_leg_thread_ids=dead_leg_thread_ids,
                 is_start=is_start,
                 harness_error=error_text,
             )
@@ -1016,6 +1077,7 @@ class CodexCliHarness(Harness):
         wall: float,
         dead_legs: int,
         dead_leg_errors: list[str],
+        dead_leg_thread_ids: list[str],
         is_start: bool,
         harness_error: str | None,
     ) -> AttemptResult:
@@ -1050,11 +1112,15 @@ class CodexCliHarness(Harness):
             "model": self._model,
             "cache_tokens_reported": usage.cache_tokens_reported,
             "dead_turn_retries": dead_legs,
-            # Why the retried legs were dead — the abandoned threads are not
-            # otherwise referenced anywhere in the record.
+            # Why the retried legs were dead.
             "dead_turn_errors": dead_leg_errors[:RAW_LIST_LIMIT],
             "dead_turn_errors_total": len(dead_leg_errors),
-            "rollout_path": rollout_path,
+            # The threads those dead legs abandoned (a dead start leg creates a
+            # fresh thread each time); the only record that they exist.
+            "dead_turn_thread_ids": dead_leg_thread_ids[:RAW_LIST_LIMIT],
+            # Relative to $CODEX_HOME: the record is published, and the
+            # absolute path names the operator's home directory.
+            "rollout_path": _publishable_rollout_path(rollout_path),
             "unparsed_lines": unparsed,
             "unparsed_total": unparsed_total,
             "stderr_tail": _stderr_tail(leg.stderr),
@@ -1086,6 +1152,10 @@ class CodexCliHarness(Harness):
         effort = _map_effort(config)  # before any subprocess
         base = _throwaway_home_base()
         base.mkdir(parents=True, exist_ok=True)
+        # Nothing tears these down at the end of a run (no Harness teardown
+        # hook, and Ctrl-C escapes any try/finally), so each run reaps the
+        # ones that have aged out before adding its own.
+        _reap_throwaway_homes(base)
         home = tempfile.mkdtemp(prefix="run-", dir=base)
         try:
             _prepare_home(home)

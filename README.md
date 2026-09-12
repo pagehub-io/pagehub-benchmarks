@@ -57,7 +57,8 @@ pagehub_benchmarks/
 tools/build_site.py             results/**/*.json → docs/ (Jinja2; `make site`)
 templates/, static/             site templates + plain CSS
 tests/                          unit tests (FakeHarness + FakeGrader — no real claude / codex / evals)
-tests/fixtures/                 recorded `codex exec --json` streams the codex adapter is tested against
+tests/fixtures/                 recorded `codex exec --json` streams + one session rollout file (the
+                                failure-path usage and rate-limit source) the codex adapter is tested against
 ```
 
 ## Usage
@@ -131,15 +132,18 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   are unset in the subprocess — an API key would silently move the run onto
   metered billing. As for Claude, **`cost_usd` is a computed figure** (tokens ×
   `pricing.yaml`), not a bill. The pre-flight also refuses to run while a
-  global `~/.codex/AGENTS.md`, `AGENTS.override.md` or legacy
-  `instructions.md`, or user skills under `~/.codex/skills/`, exist:
+  global `$CODEX_HOME/AGENTS.md`, `AGENTS.override.md` or legacy
+  `instructions.md`, or user skills under `$CODEX_HOME/skills/`, exist:
   `--ignore-user-config` does not suppress them (verified), and they would
-  change what every run measures.
+  change what every run measures. Codex's own bundled skills under
+  `skills/.system/` are part of the product and are exempt.
 - **Effort is required and explicit.** `config.effort` (`low|medium|high|xhigh|max`)
-  is passed as `-c model_reasoning_effort=…` on **every** attempt. Codex would
-  otherwise inherit `~/.codex/config.toml` or the model default (a bare
-  `codex exec resume` was observed to reset the effort), silently changing
-  results between runs; codex accepts any string here without validating it,
+  is passed as `-c model_reasoning_effort=…` on **every** attempt. Without it a
+  run takes the model default — and a bare `codex exec resume` was observed to
+  reset the effort to that default mid-run — silently changing results between
+  runs. (`~/.codex/config.toml` is a separate matter: it is excluded outright by
+  `--ignore-user-config` on both legs.) Codex accepts any string here without
+  validating it,
   so the adapter's explicit map is the only guard. `ultra` (automatic sub-agent
   delegation) is deliberately not mapped. `--ignore-user-config` is passed on
   both legs so the operator's config never leaks in; codex still appends a
@@ -155,7 +159,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   as Claude. **Secrets in your shell profile reach an agent's login shell**:
   codex runs commands with `bash -lc`, which sources the profile of whatever
   `HOME` is. The adapter therefore gives every codex subprocess a **throwaway
-  `HOME`** under `~/.cache/pagehub-benchmarks/codex-homes/` — outside the
+  `HOME`** under `~/.cache/pagehub-benchmarks/codex-homes/` (`XDG_CACHE_HOME`
+  moves it; a base resolving under `/tmp` or `$TMPDIR` is refused) — outside the
   sandbox's writable roots, so the agent cannot plant skills or edit it for
   its later turns — with `CODEX_HOME` pinned to your real login directory,
   disables codex's login-shell snapshot (otherwise written to
@@ -166,7 +171,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   your `PATH` — a stock `/etc/profile` resets it for login shells — and your
   locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and the
   resulting `setlocale` warnings would flood every command's output. The
-  per-run directories are tiny; prune them occasionally. This assumes codex
+  per-run directories are tiny, and each run reaps the ones older than seven
+  days before creating its own. This assumes codex
   runs the agent's commands with bash, as it does here — `/bin/bash -lc` by
   default, or `/bin/bash -c` with no profile at all when the model asks for a
   non-login shell, in which case codex's own PATH and `C.UTF-8` apply.
@@ -174,9 +180,10 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   Claude Code has no equivalent and sees everything, so keeping
   secrets out of `~/.bashrc` on the runner box (or benchmarking under a
   dedicated user) is still the right hygiene. Codex also prepends its
-  own instructions (bundled skills, apps and plugins instructions, a
-  multi-agent role; proactive sub-agent delegation is off at the default
-  effort levels) to every thread and re-injects its skills instructions on
+  own instructions (bundled skills, permissions, a collaboration mode and a
+  multi-agent role — the blocks observed in the recorded turn-1 preamble;
+  proactive sub-agent delegation is off at the default effort levels) to every
+  thread and re-injects its skills instructions on
   every resumed turn, as Claude Code does its system prompt. After each attempt the **runner** executes the
   built `Makefile` (`make up`) on the host, outside any sandbox, for both
   harnesses.
@@ -190,15 +197,25 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   writes (priced at OpenAI's write rate); `output_tokens` includes reasoning
   (`raw.reasoning_output_tokens` is recorded separately). A failed turn
   carries no usage on the stream, so that path reads the turn's usage from
-  codex's rollout (`raw.usage_source: "rollout"`). `raw.rate_limits` carries
+  codex's rollout (`raw.usage_source: "rollout"`), and the thread total is
+  re-anchored on the `thread_token_usage` codex records beside it. If a spent
+  turn's usage cannot be found at all, the attempt records zeros with
+  `raw.usage_missing: true` — unknown, not free — and the next attempt takes
+  its own share from the rollout rather than from a baseline that is short
+  (`raw.usage_source: "stream+rollout_turn"`). `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
-  a Plus plan. If codex ever reports no cache split, the cache columns show
-  `0` and `raw.cache_tokens_reported` is `false`.
+  a Plus plan (it is printed for attempts that return a result; a dead,
+  retried leg never prints one). If codex ever reports no cache split, the
+  cache columns show `0` and `raw.cache_tokens_reported` is `false`.
+  `raw.rollout_path` is relative to `$CODEX_HOME` (the record is published).
 - **When a run crashes vs. records:** a turn in which the model never ran
   (not logged in, usage limit hit, provider outage, a rejected prompt — see
   openai/codex#43237) is retried `CODEX_DEAD_TURN_RETRIES` times (default 2)
   and then fails the run loudly with no record and no push — the same as the
-  Claude adapter on a non-zero exit. A turn in which the model did work and
+  Claude adapter on a non-zero exit. When such a leg is retried and the
+  attempt does eventually record, the threads the dead legs abandoned are
+  listed in `raw.dead_turn_thread_ids` (a dead start leg opens a fresh thread
+  each time) with their errors in `raw.dead_turn_errors`. A turn in which the model did work and
   then failed is recorded as a failed attempt with the error text under
   `raw.harness_error`, graded as-is, and the thread is resumed.
   `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each `codex exec` leg
@@ -243,6 +260,12 @@ Graded by the pagehub-evals `eval-chess-backend` collection (fixture bundle:
 (castling, en passant, promotion, pins, check evasion, checkmate, stalemate,
 the draw rules).
 
+**The two shipped rows are not effort-matched:** Claude Code runs at `xhigh`,
+Codex CLI at `high`, so an unfiltered `make run` is a head-to-head between two
+different reasoning budgets and the site's index table shows that in the config
+column. Both models accept `xhigh` — add a matching row on either side (or use
+`--harness` / `--model` to run one at a time) for a like-for-like pair.
+
 ## Results site
 
 **Live at <https://pagehub-io.github.io/pagehub-benchmarks/>.**
@@ -277,5 +300,6 @@ in the Links sections default to the `pagehub-io` org repos; override via
 `.github/workflows/ci.yml` runs **ruff + pytest only**. CI never runs a real
 benchmark — that would call `claude` / `codex` and pagehub-evals and cost
 tokens. The runner is tested with `FakeHarness` / `FakeGrader`; the codex
-adapter against recorded `codex exec --json` streams in `tests/fixtures/`. (`.github/workflows/pages.yml`
+adapter against recorded `codex exec --json` streams (plus one session
+rollout file) in `tests/fixtures/`. (`.github/workflows/pages.yml`
 is separate — it regenerates and publishes the results site on push to `main`.)

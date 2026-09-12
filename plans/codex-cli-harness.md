@@ -6,10 +6,14 @@ Status: **APPROVED v5** (gate passed round 5: 0 critical, 0 important; nits swep
 (0 critical, 2 important — both caused by v4's Stage-1 guard, now removed —
 7 nits) → v5. Every critical/important finding from all rounds is addressed
 below;
-factual corrections were re-verified by execution on this box. Preflight items
-0.2 and 0.4 remain blocked on `codex login` (§3.2). Everything marked
-**UNVERIFIED** must be confirmed from the real fixtures before the usage
-parser is coded (§6 sequences the work accordingly).
+factual corrections were re-verified by execution on this box. **Stage 2 is
+done:** preflight items 0.2 and 0.4 were unblocked by `codex login`, the
+success fixtures and the session rollout under `tests/fixtures/` were captured
+from real turns, U1–U8 are answered in §3.4, and the usage parser is coded and
+calibrated against those fixtures (§4.5). **Amended after PR #29 review round
+7:** a leg whose usage no source can supply is recorded as missing rather than
+free, and a rollout-sourced leg re-anchors the thread total on codex's own
+`thread_token_usage` (§4.5).
 
 ## 1. Goal
 
@@ -44,7 +48,7 @@ runner, not the harness, brings the built service up.
 |---|------|--------|
 | 0.1 | `codex --version` | **Not installed** on the box. Installed `@openai/codex@0.154.0` via `npm i -g` (latest stable; 0.155.0 is alpha-only). → `codex-cli 0.154.0`. The task's floor is ≥ 0.153.0. |
 | 0.1 | `codex exec --help` | Flags used: `-m`, `--json` (JSONL events on stdout), `-C <DIR>`, `-s/--sandbox {read-only,workspace-write,danger-full-access}`, `-c key=value` (value parsed as TOML), `--ignore-user-config` ("do not load `$CODEX_HOME/config.toml`; auth still uses `CODEX_HOME`"), `--skip-git-repo-check`. Positional `[PROMPT]`; `-` reads instructions from stdin. **If stdin is a pipe and a prompt arg is also given, stdin is appended as a `<stdin>` block** — the adapter must own stdin. |
-| 0.2 | `codex login status` | `Not logged in`, exit **1**. The OK probe cannot run; `tests/fixtures/codex_exec_ok.jsonl` does not exist yet. Binary carries the mode lines this command prints: `Logged in using ChatGPT`, `Logged in using an API key`, `Logged in using access token`, `Logged in using personal access token`, `Logged in using workload identity`, `Logged in using Amazon Bedrock …`, `Not logged in`. |
+| 0.2 | `codex login status` | `Not logged in`, exit **1** at the time of this probe — the OK probe was blocked. Re-run after `codex login`: `Logged in using ChatGPT`, exit 0; `tests/fixtures/codex_exec_ok.jsonl`, `…_resume_ok.jsonl` and `codex_rollout_ok.jsonl` were captured then. Binary carries the mode lines this command prints: `Logged in using ChatGPT`, `Logged in using an API key`, `Logged in using access token`, `Logged in using personal access token`, `Logged in using workload identity`, `Logged in using Amazon Bedrock …`, `Not logged in`. |
 | 0.2 | unauthenticated `codex exec … --json` | Exit **1**. stdout is clean JSONL: `thread.started{thread_id}`, `turn.started`, repeated `error{message}`, `item.completed{item:{id,type:"error",message}}`, terminal `turn.failed{error:{message}}`. Human log lines go to stderr. Saved verbatim: `tests/fixtures/codex_exec_unauthenticated.jsonl` (start) and `…_resume_unauthenticated.jsonl` (resume). The user message is persisted in the thread even when the turn 401s. Every probe session on this box died at the 401 **before any tool call** — see U5. |
 | 0.3 | resume mechanism | `codex exec resume <SESSION_ID> [PROMPT]`; `SESSION_ID` = `thread_id` from `thread.started`. Resume appends to the same rollout file and re-emits `thread.started` with the same id. `exec resume` has **no `-C` and no `--sandbox`**; it accepts `-m`, `-c`, `--json`, `--ignore-user-config`, `--skip-git-repo-check`. Process cwd must be inside a git repo ("Not inside a trusted directory…" otherwise — refused before any lookup); a fresh `git init` passes (`session_meta.git = {}`). Resume-by-id was verified **only from the original cwd**. |
 | 0.3 | what a resume inherits | No `-c`: sandbox carried over, **`effort` dropped to `None`** (= model default). With `-c model_reasoning_effort=…` / `-c sandbox_mode=…`: honoured. ⇒ re-pass effort on every resume. |
@@ -62,7 +66,11 @@ runner, not the harness, brings the built service up.
 | — | `codex doctor` | auth ✗; websocket ⚠ (HTTPS fallback works); Landlock ABI 7, seccomp, user namespaces available. |
 | — | mid-run dead-turn causes exist in the binary | `usage_limit_reached`, `WorkspaceOwnerUsageLimitReached`, `WorkspaceOwnerCreditsDepleted` — a subscription run can hit its 5-hour/weekly limit partway through 5 high-effort attempts. |
 
-### 3.2 UNVERIFIED — blocked on login
+### 3.2 Open questions while login was blocked (all answered in §3.4)
+
+Kept as written for the record — these were the unknowns the usage parser
+was not allowed to guess at. Every one was settled by execution once
+`codex login` succeeded; read §3.4 for the answers.
 
 - **U1** Success-path stream: is the terminal event `turn.completed`, and
   does it carry usage? Does `turn.failed` ever carry usage (upstream
@@ -332,12 +340,21 @@ rule, as implemented in `_usage_from`:
 - **The stream's usage is the thread total** (verified, U2): the adapter keeps
   the last total on the instance (reset per `start_build`) and records each
   leg's delta; a total that goes backwards ⇒ `HarnessError`. After a
-  rollout-sourced failed leg the total is advanced by that turn's usage so the
-  next delta stays attributable. `raw["usage"]` is the verbatim stream object
-  (cumulative); `raw["usage_delta"]` is this leg's share.
+  rollout-sourced failed leg the total is re-anchored on the
+  `thread_token_usage` codex records beside the turn's own usage (reconstructing
+  `previous + turn` only when the payload carries none), so the next delta stays
+  attributable. `raw["usage"]` is the verbatim stream object (cumulative);
+  `raw["usage_delta"]` is this leg's share. A leg whose usage no source can
+  supply records a zero-filled delta plus `raw["usage_missing"]` — unknown, not
+  free — and flags the baseline as short; the next leg then takes its share from
+  the rollout's `turn_token_usage` rather than from that baseline
+  (`usage_source: "stream+rollout_turn"`), so one unreadable leg cannot bill its
+  tokens to its successor (review round 7).
 - `raw["rate_limits"]` (5-hour + weekly `used_percent`, `plan_type`) is read
-  from the rollout's last `token_count` on every leg, best-effort, and printed
-  to the console — the only place codex reports subscription budget.
+  from the rollout's last `token_count` on every leg, best-effort — the only
+  place codex reports subscription budget. Printed to the console only for
+  legs that return a result: a dead leg's rollout would show the previous
+  turn's stale figures, so the retry path deliberately prints nothing.
 - `cached_input_tokens` → `cache_read_tokens`; `cache_write_input_tokens` →
   `cache_creation_tokens` (never dropped — `pricing.yaml` carries the $12.50
   write rate and writes are billed *instead of* the input rate, which is how
