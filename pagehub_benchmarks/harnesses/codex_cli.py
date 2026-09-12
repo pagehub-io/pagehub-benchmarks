@@ -543,6 +543,13 @@ _USAGE_KEYS = (
 USAGE_CAVEAT_MISSING = "missing"
 USAGE_CAVEAT_ABSORBED = "absorbed_missing_leg"
 USAGE_CAVEAT_DEAD_LEG = "dead_leg_unmeasured"
+# The whole vocabulary, so a consumer can prove it has classified every value
+# rather than the ones it happened to think of. tools/build_site.py uses it to
+# decide which caveats make a RUN's totals a lower bound (review round 12):
+# MISSING and DEAD_LEG lose spend out of the record entirely, so every
+# aggregate derived from it is short; ABSORBED only moves spend between
+# attempts of the same run, so the run total is unaffected.
+USAGE_CAVEATS = (USAGE_CAVEAT_MISSING, USAGE_CAVEAT_ABSORBED, USAGE_CAVEAT_DEAD_LEG)
 
 
 @dataclass(frozen=True)
@@ -1269,15 +1276,21 @@ class CodexCliHarness(Harness):
             with contextlib.suppress(Exception):  # display only; never fails a spent leg
                 _print_rate_limits("start" if is_start else "resume", usage.rate_limits)
         # A dead leg is retried rather than captured, so it never reaches this
-        # method and its spend is in no attempt's delta. When the leg it
-        # abandoned was a DIFFERENT thread (only a dead START leg can be —
-        # a resume leg's id is validated equal to this one's), nothing in the
-        # run bills that thread at all and the figure below is short by a
-        # whole turn. Mark it, or the results site shows an understated cost
-        # with nothing to say so: its warning marker is driven by this list
-        # (review round 11, I-2). A dead RESUME leg needs no caveat — its
-        # spend is inside the next leg's stream delta, and both legs are this
-        # same attempt, which is the granularity the figure is published at.
+        # method and records no delta of its own. WHERE its spend lands is
+        # decided by the thread it ran on, and only one of the two cases needs
+        # marking.
+        #   Dead RESUME leg — same thread (its id is validated equal to this
+        # one's), so the baseline never moved and its spend is inside the
+        # delta below: measured 2026-09-12, a dead resume leg that spent
+        # 4242/77 turned this attempt's delta from 3959/5 into 8201/82. Both
+        # legs are this one ATTEMPT, which is the granularity the figure is
+        # published at, so no caveat is due.
+        #   Dead START leg — a DIFFERENT thread, which nothing in the run ever
+        # resumes or reads, so the figure below is short by a whole turn and
+        # so is every total derived from it. Mark it, or the results site
+        # shows an understated cost with nothing to say so: both the attempt
+        # marker and the run-level lower-bound marking are driven by this list
+        # (review rounds 11 I-2, 12 I-2).
         abandoned_thread_ids = [t for t in dead_leg_thread_ids if t != thread_id]
         caveats = list(usage.caveats)
         if abandoned_thread_ids:

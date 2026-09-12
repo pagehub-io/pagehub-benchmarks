@@ -2440,12 +2440,29 @@ def test_an_abandoned_thread_is_flagged_on_the_published_page(
     build(results_dir=tmp_path / "results", docs_dir=docs,
           benchmarks_dir=tmp_path / "benchmarks", theories_dir=tmp_path / "theories")
     run_html = next((docs / "runs").glob("*.html")).read_text()
-    # One warning triangle in the per-attempt table, plus the one in the
-    # explanatory line above it — the same count the two-caveat cases assert
-    # in tests/test_build_site.py.
-    assert run_html.count("&#9888;") == 2
+    # Five warning triangles: the per-attempt row and its legend (round 11),
+    # then the run headline, the Tokens card and the lower-bound note that
+    # round 12 found missing — the abandoned thread's spend is in NO attempt,
+    # so the run's own totals are short too, not merely redistributed.
+    assert run_html.count("&#9888;") == 5
     assert codex_cli.USAGE_CAVEAT_DEAD_LEG in run_html
     # And the page EXPLAINS the third caveat rather than only naming it: the
     # marker's legend must cover this reason too. (The thread id above is
     # deliberately not the word "abandoned", so this can only match the copy.)
     assert "short by an abandoned thread" in run_html
+    # The run total is presented as a lower bound, not as a measurement.
+    cost = f"{rec.cost_usd:.4f}"
+    assert run_html.count(f"&#8805;${cost}") == 2  # headline + Tokens card
+    assert "lower bound" in run_html
+
+    # THE SURFACE ROUND 12 FOUND UNMARKED: the head-to-head cost table on the
+    # index, which is what a reader actually compares harnesses on. A run page
+    # that flags the attempt is worth nothing if the index publishes the same
+    # understated figure clean.
+    index = (docs / "index.html").read_text()
+    assert f"&#8805;${cost}" in index
+    assert index.count("&#9888;") >= 1
+    assert "lower bound" in index
+
+    bench_html = next((docs / "benchmarks").glob("*.html")).read_text()
+    assert f"&#8805;${cost}" in bench_html

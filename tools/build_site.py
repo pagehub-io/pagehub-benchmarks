@@ -55,6 +55,42 @@ _SLUG = re.compile(r"[^A-Za-z0-9._-]+")
 # GitHub Pages (Jekyll bypass marker, custom-domain config, empty-dir marker).
 _PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
 
+# Which per-attempt caveats make the RUN's own totals a LOWER BOUND rather
+# than a measurement (review round 12). The test is not "is some attempt
+# imprecise" — it is "did spend leave the record entirely, or only move
+# between attempt rows inside it". Determined by execution, 2026-09-12:
+#
+#   "dead_leg_unmeasured"  SHORTENS the run total. A dead start leg is retried
+#       onto a NEW thread; the abandoned one is never resumed and never read,
+#       so its spend enters no leg's delta anywhere in the run.
+#   "missing"              SHORTENS the run total. The turn was spent and
+#       nothing measured it. A later leg's delta recovers it only when codex's
+#       rollout did NOT re-anchor the baseline in between — and the published
+#       record cannot say which happened. Measured: two runs whose attempt
+#       records are byte-identical (["missing"], then ["absorbed_missing_leg"])
+#       totalled 3,959 and 7,158 input tokens against a true spend of 7,158.
+#       So the figure is a lower bound: sometimes exact, never provably so.
+#   "absorbed_missing_leg" does NOT shorten it. It says this attempt's delta
+#       may span an EARLIER unmeasured leg of the same run: spend moves
+#       between attempt rows and the total is unaffected. It also never
+#       appears alone — the baseline gap that produces it is set only on the
+#       path that publishes "missing" (codex_cli._usage_from's source ==
+#       "none" -> _result), and start_build resets it per run.
+#
+# Blanket-marking every caveated run would make the aggregate marker
+# meaningless, so the two sets are kept apart and
+# ``test_every_harness_caveat_is_classified_for_run_totals`` fails if the
+# harness grows a fourth value nobody has classified.
+RUN_TOTAL_LOWER_BOUND_CAVEATS = frozenset({"missing", "dead_leg_unmeasured"})
+RUN_TOTAL_NEUTRAL_CAVEATS = frozenset({"absorbed_missing_leg"})
+
+# Aggregates the lower bound applies to: everything derived from token
+# counts. Wall time, attempts and pass/fail are measured elsewhere and are
+# not short.
+LOWER_BOUND_METRICS = frozenset(
+    {"cost_usd", "total_input_tokens", "total_output_tokens", "total_cache_tokens"}
+)
+
 
 def _slug(s: str) -> str:
     return _SLUG.sub("-", s).strip("-") or "x"
@@ -283,6 +319,21 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
                 if isinstance(raw, dict)
                 else []
             )
+        # …and the run-level consequence. Marking only the attempt row leaves
+        # every aggregate the site publishes — this run's headline, the
+        # index's head-to-head cost table, the benchmark page, the theory
+        # comparison — rendering an understated figure with nothing to say so
+        # (review round 12, I-2). Only the caveats in
+        # RUN_TOTAL_LOWER_BOUND_CAVEATS shorten a TOTAL; the others move spend
+        # between attempts and leave it alone.
+        caveats_any = sorted(
+            {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
+        )
+        rec["usage_caveats_any"] = caveats_any
+        rec["totals_lower_bound_caveats"] = [
+            c for c in caveats_any if c in RUN_TOTAL_LOWER_BOUND_CAVEATS
+        ]
+        rec["totals_are_lower_bound"] = bool(rec["totals_lower_bound_caveats"])
         runs.append(rec)
     # newest first
     runs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
@@ -501,6 +552,9 @@ def _theory_cells(metrics: list[str], baseline_runs: list[dict], treatment_runs:
     for m in metrics:
         bv = b_latest.get(m) if b_latest else None
         tv = t_latest.get(m) if t_latest else None
+        # A side-by-side comparison is exactly where a silently short figure
+        # reads as a win, so the lower-bound marking has to reach these cells
+        # too — on the token-derived metrics only (review round 12).
         out.append(
             {
                 "metric": m,
@@ -508,9 +562,22 @@ def _theory_cells(metrics: list[str], baseline_runs: list[dict], treatment_runs:
                 "treatment_display": _format_metric(m, tv) if t_latest is not None else "no runs yet",
                 "baseline_value": bv,
                 "treatment_value": tv,
+                "baseline_lower_bound": _is_lower_bound(b_latest, m),
+                "treatment_lower_bound": _is_lower_bound(t_latest, m),
+                "baseline_caveats": (b_latest or {}).get("totals_lower_bound_caveats") or [],
+                "treatment_caveats": (t_latest or {}).get("totals_lower_bound_caveats") or [],
             }
         )
     return out
+
+
+def _is_lower_bound(run: dict | None, metric: str) -> bool:
+    """Is ``run``'s figure for ``metric`` short by spend nothing measured?"""
+    return bool(
+        run
+        and metric in LOWER_BOUND_METRICS
+        and run.get("totals_are_lower_bound")
+    )
 
 
 def _md_to_html(markdown: str) -> str:

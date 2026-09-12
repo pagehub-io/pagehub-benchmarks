@@ -231,6 +231,17 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   dead **start** leg can do this: a dead resume leg is retried on the same
   thread, so its spend is inside the next leg's delta, which is the same
   attempt's figure either way.
+  **Two of the three also make the RUN's totals a lower bound**, and the site
+  marks those as such (`≥`, review round 12): `"missing"` and
+  `"dead_leg_unmeasured"` are spend that left the record altogether, so every
+  total derived from it is short. `"absorbed_missing_leg"` is not — it moves
+  spend between attempts of one run and leaves the total alone. Determined by
+  execution: two runs whose attempt records are identical (`["missing"]`, then
+  `["absorbed_missing_leg"]`) totalled 3,959 and 7,158 input tokens against a
+  true spend of 7,158, because whether a later leg's delta reabsorbs the
+  unmeasured turn depends on whether codex's rollout re-anchored the baseline
+  in between — which the record does not publish. A lower bound is the only
+  honest reading.
   The adapter used to try to avoid the second case by taking the attempt's
   share from the rollout's own turn record. It cannot: nothing about a rollout
   record proves *which turn it belongs to*, and against the short baseline

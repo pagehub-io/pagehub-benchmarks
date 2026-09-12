@@ -1,0 +1,19 @@
+{#
+  Aggregate-figure marking, shared by every page that publishes a run total.
+
+  A run's per-attempt caveats can make the run's OWN totals a lower bound
+  rather than a measurement: see RUN_TOTAL_LOWER_BOUND_CAVEATS in
+  tools/build_site.py for which values do that and why. Marking the attempt
+  row alone left the headline, the index's cost table, the benchmark page and
+  the theory comparison all rendering the short figure unmarked (review
+  round 12), so the marking lives here and every surface imports it.
+
+  Visual language matches the per-attempt marker already on the run page: a
+  hoverable &#9888; naming the reason, plus a &#8805; on the figure itself so
+  the direction of the error is readable without hovering.
+#}
+{% macro lb_title(caveats) %}This run's totals are a lower bound, not a measurement: it spent tokens the harness could not attribute to any attempt ({{ caveats|join(', ') }}), so the real figure is higher by an unknown amount. See the per-attempt table on the run page.{% endmacro %}
+{% macro warn(caveats) %}<span class="warn" title="{{ lb_title(caveats) }}">&#9888;</span>{% endmacro %}
+{% macro cost(r) %}{% if r.totals_are_lower_bound %}&#8805;${{ '%.4f' % r.cost_usd }} {{ warn(r.totals_lower_bound_caveats) }}{% else %}${{ '%.4f' % r.cost_usd }}{% endif %}{% endmacro %}
+{% macro count(r, value) %}{% if r.totals_are_lower_bound %}&#8805;{% endif %}{{ '{:,}'.format(value) }}{% endmacro %}
+{% macro metric(display, lower_bound, caveats) %}{% if lower_bound %}&#8805;{{ display }} {{ warn(caveats) }}{% else %}{{ display }}{% endif %}{% endmacro %}

@@ -2,11 +2,12 @@
 {% block title %}{{ r.benchmark }} · {{ r.harness }} {{ r.model }} — run{% endblock %}
 {% block crumbs %} / <a href="{{ rel }}benchmarks/{{ r.benchmark_slug }}.html">{{ r.benchmark }}</a> / run{% endblock %}
 {% block content %}
+{% import "_marks.html" as m %}
 <h1>{{ r.benchmark }} — {{ r.harness }} <span class="muted">{{ r.model }}</span></h1>
 <p>
   {% if r.passed %}<span class="pass">PASSED</span>{% else %}<span class="fail">FAILED</span>{% endif %}
   · attempt {{ r.attempts_display }} of {{ r.max_attempts }}
-  · ${{ '%.4f' % r.cost_usd }} (computed)
+  · {{ m.cost(r) }} (computed)
   · {{ '%.0f' % r.total_wall_time_seconds }}s
   · config <code class="mono">{{ r.config_str }}</code>
 </p>
@@ -21,10 +22,10 @@
     <dt>finished</dt><dd>{{ r.finished_at }}</dd>
   </dl></div>
   <div class="card"><h3>Tokens</h3><dl>
-    <dt>input</dt><dd>{{ '{:,}'.format(r.total_input_tokens) }}</dd>
-    <dt>output</dt><dd>{{ '{:,}'.format(r.total_output_tokens) }}</dd>
-    <dt>cache</dt><dd>{{ '{:,}'.format(r.total_cache_tokens) }}</dd>
-    <dt>cost USD</dt><dd>${{ '%.4f' % r.cost_usd }}</dd>
+    <dt>input</dt><dd>{{ m.count(r, r.total_input_tokens) }}</dd>
+    <dt>output</dt><dd>{{ m.count(r, r.total_output_tokens) }}</dd>
+    <dt>cache</dt><dd>{{ m.count(r, r.total_cache_tokens) }}</dd>
+    <dt>cost USD</dt><dd>{{ m.cost(r) }}</dd>
     <dt>wall time</dt><dd>{{ '%.1f' % r.total_wall_time_seconds }}s</dd>
   </dl></div>
   <div class="card"><h3>Target</h3><dl>
@@ -34,6 +35,9 @@
     <dt>worktree</dt><dd class="mono" title="{{ r.worktree_path }}">{{ r.worktree_basename }}</dd>
   </dl></div>
 </div>
+{% if r.totals_are_lower_bound %}
+<p class="muted"><span class="warn">&#9888;</span> <strong>The token and cost totals above are a lower bound (&#8805;), not a measurement</strong> — this run spent tokens that are in none of them, so the real figures are higher by an unknown amount. Reason(s): <code>{{ r.totals_lower_bound_caveats|join(', ') }}</code>. <code>missing</code> — a turn was spent and nothing measured it; a later attempt's delta reabsorbs it only if codex's rollout did not re-anchor the baseline in between, and the record cannot say which happened. <code>dead_leg_unmeasured</code> — a dead start leg was retried onto a <em>new</em> thread, so whatever the abandoned thread spent is billed to no attempt anywhere. (<code>absorbed_missing_leg</code> alone does <em>not</em> shorten these totals: it moves spend between the attempt rows below.)</p>
+{% endif %}
 
 <h2>Built code</h2>
 {% if r.pushed_branch_url or r.push_error %}

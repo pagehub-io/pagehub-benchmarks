@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}pagehub-benchmarks — all runs{% endblock %}
 {% block content %}
+{% import "_marks.html" as m %}
 <h1>pagehub-benchmarks</h1>
 <p class="muted">A benchmark runner for LLM coding harnesses — build a target repo from a verbatim prompt, grade it with pagehub-evals, retry on failure, record attempts / tokens / cost / wall time. <a href="{{ repo_url }}">repo</a>{% if theories %} · <a href="theories/index.html">theories</a> ({{ theories|length }}){% endif %}</p>
 
@@ -18,7 +19,7 @@
       <dt>pass rate</dt><dd>{{ b.pass_rate_display }}</dd>
       <dt>best attempts</dt><dd>{{ b.best_attempts_display }}</dd>
       <dt>median attempts</dt><dd>{{ b.median_attempts_display }}</dd>
-      <dt>cheapest pass</dt><dd>{% if b.cheapest %}<a href="runs/{{ b.cheapest.run_id }}.html">${{ '%.4f' % b.cheapest.cost_usd }}</a>{% else %}—{% endif %}</dd>
+      <dt>cheapest pass</dt><dd>{% if b.cheapest %}<a href="runs/{{ b.cheapest.run_id }}.html">{{ m.cost(b.cheapest) }}</a>{% else %}—{% endif %}</dd>
     </dl>
   </div>
 {% endfor %}
@@ -50,9 +51,9 @@
   <td data-v="{{ r.started_at }}">{{ r.date_display }}</td>
   <td class="num" data-v="{{ r.attempts if r.passed else 9999 }}">{{ r.attempts_display }}</td>
   <td data-v="{{ 1 if r.passed else 0 }}">{% if r.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}</td>
-  <td class="num">{{ '{:,}'.format(r.total_input_tokens) }}</td>
-  <td class="num">{{ '{:,}'.format(r.total_output_tokens) }}</td>
-  <td class="num">${{ '%.4f' % r.cost_usd }}</td>
+  <td class="num">{{ m.count(r, r.total_input_tokens) }}</td>
+  <td class="num">{{ m.count(r, r.total_output_tokens) }}</td>
+  <td class="num">{{ m.cost(r) }}</td>
   <td class="num">{{ '%.0f' % r.total_wall_time_seconds }}</td>
   <td>
     {% if r.pushed_branch_url %}

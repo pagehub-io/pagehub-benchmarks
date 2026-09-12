@@ -417,6 +417,28 @@ rule, as implemented in `_usage_from`:
   show an understated cost with no marker at all (executed end to end by the
   reviewer, and now pinned by a test that renders the record through
   `tools/build_site.py`).
+- **Which caveats make a RUN's totals a lower bound** (*added round 12*).
+  Marking the attempt row is not enough: the site also publishes aggregates —
+  the run headline, the index's head-to-head cost table, the benchmark page,
+  the theory comparison — and round 12 found every one of them rendering the
+  same understated figure with no marker. The rule is not "any caveat" but
+  "did the spend leave the record", and it was settled by execution:
+  - `"dead_leg_unmeasured"` — **lower bound**. The abandoned thread is never
+    resumed and never read, so its spend is in no leg's delta anywhere.
+  - `"missing"` — **lower bound**. A later leg's delta reabsorbs the
+    unmeasured turn only if codex's rollout did *not* re-anchor the baseline
+    in between, and the published record cannot say which happened: two runs
+    whose attempt records are identical (`["missing"]`, then
+    `["absorbed_missing_leg"]`) totalled 3,959 and 7,158 input tokens against
+    a true spend of 7,158.
+  - `"absorbed_missing_leg"` — **not** a lower bound by itself: it moves spend
+    between attempts of one run and leaves the total whole. It also never
+    appears alone, since the baseline gap that produces it is set only on the
+    path that publishes `"missing"` and `start_build` resets it per run.
+  The set is `RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`; the
+  affected figures render as `≥` plus the same `⚠` the attempt row uses; and
+  one rendered-page test per surface pins it, each failing on its own when the
+  marking is reverted.
   Marking errs toward marking: a delta taken against a re-anchored baseline is
   often exactly right and is still flagged, because the harness cannot show
   it. A consumer of the results file needs only `usage_faithful` to know a

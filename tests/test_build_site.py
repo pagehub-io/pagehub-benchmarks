@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.build_site import build, github_repo_url
+from tools.build_site import (
+    RUN_TOTAL_LOWER_BOUND_CAVEATS,
+    RUN_TOTAL_NEUTRAL_CAVEATS,
+    build,
+    github_repo_url,
+)
 
 SAMPLE_RUN = {
     "benchmark": "eval-chess-backend",
@@ -339,3 +344,166 @@ def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
     build(results_dir=tmp_path / "results", docs_dir=docs)
     run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
     assert run_html.count("&#9888;") == 1  # only the explanatory line
+
+
+# --------------------------------------------------------------------------
+# Run-level totals: which caveats make an AGGREGATE a lower bound
+#
+# Round 12, I-2: the attempt row was marked but every aggregate the site
+# publishes — the run headline, the index's head-to-head cost table, the
+# benchmark page and the theory page — rendered the same understated figure
+# with nothing to say so. One test per surface, because the round-11 fix was
+# pinned by a rendered-page test that only covered the page it was written
+# for.
+
+
+def _run_with_caveats(*caveats: str) -> dict:
+    """SAMPLE_RUN whose second attempt carries ``caveats``."""
+    run = dict(SAMPLE_RUN)
+    run["per_attempt"] = [
+        dict(run["per_attempt"][0], raw={"usage_faithful": True, "usage_caveats": []}),
+        dict(
+            run["per_attempt"][1],
+            raw={"usage_faithful": not caveats, "usage_caveats": list(caveats)},
+        ),
+    ]
+    return run
+
+
+def _site(tmp_path: Path, run: dict, *, with_theory: bool = False) -> Path:
+    results = tmp_path / "results" / "eval-chess-backend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(run)
+    )
+    theories = tmp_path / "theories"
+    theories.mkdir()
+    if with_theory:
+        (theories / "cheaper.md").write_text(
+            "---\n"
+            "name: cheaper\n"
+            "hypothesis: the treatment is cheaper\n"
+            "baseline: eval-chess-backend\n"
+            "treatment: eval-chess-frontend\n"
+            "metrics:\n  - cost_usd\n  - total_input_tokens\n  - attempts\n"
+            "status: pending\n"
+            "---\n\n## Background\n\nnone\n"
+        )
+    docs = tmp_path / "docs"
+    build(
+        results_dir=tmp_path / "results",
+        docs_dir=docs,
+        benchmarks_dir=tmp_path / "benchmarks",
+        theories_dir=theories,
+    )
+    return docs
+
+
+RUN_HTML = "runs/claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html"
+
+
+def test_run_page_headline_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
+    """SURFACE 1 of 4 — the run page's own headline and Tokens card.
+
+    ``dead_leg_unmeasured`` means a dead start leg's thread was abandoned and
+    never resumed or read, so its spend is in no attempt's delta anywhere:
+    the RUN total is genuinely short, not merely redistributed. The headline
+    and the cost/token figures must say so."""
+    docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"))
+    run_html = (docs / RUN_HTML).read_text()
+    # Headline and Tokens card both present the figure as a lower bound.
+    assert run_html.count("&#8805;$12.3456") == 2
+    # Token totals are short for the same reason and carry the same prefix.
+    assert "&#8805;1,234,567" in run_html
+    # And the page says, in words, what the marker means.
+    assert "lower bound" in run_html
+    assert "dead_leg_unmeasured" in run_html
+
+
+def test_index_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
+    """SURFACE 2 of 4 — the head-to-head cost table this repo exists to
+    produce, plus the "cheapest pass" card above it."""
+    docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"))
+    index = (docs / "index.html").read_text()
+    assert index.count("&#8805;$12.3456") == 2  # all-runs row + cheapest-pass card
+    assert index.count("&#9888;") >= 1
+    assert "lower bound" in index
+
+
+def test_benchmark_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
+    """SURFACE 3 of 4 — the per-benchmark run table."""
+    docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"))
+    bench_html = (docs / "benchmarks" / "eval-chess-backend.html").read_text()
+    assert "&#8805;$12.3456" in bench_html
+    assert bench_html.count("&#9888;") >= 1
+    assert "lower bound" in bench_html
+
+
+def test_theory_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
+    """SURFACE 4 of 4 — the theory comparison, where a baseline and a
+    treatment are read side by side and a short figure reads as a win."""
+    docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"), with_theory=True)
+    theory_html = (docs / "theories" / "cheaper.html").read_text()
+    # The metric comparison cell AND the run row underneath it.
+    assert theory_html.count("&#8805;$12.3456") == 2
+    assert theory_html.count("&#9888;") >= 1
+    assert "lower bound" in theory_html
+
+
+def test_missing_makes_the_run_total_a_lower_bound(tmp_path: Path):
+    """``missing`` is the second caveat that shortens a RUN total. Executed
+    (2026-09-12): two runs whose published attempt records are identical —
+    ``["missing"]`` then ``["absorbed_missing_leg"]`` — totalled 3,959 and
+    7,158 input tokens against a true spend of 7,158, because whether the
+    unmeasured turn lands in a later leg's delta depends on whether codex's
+    rollout repaired the baseline, which the record does not publish. So the
+    total is a lower bound: sometimes exact, never provably so."""
+    docs = _site(tmp_path, _run_with_caveats("missing"), with_theory=True)
+    assert "&#8805;$12.3456" in (docs / "index.html").read_text()
+    assert "&#8805;$12.3456" in (docs / RUN_HTML).read_text()
+
+
+def test_absorbed_missing_leg_alone_does_not_shorten_the_run_total(tmp_path: Path):
+    """The rule has teeth in both directions: ``absorbed_missing_leg`` says an
+    attempt's delta may span an earlier unmeasured leg of the SAME run — it
+    moves spend between attempt rows and leaves the run total whole. Marking
+    every caveated run as short would make the aggregate marker meaningless.
+    The attempt row still gets its own triangle."""
+    docs = _site(tmp_path, _run_with_caveats("absorbed_missing_leg"), with_theory=True)
+    for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
+                 "theories/cheaper.html"):
+        html = (docs / page).read_text()
+        assert "&#8805;" not in html, page
+        assert "lower bound" not in html, page
+    # …but the per-attempt marking round 11 added is untouched.
+    assert (docs / RUN_HTML).read_text().count("&#9888;") == 2
+
+
+def test_a_faithful_run_carries_no_lower_bound_marking(tmp_path: Path):
+    """A run with no caveats at all — and a legacy record with no ``raw`` —
+    must render the plain figure. A false ``≥`` on every historical record
+    would make the marking worthless."""
+    docs = _site(tmp_path, dict(SAMPLE_RUN), with_theory=True)
+    for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
+                 "theories/cheaper.html"):
+        html = (docs / page).read_text()
+        assert "&#8805;" not in html, page
+        assert "$12.3456" in html or "cost" in html, page
+
+
+def test_every_harness_caveat_is_classified_for_run_totals():
+    """The site decides run-level marking from string literals, because it
+    renders records written by harness versions it does not import. This is
+    the anti-drift pin: a fourth caveat value must be classified as shortening
+    a run total or not, deliberately, rather than defaulting to silence."""
+    from pagehub_benchmarks.harnesses.codex_cli import (
+        USAGE_CAVEAT_ABSORBED,
+        USAGE_CAVEAT_DEAD_LEG,
+        USAGE_CAVEAT_MISSING,
+        USAGE_CAVEATS,
+    )
+
+    assert set(USAGE_CAVEATS) == RUN_TOTAL_LOWER_BOUND_CAVEATS | RUN_TOTAL_NEUTRAL_CAVEATS
+    assert not RUN_TOTAL_LOWER_BOUND_CAVEATS & RUN_TOTAL_NEUTRAL_CAVEATS
+    assert {USAGE_CAVEAT_MISSING, USAGE_CAVEAT_DEAD_LEG} == RUN_TOTAL_LOWER_BOUND_CAVEATS
+    assert {USAGE_CAVEAT_ABSORBED} == RUN_TOTAL_NEUTRAL_CAVEATS
