@@ -69,7 +69,9 @@ raises. ``cost_usd`` in a run record is therefore a *computed* figure
 stream, never by matching error text:
 
 - no ``thread.started`` at all → :class:`HarnessError` (nothing to resume);
-- a *dead* turn — no non-error ``item.*`` event and no usage — is retried
+- a *dead* turn — no non-error ``item.*`` event and no usage from any source
+  (no stream delta, and no rollout cumulative beyond a baseline with no
+  recorded gap: the third conjunct is review round 9's fix) — is retried
   ``CODEX_DEAD_TURN_RETRIES`` times (default 2, 5 s apart) and then raises on
   either leg, exactly as the Claude adapter raises on a non-zero exit. Auth /
   transport failures and a rejected (``invalid_prompt``) prompt are dead turns;
@@ -103,7 +105,9 @@ for did work after all (otherwise it is dead and retried); and ``rate_limits``
 subscription budget. The honest invariant is a *marking*
 one: ``raw["usage_faithful"]`` is false on any attempt whose ``usage_delta``
 is not a measure of that attempt alone — short (nothing readable: zeros, never
-"free") or not provably its own (it may span an earlier unmeasured leg) — and
+"free"), not provably its own (it may span an earlier unmeasured leg), or
+short by an abandoned thread (a dead leg was retried onto a new one, so what
+it spent is billed to no attempt: review round 11) — and
 ``raw["usage_caveats"]`` says which.
 """
 
@@ -524,13 +528,21 @@ _USAGE_KEYS = (
 )
 
 
-# Why a leg's recorded figure is not a faithful measure of that leg. Recorded
-# verbatim in raw["usage_caveats"]; raw["usage_faithful"] is their absence.
-# Two values, and the code can produce both — a vocabulary is only useful if
-# every entry is reachable, so "rollout_turn_rejected" went with the rollout
-# recovery it described (review round 9).
+# Why an attempt's recorded figure is not a faithful measure of that attempt.
+# Recorded verbatim in raw["usage_caveats"]; raw["usage_faithful"] is their
+# absence. Three values, and the code can produce all three — a vocabulary is
+# only useful if every entry is reachable, so "rollout_turn_rejected" went
+# with the rollout recovery it described (review round 9).
+#
+# The first two are properties of one leg and are set in _usage_from. The
+# third is a property of the ATTEMPT and can only be set in
+# CodexCliHarness._result, which is the first place that knows a retry
+# happened: a dead START leg spends on a thread the harness then walks away
+# from, so that spend is billed to no attempt anywhere in the record and the
+# figure published here is short by a whole turn (review round 11).
 USAGE_CAVEAT_MISSING = "missing"
 USAGE_CAVEAT_ABSORBED = "absorbed_missing_leg"
+USAGE_CAVEAT_DEAD_LEG = "dead_leg_unmeasured"
 
 
 @dataclass(frozen=True)
@@ -547,10 +559,13 @@ class _Usage:
     the cumulative thread usage after this leg, remembered on the harness so
     the next leg's delta can be taken.
 
-    ``caveats`` is the honesty record: empty when ``delta`` measures THIS leg
-    and nothing else, otherwise the reasons it does not — short
-    (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
-    (:data:`USAGE_CAVEAT_ABSORBED`).
+    ``caveats`` is the honesty record for what this LEG can see: empty when
+    ``delta`` measures THIS leg and nothing else, otherwise the reasons it
+    does not — short (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
+    (:data:`USAGE_CAVEAT_ABSORBED`). The published
+    ``raw["usage_caveats"]`` is this plus :data:`USAGE_CAVEAT_DEAD_LEG`, which
+    only :meth:`CodexCliHarness._result` can add because only it knows a
+    retry abandoned a thread (review round 11).
     """
 
     raw: dict[str, Any] | None
@@ -762,7 +777,8 @@ def _advances(thread_total: dict[str, int] | None, baseline: dict[str, int]) -> 
     turn, a winning attempt recording a turn that was not its own — all marked
     faithful) that inference is gone.
 
-    So True is used for two things and no others: to move the baseline forward
+    So True is used for two of the rollout's three jobs and nothing else
+    (the rate-limit job never consults this function): to move the baseline forward
     (a cumulative names no turn, so adopting one cannot mis-attribute — at
     worst it is short), and, against a baseline with no RECORDED gap, as
     evidence that the ATTEMPT being classified did work even though this leg's
@@ -841,6 +857,10 @@ def _usage_from(
     not provably its own (:data:`USAGE_CAVEAT_ABSORBED`). Over-marking is the
     honest direction: a delta taken against a repaired baseline is often
     exactly right, and is still marked, because the harness cannot show it.
+    The one way an attempt's figure can be unfaithful that this function
+    cannot see is a leg abandoned by a retry — no leg here ever observes it,
+    so :data:`USAGE_CAVEAT_DEAD_LEG` is added in
+    :meth:`CodexCliHarness._result` instead (review round 11).
     """
     prev = previous_thread_total or {k: 0 for k in _USAGE_KEYS}
     verbatim, total = _stream_usage(events)
@@ -1174,9 +1194,11 @@ class CodexCliHarness(Harness):
                 )
             error_text = _harness_error_text(terminal, errors, leg.stderr, leg.returncode)
             # Nothing from the model, nothing measured, and no turn recorded
-            # in the rollout beyond a baseline known whole: this turn never
-            # happened, so retry it rather than capture it as the attempt's
-            # result. A rollout record that merely sits beyond a SHORT
+            # in the rollout beyond a baseline with no RECORDED gap: this turn
+            # never happened, so retry it rather than capture it as the
+            # attempt's result. ("No recorded gap", not "whole" — see
+            # _advances, which spells out why the attempt, not the leg, is the
+            # granularity that makes this sound: review round 10.) A rollout record that merely sits beyond a SHORT
             # baseline proves nothing — reading it as "this leg spent tokens"
             # captured genuinely dead legs and corrupted attempts-to-green
             # (review round 9, C-1).
@@ -1246,6 +1268,20 @@ class CodexCliHarness(Harness):
             # the previous turn's (stale) figures.
             with contextlib.suppress(Exception):  # display only; never fails a spent leg
                 _print_rate_limits("start" if is_start else "resume", usage.rate_limits)
+        # A dead leg is retried rather than captured, so it never reaches this
+        # method and its spend is in no attempt's delta. When the leg it
+        # abandoned was a DIFFERENT thread (only a dead START leg can be —
+        # a resume leg's id is validated equal to this one's), nothing in the
+        # run bills that thread at all and the figure below is short by a
+        # whole turn. Mark it, or the results site shows an understated cost
+        # with nothing to say so: its warning marker is driven by this list
+        # (review round 11, I-2). A dead RESUME leg needs no caveat — its
+        # spend is inside the next leg's stream delta, and both legs are this
+        # same attempt, which is the granularity the figure is published at.
+        abandoned_thread_ids = [t for t in dead_leg_thread_ids if t != thread_id]
+        caveats = list(usage.caveats)
+        if abandoned_thread_ids:
+            caveats.append(USAGE_CAVEAT_DEAD_LEG)
         raw: dict[str, Any] = {
             "thread_id": thread_id,
             "exit_code": leg.returncode,
@@ -1260,14 +1296,15 @@ class CodexCliHarness(Harness):
             # THE field to read before trusting usage_delta (or the token
             # columns derived from it) as this attempt's cost: false when the
             # figure is not a measure of this attempt alone — short because
-            # nothing measured it, or not provably its own because the
-            # baseline it was taken against may be short by an earlier
-            # unmeasured leg. usage_caveats names which, from a fixed
-            # two-value vocabulary; neither needs any harness internals to
-            # interpret. An over-reported attempt is no more honest than a
-            # zero-reported one, so both are marked (review round 8).
-            "usage_faithful": not usage.caveats,
-            "usage_caveats": list(usage.caveats),
+            # nothing measured it, not provably its own because the baseline
+            # it was taken against may be short by an earlier unmeasured leg,
+            # or short by an abandoned thread. usage_caveats names which,
+            # from a fixed three-value vocabulary; none of them needs any
+            # harness internals to interpret. An over-reported attempt is no
+            # more honest than a zero-reported one, so both are marked
+            # (review round 8).
+            "usage_faithful": not caveats,
+            "usage_caveats": caveats,
             "reasoning_output_tokens": usage.reasoning_output_tokens,
             # Subscription budget as codex last reported it (5-hour + weekly
             # windows, used_percent) — best-effort from the rollout.
@@ -1287,9 +1324,7 @@ class CodexCliHarness(Harness):
             # fresh thread each time); the only record that they exist. A dead
             # RESUME leg reports the thread named above — its id is validated
             # equal — so it is filtered out rather than repeating thread_id.
-            "dead_turn_thread_ids": [t for t in dead_leg_thread_ids if t != thread_id][
-                :RAW_LIST_LIMIT
-            ],
+            "dead_turn_thread_ids": abandoned_thread_ids[:RAW_LIST_LIMIT],
             # Relative to $CODEX_HOME: the record is published, and the
             # absolute path names the operator's home directory.
             "rollout_path": _publishable_rollout_path(rollout_path),

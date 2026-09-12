@@ -1249,10 +1249,13 @@ def test_turn_with_usage_but_no_items_is_not_dead(monkeypatch, tmp_path, isolate
 
     The stream shows neither an item nor a usage object, so the only evidence
     the leg worked is codex's rollout — a turn recorded beyond everything this
-    harness has billed. That inference is sound ONLY because the baseline here
-    is whole (a fresh thread, nothing billed yet); against a baseline known to
-    be short it proves nothing, which is what
-    ``test_a_dead_resume_after_an_unreadable_start_leg_is_retried`` pins."""
+    harness has billed. The implemented gate is a baseline with no RECORDED
+    gap, which the fresh thread here satisfies in the strongest way there is
+    (nothing billed yet, so gapless *and* whole); against a baseline with a
+    recorded gap the same record proves nothing, which is what
+    ``test_a_dead_resume_after_an_unreadable_start_leg_is_retried`` pins.
+    Why a gapless-but-not-whole baseline is still enough is ``_advances``'s
+    attempt-granularity argument (review round 10), not wholeness."""
     _write_rollout(tmp_path, _rollout_through_turn1())
     failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
     # SYNTHETIC: the real success envelope minus its agent_message item and
@@ -1363,6 +1366,9 @@ def test_cache_writes_in_the_repaired_baseline_leave_the_next_leg_its_own_share(
     r3 = h.continue_build(r1.session_handle, "y")
     assert r2.raw["usage_source"] == "none"
     assert (r2.input_tokens, r2.cache_creation_tokens, r2.cache_read_tokens) == (0, 0, 0)
+    # Plan §4.8 item 18 credits this test with the marking too, so assert it
+    # here rather than lean on a sibling's assertion (review round 11, N-4).
+    assert r2.raw["usage_caveats"] == ["missing"]
     assert (r3.input_tokens, r3.cache_creation_tokens, r3.cache_read_tokens) == (100, 100, 800)
 
 
@@ -1613,8 +1619,9 @@ def test_an_unmeasurable_legs_rollout_repairs_the_cumulative_baseline(
     monkeypatch, tmp_path, isolated_env
 ):
     """The rollout payload carries codex's own ``thread_token_usage``. That
-    cumulative is one of the two jobs the rollout still has after review
-    round 9 (the other is dead-leg detection): a leg the stream could not
+    cumulative is one of the three jobs the rollout still has after review
+    round 9 (the others are dead-leg evidence and rate limits): a leg the
+    stream could not
     measure adopts it as the next leg's baseline, so long as it has advanced
     past the one already recorded.
 
@@ -2303,3 +2310,139 @@ def test_a_thread_total_with_no_turn_figure_beside_it_is_not_dead_leg_evidence(
     with pytest.raises(HarnessError, match="no model activity"):
         CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert len(legs.calls) == 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+# --------------------------------------------------------------------------
+# Review round 11, I-2: an attempt whose figure is short by a whole ABANDONED
+# THREAD must say so. A dead START leg spends on thread A, is retried onto a
+# NEW thread B, and A's spend is then recorded on no attempt at all. Before
+# this the record read usage_faithful: true with no caveats — and because the
+# results site gates its warning marker solely on usage_caveats, a paid,
+# published benchmark page showed an understated cost with nothing to say so.
+
+
+def test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The abandoned thread's spend lands on no attempt, so this attempt's
+    delta is not a measure of the attempt: it is short by a whole turn.
+    ``usage_caveats`` says which, ``usage_faithful`` is false, and the number
+    itself is untouched — marking, not guessing (review round 11, I-2)."""
+    dead_then_ok = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_thread_ids"] == ["orphan-thread-1"]
+    assert r.raw["usage_caveats"] == [codex_cli.USAGE_CAVEAT_DEAD_LEG]
+    assert r.raw["usage_faithful"] is False
+    # The measured leg's own figure is still recorded verbatim: the caveat
+    # says the total is short, it does not discard what WAS measured.
+    assert r.raw["usage_source"] == "stream"
+    assert r.raw["usage_missing"] is False
+    assert (r.input_tokens, r.output_tokens) == (3199, 5)
+
+
+def test_a_dead_resume_leg_leaves_the_attempt_faithful(monkeypatch, tmp_path, isolated_env):
+    """The mirror image, and the reason the caveat is gated on an ABANDONED
+    THREAD rather than on ``dead_turn_retries``: a dead RESUME leg is retried
+    on the SAME thread, so whatever it spent is inside the next leg's stream
+    delta — and both legs are the same attempt, which is the granularity the
+    figure is published at. Nothing is lost, so nothing is marked."""
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1),
+                  (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    assert r2.raw["dead_turn_retries"] == 1
+    assert r2.raw["dead_turn_thread_ids"] == []  # nothing abandoned
+    assert r2.raw["usage_caveats"] == []
+    assert r2.raw["usage_faithful"] is True
+
+
+def test_the_dead_leg_caveat_composes_with_the_leg_level_one(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``usage_caveats`` is a list, not an enum: an attempt can be short for
+    more than one reason at once. Leg 1 is dead (thread abandoned), leg 2 is a
+    non-dead failure (model activity, then ``turn.failed``), so the attempt is
+    both unmeasured in its own right and short by the abandoned thread. Plan
+    §4.6 rule 5 says so; this executes it."""
+    dead = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    failed = _with_thread_id(_synthetic_non_dead_failure(START_FIXTURE), "thread-b")
+    legs = _Legs([(dead, "", 1), (failed, "", 1)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "none" and r.raw["usage_missing"] is True
+    assert r.raw["usage_caveats"] == [
+        codex_cli.USAGE_CAVEAT_MISSING,
+        codex_cli.USAGE_CAVEAT_DEAD_LEG,
+    ]
+    assert r.raw["usage_faithful"] is False
+
+
+def test_an_abandoned_thread_is_flagged_on_the_published_page(
+    monkeypatch, tmp_path, isolated_env
+):
+    """END TO END, because the unit assertion above is not what failed. The
+    defect round 11 found was invisible at the harness boundary and only
+    appeared once the record was RENDERED: ``build_site`` gates its warning
+    triangle solely on ``usage_caveats``, so an unmarked-but-short attempt
+    published a cost figure with no marker at all. This runs the abandoned-
+    thread scenario through the runner, writes the real results JSON, builds
+    the real site from it, and asserts the reader is warned."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+    from tools.build_site import build
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 1,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    dead_then_ok = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    rec = execute_benchmark_run(
+        spec=spec,
+        harness_spec=spec.harnesses[0],
+        harness=CodexCliHarness(),
+        grader=FakeGrader([gr(True)]),
+        worktree_dir=tmp_path / "wt",
+        pricing=load_pricing(),
+        fixture_fetcher=FakeFixtureFetcher(),
+        built_sha="deadbeef",
+    )
+    assert rec.passed is True and rec.attempts == 1
+    out = rec.write(tmp_path / "results")
+    assert json.loads(out.read_text())["per_attempt"][0]["raw"]["usage_faithful"] is False
+
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs,
+          benchmarks_dir=tmp_path / "benchmarks", theories_dir=tmp_path / "theories")
+    run_html = next((docs / "runs").glob("*.html")).read_text()
+    # One warning triangle in the per-attempt table, plus the one in the
+    # explanatory line above it — the same count the two-caveat cases assert
+    # in tests/test_build_site.py.
+    assert run_html.count("&#9888;") == 2
+    assert codex_cli.USAGE_CAVEAT_DEAD_LEG in run_html
+    # And the page EXPLAINS the third caveat rather than only naming it: the
+    # marker's legend must cover this reason too. (The thread id above is
+    # deliberately not the word "abandoned", so this can only match the copy.)
+    assert "short by an abandoned thread" in run_html
