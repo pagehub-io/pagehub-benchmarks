@@ -394,8 +394,9 @@ rule, as implemented in `_usage_from`:
   read as `usage_faithful: true`, and was **captured instead of retried**
   (attempts-to-green, not just cost); a later failed leg was billed an earlier
   turn while its own went uncounted; and a *winning* attempt recorded a turn
-  that was not its own. So the inference is deleted, not refined: every leg
-  whose `usage_delta` is not a provable measure of that leg alone is
+  that was not its own. So the inference is deleted, not refined: every
+  **attempt** whose `usage_delta` is not a provable measure of *that attempt*
+  alone is
   **marked**: `raw["usage_faithful"] = false` plus `raw["usage_caveats"]` from
   a three-value vocabulary — `"missing"` (short: nothing measured it, zeros),
   `"absorbed_missing_leg"` (the delta was taken against a baseline not known
@@ -412,6 +413,13 @@ rule, as implemented in `_usage_from`:
   rather than on `dead_turn_retries` because a dead **resume** leg is retried
   on the *same* thread — its spend lands inside the next leg's stream delta,
   and both legs are this attempt, so nothing is lost and nothing is marked.
+  Measured 2026-09-12, and the reason the granularity above is the **attempt**
+  and not the leg: a dead resume leg that spent (4242, 77) turned the
+  attempt's delta from (3959, 5) into (8201, 82), published with
+  `usage_caveats []` and `usage_faithful true`. Read at leg granularity the
+  rule would demand a caveat there; that reading is wrong and
+  `test_a_dead_resume_leg_leaves_the_attempt_faithful` fails anyone who
+  implements it.
   Why this is not merely a JSON nicety: the results site gates its warning
   marker solely on `usage_caveats`, so before round 11 a published page could
   show an understated cost with no marker at all (executed end to end by the
@@ -445,6 +453,33 @@ rule, as implemented in `_usage_from`:
   figure is an estimate; it never needs to know how the adapter works. An
   over-reported attempt is exactly as unfaithful as a zero-reported one, so
   both carry it.
+- **Every statement above is pinned by a named test** (*added round 13*). The
+  leg-vs-attempt wording drifted for four consecutive review rounds because
+  the instrument kept being a phrase sweep, and prose has no build that fails.
+  The standing check is mechanical instead: **for every normative statement in
+  this section, in `README.md`, and in `codex_cli.py`'s docstrings and
+  comments that asserts when `usage_faithful` is false or when a caveat is
+  emitted, name the test that fails if the statement is implemented as
+  written.** A statement no test can pin is a statement that will drift again,
+  and is either wrong or a coverage gap. `test_every_test_named_in_the_docs_exists`
+  fails if a name below stops resolving, so the table cannot rot silently.
+
+  | Statement | Pinned by |
+  |---|---|
+  | `usage_delta` and the caveats are at **attempt** granularity: a dead *resume* leg's spend is inside the attempt's own delta and is deliberately **not** marked | `test_a_dead_resume_leg_leaves_the_attempt_faithful` |
+  | A leg the stream could not measure records zeros + `usage_missing`, and the attempt is marked `"missing"` — including the final leg, which has no successor | `test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it`, `test_non_dead_failure_records_no_usage_and_says_so` |
+  | A delta taken against a baseline not known to be whole is marked `"absorbed_missing_leg"` (the reviewer's executed 17119 = own 1000 + lost 16119) | `test_persistently_unreadable_rollout_marks_the_attempt_that_absorbs_it` |
+  | Over-marking is the honest direction: a delta against a *repaired* baseline is often exactly right and is still marked | `test_an_unmeasurable_legs_rollout_repairs_the_cumulative_baseline` |
+  | …and the marker clears once the baseline is whole again — an always-on marker would be worthless | `test_the_absorbed_marker_clears_once_the_baseline_is_whole_again` |
+  | `"absorbed_missing_leg"` never crosses a run boundary (`start_build` resets the gap) — the premise that lets the site treat it as run-total-neutral | `test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap` |
+  | A dead **start** leg abandons a thread nothing ever reads, so the attempt is marked `"dead_leg_unmeasured"` and the number itself is untouched | `test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short` |
+  | `usage_caveats` is a **list**, not an enum: more than one reason can apply to one attempt | `test_the_dead_leg_caveat_composes_with_the_leg_level_one` |
+  | Every ordinary attempt is faithful — the marker is only worth reading if the ordinary paths clear it | `test_every_ordinary_attempt_is_recorded_as_faithful` |
+  | **Leg**-level on purpose (round 9): no rollout turn record is *ever* adopted as a leg's share, over all four rollout states | `test_no_rollout_record_is_ever_adopted_as_a_legs_share` |
+  | `"missing"` and `"dead_leg_unmeasured"` make a RUN's totals a lower bound; `"absorbed_missing_leg"` does not; a faithful run carries no marking | `test_missing_makes_the_run_total_a_lower_bound`, `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total`, `test_a_faithful_run_carries_no_lower_bound_marking` |
+  | Every surface publishing a run total renders that lower bound | `test_run_page_headline_presents_a_short_total_as_a_lower_bound`, `test_index_presents_a_short_total_as_a_lower_bound`, `test_benchmark_page_presents_a_short_total_as_a_lower_bound`, `test_theory_page_presents_a_short_total_as_a_lower_bound` |
+  | The vocabulary is closed and every value is classified for run totals | `test_every_harness_caveat_is_classified_for_run_totals` |
+  | A *completed* turn always has usage — zeros there are a defect, not a caveat | `test_turn_completed_without_usage_raises_never_zero_token_success` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
   jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured

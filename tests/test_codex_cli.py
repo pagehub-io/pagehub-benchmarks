@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -1835,6 +1836,71 @@ def test_the_absorbed_marker_clears_once_the_baseline_is_whole_again(
     assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
     assert r4.raw["usage_delta"] == turn4
     assert r4.raw["usage_faithful"] is True and r4.raw["usage_caveats"] == []
+
+
+def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``absorbed_missing_leg`` is classified as leaving a RUN's total whole
+    (``RUN_TOTAL_LOWER_BOUND_CAVEATS``) because it only moves spend between
+    attempt rows of the SAME run. That holds only because ``start_build``
+    clears the baseline gap: without the reset, run B's very first attempt
+    would be marked for a leg run A never measured, and the site would read
+    run B's total as whole when spend really had left it.
+
+    Both the plan (§4.5, "it never appears alone") and ``build_site.py``'s
+    rule comment state the reset normatively; round 13 asked which test pins
+    each such statement and this one had none — deleting the reset from
+    ``start_build`` survived the entire suite. It no longer does."""
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    a2 = h.continue_build(a1.session_handle, "fix it")
+    # Run A ends with an unmeasured leg, so it leaves the gap set.
+    assert a2.raw["usage_caveats"] == [codex_cli.USAGE_CAVEAT_MISSING]
+    # Run B is a new thread; its first attempt owns its whole delta.
+    b1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert b1.raw["usage_source"] == "stream"
+    assert b1.raw["usage_faithful"] is True and b1.raw["usage_caveats"] == []
+
+
+# Files that cite tests by name. Plan §4.5 carries the statement-to-test table
+# the round-13 review asked for; the other three cite individual pins inline.
+_DOCS_CITING_TESTS = (
+    "plans/codex-cli-harness.md",
+    "README.md",
+    "pagehub_benchmarks/harnesses/codex_cli.py",
+    "tools/build_site.py",
+)
+
+
+def test_every_test_named_in_the_docs_exists():
+    """The anti-drift pin for the anti-drift table (review round 13).
+
+    The leg-vs-attempt wording drifted for four rounds because prose has no
+    build that fails. Plan §4.5 now answers "which test pins this statement?"
+    for every normative claim about ``usage_faithful`` and the caveats — but a
+    table of test names is only load-bearing while the names resolve. This
+    fails the build when a cited test is renamed or deleted, so the citation
+    has to be updated with it rather than quietly becoming decoration."""
+    root = Path(__file__).resolve().parent.parent
+    defined: set[str] = set()
+    for path in sorted((root / "tests").glob("test_*.py")):
+        defined.add(path.stem)  # a citation may name the module
+        defined.update(re.findall(r"^def (test_[A-Za-z0-9_]+)", path.read_text(), re.M))
+
+    cited: dict[str, str] = {}
+    for rel in _DOCS_CITING_TESTS:
+        for name in re.findall(r"\btest_[a-z0-9_]+", (root / rel).read_text()):
+            cited.setdefault(name, rel)
+
+    missing = {n: where for n, where in cited.items() if n not in defined}
+    assert not missing, f"docs name tests that do not exist: {missing}"
+    # A silent regex change that stops matching would make this vacuous.
+    assert "test_a_dead_resume_leg_leaves_the_attempt_faithful" in cited
+    assert len(cited) >= 15, f"expected the §4.5 table to be cited; found {sorted(cited)}"
 
 
 def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(

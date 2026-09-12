@@ -110,7 +110,7 @@ is not a measure of that attempt alone — short (nothing readable: zeros, never
 "free"), not provably its own (it may span an earlier unmeasured leg), or
 short by an abandoned thread (a dead leg was retried onto a new one, so what
 it spent is billed to no attempt: review round 11) — and
-``raw["usage_caveats"]`` says which.
+``raw["usage_caveats"]`` lists which apply; more than one can.
 """
 
 from __future__ import annotations
@@ -571,15 +571,20 @@ class _Usage:
 
     ``caveats`` is the honesty record for what this LEG can see: empty when
     ``delta`` measures THIS ATTEMPT and nothing else, otherwise the reasons it
-    does not. The attempt, not the leg, is the granularity that makes the
-    empty case true — measured 2026-09-12: a dead resume leg that spent
-    4242/77 turned the returning leg's delta from 3959/5 into 8201/82, with no
-    caveat and correctly so, because both legs are the one attempt this figure
-    is published for — short (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
-    (:data:`USAGE_CAVEAT_ABSORBED`). The published
-    ``raw["usage_caveats"]`` is this plus :data:`USAGE_CAVEAT_DEAD_LEG`, which
-    only :meth:`CodexCliHarness._result` can add because only it knows a
-    retry abandoned a thread (review round 11).
+    does not — short (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
+    (:data:`USAGE_CAVEAT_ABSORBED`).
+
+    The attempt, not the leg, is the granularity that makes the empty case
+    true. Measured 2026-09-12: a dead resume leg that spent 4242/77 turned
+    the returning leg's delta from 3959/5 into 8201/82, published with no
+    caveat and correctly so, because both legs are the one attempt this
+    figure is published for
+    (``test_a_dead_resume_leg_leaves_the_attempt_faithful``).
+
+    The published ``raw["usage_caveats"]`` is this plus
+    :data:`USAGE_CAVEAT_DEAD_LEG`, which only
+    :meth:`CodexCliHarness._result` can add because only it knows a retry
+    abandoned a thread (review round 11).
     """
 
     raw: dict[str, Any] | None
@@ -601,7 +606,10 @@ class _Usage:
     # (this leg was never measured, whatever the baseline was repaired to), so
     # the next leg cannot prove a stream delta taken against it is its own.
     baseline_gap: bool = False
-    # Why ``delta`` is not a faithful measure of this leg (empty when it is).
+    # Why ``delta`` is not a faithful measure of this ATTEMPT (empty when it
+    # is). The attempt, not the leg, is the granularity — see the class
+    # docstring above; pinned by
+    # test_a_dead_resume_leg_leaves_the_attempt_faithful.
     caveats: tuple[str, ...] = ()
     # Codex's rollout records the thread past everything this harness has
     # billed, with no RECORDED gap in the baseline: THIS ATTEMPT did work even
