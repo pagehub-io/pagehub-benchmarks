@@ -65,11 +65,13 @@ _PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
 #       so its spend enters no leg's delta anywhere in the run.
 #   "missing"              SHORTENS the run total. The turn was spent and
 #       nothing measured it. A later leg's delta recovers it only when codex's
-#       rollout did NOT re-anchor the baseline in between — and the published
-#       record cannot say which happened. Measured: two runs whose attempt
-#       records are byte-identical (["missing"], then ["absorbed_missing_leg"])
-#       totalled 3,959 and 7,158 input tokens against a true spend of 7,158.
-#       So the figure is a lower bound: sometimes exact, never provably so.
+#       rollout did NOT re-anchor the baseline in between. Measured: two runs
+#       whose published CAVEATS and usage_faithful are identical (["missing"],
+#       then ["absorbed_missing_leg"]) totalled 3,959 and 7,158 input tokens
+#       against a true spend of 7,158 — the records differ in precisely the
+#       token figures, and nothing published alongside them says which of the
+#       two happened. So the figure is a lower bound: sometimes exact, never
+#       provably so.
 #   "absorbed_missing_leg" does NOT shorten it. It says this attempt's delta
 #       may span an EARLIER unmeasured leg of the same run: spend moves
 #       between attempt rows and the total is unaffected. It also never
@@ -329,7 +331,8 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         caveats_any = sorted(
             {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
         )
-        rec["usage_caveats_any"] = caveats_any
+        # Only the lower-bound subset reaches the templates on purpose: the
+        # unfiltered set is exactly what must NOT drive aggregate marking.
         rec["totals_lower_bound_caveats"] = [
             c for c in caveats_any if c in RUN_TOTAL_LOWER_BOUND_CAVEATS
         ]

@@ -428,6 +428,10 @@ def test_index_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
     assert index.count("&#8805;$12.3456") == 2  # all-runs row + cheapest-pass card
     assert index.count("&#9888;") >= 1
     assert "lower bound" in index
+    # The token columns take the prefix but no triangle, so the number itself
+    # has to explain it — the cost cell's tooltip is columns away (round 13).
+    assert '<span title="This run\'s totals are a lower bound' in index
+    assert "&#8805;1,234,567</span>" in index
 
 
 def test_benchmark_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):

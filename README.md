@@ -318,6 +318,16 @@ append-only, one per run:
 }
 ```
 
+The run-level totals (`cost_usd`, `total_*_tokens`) are a plain sum and carry
+no marker of their own. Whether they are a **measurement or a lower bound** is
+derived from the attempts: a run is short if any `per_attempt[].raw.usage_caveats`
+contains `"missing"` or `"dead_leg_unmeasured"` (spend that left the record),
+and whole if the only caveat is `"absorbed_missing_leg"` (spend that merely
+moved between attempt rows). That is the rule the site renders as `≥`
+(`RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`); a consumer reading
+the JSON directly has to apply it, and reading `cost_usd` without it will
+sometimes understate a run.
+
 ## The first benchmark — `eval-chess-backend`
 
 Builds [`pagehub-io/eval-chess-backend`](https://github.com/pagehub-io/eval-chess-backend)
