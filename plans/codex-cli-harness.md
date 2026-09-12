@@ -352,8 +352,8 @@ rule, as implemented in `_usage_from`:
   three jobs and no others — cumulative baseline repair, dead-leg evidence,
   rate limits: `rate_limits`; codex's post-turn
   **`thread_token_usage`**, the *cumulative* that re-anchors the baseline the
-  next delta is taken against; and the evidence that a leg whose stream
-  reported nothing did work after all (see the dead-leg rule below). Both of
+  next delta is taken against; and the evidence that **this attempt** did work
+  even though a leg's stream reported nothing (see the dead-leg rule below). Both of
   the latter read the last `token_usage_record` after the last `turn_context`
   line — the leg that just ran is the last turn appended, and a turn with no
   record yet reads as none, which is what keeps a dead leg dead. A cumulative
@@ -374,7 +374,7 @@ rule, as implemented in `_usage_from`:
   advanced past the total already recorded**, so the baseline never walks
   backwards and bills a turn twice; there is no reconstruction from a turn
   figure (review rounds 7 and 9). `raw["usage"]` is the verbatim stream object
-  (cumulative); `raw["usage_delta"]` is this leg's share. A leg whose usage the
+  (cumulative); `raw["usage_delta"]` is this attempt's share. A leg whose usage the
   stream did not report records a zero-filled delta plus `raw["usage_missing"]`
   — unknown, not free — and leaves the baseline flagged as not-known-whole,
   whatever it was re-anchored to, because *this* turn was never measured.
@@ -493,7 +493,7 @@ from the dead legs] + "dead_turn_errors_total", "dead_turn_thread_ids":
 "rollout_path": str|None — relative to `$CODEX_HOME`, or the basename when it
 lies outside it, "unparsed_lines": [first 20] + "unparsed_total",
 "stderr_tail": str (last 2000 chars, ANSI-stripped), "usage_delta": this
-leg's share, "usage_missing": bool, "usage_faithful": bool, "usage_caveats":
+attempt's share, "usage_missing": bool, "usage_faithful": bool, "usage_caveats":
 [str], "reasoning_output_tokens", "rate_limits": {plan_type,
 primary/secondary: {used_percent, window_minutes, resets_at}} — trimmed, no
 credit balances}`.

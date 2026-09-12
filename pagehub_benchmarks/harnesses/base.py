@@ -21,7 +21,11 @@ from typing import Any
 
 @dataclass
 class AttemptResult:
-    """Outcome of one harness invocation (one attempt).
+    """Outcome of one harness call — one attempt.
+
+    One attempt is not necessarily one CLI invocation: the codex-cli adapter
+    retries a dead turn, so several ``codex exec`` legs can be spent on the
+    one :class:`AttemptResult` recorded here.
 
     ``input_tokens`` / ``output_tokens`` are the non-cached counts. Prompt-cache
     traffic is split into ``cache_creation_tokens`` (cache writes) and

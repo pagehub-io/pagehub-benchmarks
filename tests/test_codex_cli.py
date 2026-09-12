@@ -1033,7 +1033,7 @@ def test_read_rollout_ignores_the_thread_total_of_an_earlier_turn():
     """A resumed turn that 401s gets a turn_context line appended to the
     rollout but no usage record. The watermark must read as NONE — not as the
     previous turn's cumulative — or an earlier turn's record would look like
-    evidence that this leg did work, and a dead resume would be captured
+    evidence that THIS ATTEMPT did work, and a dead resume would be captured
     instead of retried."""
     import tempfile as _tf
 
@@ -1243,12 +1243,12 @@ def test_interrupt_during_preflight_removes_home_and_reraises(monkeypatch, tmp_p
 
 
 
-def test_turn_with_usage_but_no_items_is_not_dead(monkeypatch, tmp_path, isolated_env):
+def test_turn_with_rollout_evidence_but_no_items_is_not_dead(monkeypatch, tmp_path, isolated_env):
     """M21: rule 2 is 'no non-error item AND no usage'. A turn that spent
     tokens (e.g. reasoning only) and then failed is captured, never retried.
 
     The stream shows neither an item nor a usage object, so the only evidence
-    the leg worked is codex's rollout — a turn recorded beyond everything this
+    the ATTEMPT worked is codex's rollout — a turn recorded beyond everything this
     harness has billed. The implemented gate is a baseline with no RECORDED
     gap, which the fresh thread here satisfies in the strongest way there is
     (nothing billed yet, so gapless *and* whole); against a baseline with a
@@ -1778,7 +1778,7 @@ def test_reaping_never_fails_a_run(monkeypatch, tmp_path, isolated_env):
 # the REAL rollout lines and the REAL recorded streams.
 
 
-def test_persistently_unreadable_rollout_marks_the_leg_that_absorbs_it(
+def test_persistently_unreadable_rollout_marks_the_attempt_that_absorbs_it(
     monkeypatch, tmp_path, isolated_env
 ):
     """Round 7 fixed the case where the rollout becomes readable on the NEXT
@@ -1879,7 +1879,7 @@ def test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it(
 
 
 
-def test_every_ordinary_leg_is_recorded_as_faithful(monkeypatch, tmp_path, isolated_env):
+def test_every_ordinary_attempt_is_recorded_as_faithful(monkeypatch, tmp_path, isolated_env):
     """The marker is only worth reading if the ordinary paths clear it: every
     leg the STREAM measured — a start and a resume — is faithful. The failed
     leg beside them is marked even though its own turn is readable in the
@@ -2293,9 +2293,10 @@ def test_a_thread_total_with_no_turn_figure_beside_it_is_not_dead_leg_evidence(
     Replacing that condition with ``True`` left all 255 tests passing — the
     suite as it stood before this test.
 
-    This is ``test_turn_with_usage_but_no_items_is_not_dead`` (M21) with one
-    thing changed: the staged rollout's records carry a cumulative but no turn
-    figure. M21's leg is CAPTURED because the rollout is evidence it worked;
+    This is ``test_turn_with_rollout_evidence_but_no_items_is_not_dead`` (M21)
+    with one thing changed: the staged rollout's records carry a cumulative but
+    no turn figure. M21's leg is CAPTURED because the rollout is evidence the
+    ATTEMPT worked;
     with the pairing broken the rollout says nothing, so the identical leg is
     dead and must be RETRIED. Un-guarded, the unpaired cumulative would be
     read as evidence and the leg captured — the mutant this kills."""

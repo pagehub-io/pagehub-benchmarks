@@ -212,8 +212,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   evidence, rate limits: the cumulative `thread_token_usage`, which
   re-anchors the baseline the *next* delta is taken against (a cumulative says
   how far the thread has got, never which turn ran, so adopting one can only
-  move the baseline toward the truth); the evidence that an attempt whose
-  stream reported nothing did work after all, which is what separates an
+  move the baseline toward the truth); the evidence that an attempt did work
+  after all when a leg's stream reported nothing, which is what separates an
   attempt to record from a dead turn to retry; and `raw.rate_limits` (the
   5-hour and weekly `used_percent`), the only place codex reports the
   subscription budget.

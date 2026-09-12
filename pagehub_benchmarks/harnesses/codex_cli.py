@@ -90,7 +90,8 @@ mapped onto token counts, calibrated against recorded fixtures
 (``tests/fixtures/codex_exec_ok.jsonl``, ``codex_exec_resume_ok.jsonl``,
 ``codex_rollout_ok.jsonl``), not against docs. ``turn.completed.usage`` is the
 **thread total** (verified: the resume fixture reports start + resume), so
-each leg records the delta against the previous total; ``input_tokens``
+each *returning* leg records the delta against the previous total (a retried
+dead leg records none, so that delta covers every leg of the attempt); ``input_tokens``
 includes the cached and cache-write slices (partitioned out for pricing);
 ``output_tokens`` includes reasoning. **A leg's own figure comes from that
 stream delta and from nothing else** (review round 9): a failed turn carries
@@ -99,8 +100,9 @@ no usage on the stream, and the leg then records zeros marked
 cannot say which turn a record belongs to. The rollout has three jobs and no
 others: cumulative baseline repair, dead-leg evidence, rate limits — codex's
 post-turn ``thread_token_usage``, a CUMULATIVE that repairs the baseline the
-next delta is taken against; evidence that a leg the stream reported nothing
-for did work after all (otherwise it is dead and retried); and ``rate_limits``
+next delta is taken against; evidence that the ATTEMPT did work after all when
+a leg's stream reported nothing (otherwise that leg is dead and retried); and
+``rate_limits``
 (5-hour and weekly ``used_percent``), the only place codex reports
 subscription budget. The honest invariant is a *marking*
 one: ``raw["usage_faithful"]`` is false on any attempt whose ``usage_delta``
@@ -560,15 +562,20 @@ class _Usage:
     it on the stream's ``turn.completed``, or ``None`` when the stream
     reported none. There is no other source: round 9 deleted the rollout
     branch, so the only two values this field can take are the stream's
-    verbatim object and ``None``. ``delta`` is this leg's share after
-    partitioning —
-    the numbers that go into the :class:`AttemptResult`. ``thread_total`` is
+    verbatim object and ``None``. ``delta`` is the ATTEMPT's share after
+    partitioning — the numbers that go into the :class:`AttemptResult`. Not
+    one leg's: a dead RESUME leg records nothing of its own, so the returning
+    leg's delta covers it too. ``thread_total`` is
     the cumulative thread usage after this leg, remembered on the harness so
     the next leg's delta can be taken.
 
     ``caveats`` is the honesty record for what this LEG can see: empty when
-    ``delta`` measures THIS leg and nothing else, otherwise the reasons it
-    does not — short (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
+    ``delta`` measures THIS ATTEMPT and nothing else, otherwise the reasons it
+    does not. The attempt, not the leg, is the granularity that makes the
+    empty case true — measured 2026-09-12: a dead resume leg that spent
+    4242/77 turned the returning leg's delta from 3959/5 into 8201/82, with no
+    caveat and correctly so, because both legs are the one attempt this figure
+    is published for — short (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
     (:data:`USAGE_CAVEAT_ABSORBED`). The published
     ``raw["usage_caveats"]`` is this plus :data:`USAGE_CAVEAT_DEAD_LEG`, which
     only :meth:`CodexCliHarness._result` can add because only it knows a
@@ -670,8 +677,9 @@ def _read_rollout(
     **Not a per-turn usage source** (review round 9). The rollout has three
     jobs and no others: cumulative baseline repair, dead-leg evidence, rate
     limits — how far along the thread's CUMULATIVE usage is (which repairs the
-    harness's baseline, and can never say which turn ran), whether a leg whose
-    stream reported nothing did work after all, and the ``rate_limits`` this
+    harness's baseline, and can never say which turn ran), whether the ATTEMPT
+    did work after all when a leg's stream reported nothing, and the
+    ``rate_limits`` this
     function also returns. Which turn a record belongs to it cannot answer:
     both attempts to infer that (the last turn id read, then this cumulative
     having advanced) prove staleness only, and were read backwards as proof of
@@ -680,8 +688,8 @@ def _read_rollout(
     "The last turn in the file" = the lines after the last ``turn_context``
     (the leg that just ran is the last turn appended). A leg that died before
     codex wrote its ``turn_context`` leaves the file ending on the PREVIOUS
-    turn's record, and that turn's cumulative must not surface as this leg's
-    evidence of work (round 8, N-15) — so the reset is what keeps a dead leg
+    turn's record, and that turn's cumulative must not surface as evidence that
+    THIS ATTEMPT did work (round 8, N-15) — so the reset is what keeps a dead leg
     dead. Best-effort: any read/parse problem ⇒ ``(None, None)``. The on-disk
     format is codex-internal and may change.
     """
@@ -858,8 +866,9 @@ def _usage_from(
     inference is deleted, not refined.
 
     **The invariant this function exists to keep** (review round 8, I-1;
-    unchanged by round 9's deletion): ``delta`` either measures THIS leg and
-    nothing else, or ``caveats`` says why not — short
+    unchanged by round 9's deletion): ``delta`` either measures THIS ATTEMPT
+    and nothing else, or ``caveats`` — the ones set here plus the one
+    :meth:`CodexCliHarness._result` adds — says why not — short
     (:data:`USAGE_CAVEAT_MISSING`: zeros meaning "unknown", never "free") or
     not provably its own (:data:`USAGE_CAVEAT_ABSORBED`). Over-marking is the
     honest direction: a delta taken against a repaired baseline is often
@@ -1029,8 +1038,8 @@ class CodexCliHarness(Harness):
         # attempt 1's raw.
         self._auth_mode: str | None = None
         # Thread-cumulative usage after the last leg that reported any: the
-        # stream's turn.completed.usage is the thread total, so each leg's
-        # own share is the delta against this. Reset per start_build (new
+        # stream's turn.completed.usage is the thread total, so an attempt's
+        # own share is its returning leg's delta against this. Reset per start_build (new
         # thread).
         self._thread_total: dict[str, int] | None = None
         # True once a leg's own share could not be measured: _thread_total is
@@ -1135,7 +1144,8 @@ class CodexCliHarness(Harness):
         is_start: bool,
         expected_thread_id: str | None = None,
     ) -> AttemptResult:
-        """Run one leg, retrying dead turns, and classify the outcome.
+        """Run legs until one returns (dead turns are retried), and classify
+        the outcome as one attempt.
 
         ``expected_thread_id`` (resume legs): the thread the stream must report.
         A different id would mean codex resumed or forked something else, and
@@ -1223,7 +1233,7 @@ class CodexCliHarness(Harness):
                     continue
                 raise HarnessError(
                     f"codex ({leg_name}) turn produced no model activity on {leg_no + 1} "
-                    f"attempt(s) (exit {leg.returncode}, thread {thread_id}): {error_text}"
+                    f"leg(s) (exit {leg.returncode}, thread {thread_id}): {error_text}"
                 )
             print(
                 f"(codex-cli: {leg_name} turn failed after model activity — captured as an "
@@ -1300,7 +1310,8 @@ class CodexCliHarness(Harness):
             "exit_code": leg.returncode,
             "usage": usage.raw,
             "usage_source": usage.source,
-            # This leg's own share (the stream reports the thread total).
+            # This ATTEMPT's own share (the stream reports the thread
+            # total, and a retried dead resume leg is inside this figure).
             "usage_delta": usage.delta,
             # True when this leg spent tokens nobody could read: the zeros
             # above mean "unknown", not "free". Never true on a completed
