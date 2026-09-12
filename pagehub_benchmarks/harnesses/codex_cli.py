@@ -792,12 +792,12 @@ def _advances(thread_total: dict[str, int] | None, baseline: dict[str, int]) -> 
     turn, a winning attempt recording a turn that was not its own — all marked
     faithful) that inference is gone.
 
-    So True is used for two of the rollout's three jobs and nothing else
-    (the rate-limit job never consults this function): to move the baseline forward
-    (a cumulative names no turn, so adopting one cannot mis-attribute — at
-    worst it is short), and, against a baseline with no RECORDED gap, as
-    evidence that the ATTEMPT being classified did work even though this leg's
-    stream said nothing. Never to attribute tokens.
+    So True is used for two of the rollout's three jobs and nothing else: to
+    move the baseline forward (a cumulative names no turn, so adopting one
+    cannot mis-attribute — at worst it is short), and, against a baseline with
+    no RECORDED gap, as evidence that the ATTEMPT being classified did work
+    even though this leg's stream said nothing. Never to attribute tokens.
+    (The rate-limit job never consults this function.)
 
     Read that second use precisely (review round 10). ``not baseline_has_gap``
     means "no *recorded* gap", not "whole": a dead-classified leg never
@@ -1215,10 +1215,11 @@ class CodexCliHarness(Harness):
             # never happened, so retry it rather than capture it as the
             # attempt's result. ("No recorded gap", not "whole" — see
             # _advances, which spells out why the attempt, not the leg, is the
-            # granularity that makes this sound: review round 10.) A rollout record that merely sits beyond a SHORT
-            # baseline proves nothing — reading it as "this leg spent tokens"
-            # captured genuinely dead legs and corrupted attempts-to-green
-            # (review round 9, C-1).
+            # granularity that makes this sound: review round 10.)
+            # A rollout record that merely sits beyond a SHORT baseline proves
+            # nothing — reading it as "this leg spent tokens" captured
+            # genuinely dead legs and corrupted attempts-to-green (review
+            # round 9, C-1).
             dead = (
                 usage.source == "none"
                 and not _has_model_activity(events)

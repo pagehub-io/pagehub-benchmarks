@@ -219,8 +219,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   subscription budget.
   **`raw.usage_faithful` is the field to read before trusting an attempt's
   token counts.** It is `false` when `raw.usage_delta` is not a measure of
-  that attempt alone, and `raw.usage_caveats` says which of the three reasons
-  applies: `"missing"` — the turn was spent but nothing measured it, so the
+  that attempt alone, and `raw.usage_caveats` lists which of the three reasons
+  apply — more than one can apply to the same attempt: `"missing"` — the turn was spent but nothing measured it, so the
   attempt records zeros; `"absorbed_missing_leg"` — this attempt's delta
   was taken against a baseline that is not known to be whole, because an
   earlier turn went unmeasured, so it may span that turn as well as this one;
@@ -355,7 +355,11 @@ column. Both models accept `xhigh` — add a matching row on either side (or use
 
 Regenerate it locally with `make site` (or `python -m tools.build_site`, or
 `python -m pagehub_benchmarks site`). A real `run` regenerates it automatically
-afterward unless you pass `--no-build-site`. `docs/` is committed and published
+afterward unless you pass `--no-build-site`. A branch that changes
+`templates/` or `static/` without re-running `make site` leaves the committed
+`docs/` stale until merge — deliberately, to keep template diffs reviewable;
+`pages.yml` rebuilds the whole site from source on push to `main`, so what
+ships is never the stale copy. `docs/` is committed and published
 to **GitHub Pages** by `.github/workflows/pages.yml` on every push to `main`
 (set repo *Settings → Pages → Source* to "GitHub Actions"). Generation is
 static — Jinja2 templates in `templates/` + `static/style.css` + a few lines of
