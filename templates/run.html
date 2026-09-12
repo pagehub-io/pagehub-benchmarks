@@ -83,6 +83,7 @@
 {% endif %}
 
 <h2>Per-attempt breakdown</h2>
+<p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (its usage was unreadable) or long (it absorbed an earlier unreadable attempt). Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
 <table>
 <thead><tr>
   <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
@@ -91,7 +92,7 @@
 <tbody>
 {% for a in r.per_attempt %}
 <tr>
-  <td class="num">{{ a.attempt }}</td>
+  <td class="num">{{ a.attempt }}{% if a.usage_caveats %} <span class="warn" title="Token counts for this attempt are not a measure of this attempt alone ({{ a.usage_caveats|join(', ') }}) — see raw.usage_caveats below.">&#9888;</span>{% endif %}</td>
   <td class="num">{{ '{:,}'.format(a.input_tokens) }}</td>
   <td class="num">{{ '{:,}'.format(a.output_tokens) }}</td>
   <td class="num">{{ '%.1f' % a.wall_time_seconds }}</td>

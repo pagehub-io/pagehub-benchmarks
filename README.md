@@ -216,12 +216,20 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   (`raw.usage_source: "stream+rollout_turn"`). That recovery is best-effort
   and can fail — the rollout may stay unreadable, be malformed, or, when
   codex died before writing this turn's `turn_context`, still end on the
-  *previous* turn's record, which is refused rather than billed twice and
-  adds `"rollout_turn_rejected"`. When it fails the tokens are still counted
-  once across the run, just on the wrong attempt — and that attempt says so.
+  *previous* turn's record. A record for a turn already billed is refused
+  (recognised by its `turn_id`, and by codex's own post-turn thread total not
+  having moved past the last one recorded) and adds
+  `"rollout_turn_rejected"`, which also appears alongside `"missing"` when
+  the refused record was the leg's only possible source.
   An over-reported attempt is no more honest than a zero-reported one, so
-  both carry the flag; an unreadable *final* attempt has no successor to
-  absorb it, and its tokens are simply absent from the run totals.
+  both carry the flag. **Run totals:** when recovery fails the unreadable
+  turn's tokens are still counted once across the run, on the wrong attempt;
+  when it *succeeds* they are counted zero times, because the attempt that
+  spent them records zeros and its successor now records only its own share.
+  Either way no attempt is silently wrong — but a run containing an
+  unfaithful attempt should be read as an estimate, not a bill. An
+  unreadable *final* attempt likewise has no successor, and its tokens are
+  simply absent from the totals.
   `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
   a Plus plan (it is printed for attempts that return a result; a dead,

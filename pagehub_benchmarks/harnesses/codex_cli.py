@@ -211,6 +211,17 @@ def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
     return env
 
 
+_WARNED: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    """Print ``message`` the first time it is seen in this process — for
+    notices about a setting that is re-read on every leg."""
+    if message not in _WARNED:
+        _WARNED.add(message)
+        print(message)
+
+
 def _int_env(name: str, default: int) -> int:
     """``name`` as an int, else ``default`` — saying so on the console when the
     value was present but unparsable, so a typo is not silently ignored."""
@@ -235,7 +246,8 @@ def _build_timeout() -> int:
     """
     seconds = _int_env("CODEX_BUILD_TIMEOUT_SECONDS", DEFAULT_BUILD_TIMEOUT_SECONDS)
     if seconds <= 0:
-        print(
+        # Called once per leg; say it once per value, not once per attempt.
+        _warn_once(
             f"(codex-cli: ignoring CODEX_BUILD_TIMEOUT_SECONDS={seconds} — not a timeout, and "
             f"not 'no limit' either; using {DEFAULT_BUILD_TIMEOUT_SECONDS})"
         )
@@ -321,13 +333,17 @@ def _reap_throwaway_homes(base: Path) -> int:
                 continue
         except OSError:
             continue
-        # No ignore_errors: with it on, rmtree could never raise and the
-        # suppress below was dead code. The suppress IS the best-effort guard
-        # (a root-owned leftover, a read-only parent, an NFS mount gone away).
+        # No ignore_errors: with it on, rmtree could never raise and this
+        # suppress was dead code. The suppress IS the best-effort guard (a
+        # root-owned leftover, a read-only parent, an NFS mount gone away).
+        # exists() is INSIDE it: on the pinned Python it re-raises anything
+        # outside ENOENT/ENOTDIR/EBADF/ELOOP (verified on 3.11 — EACCES
+        # raises; only 3.12+ swallows every OSError), and this runs before any
+        # codex process, so an error here would fail the whole run.
         with contextlib.suppress(OSError):
             shutil.rmtree(path)
-        if not path.exists():  # Path.exists() answers False on OSError
-            removed += 1
+            if not path.exists():
+                removed += 1
     return removed
 
 
@@ -724,6 +740,27 @@ def _partitionable(usage: dict[str, int]) -> bool:
     ) >= 0
 
 
+def _advances(thread_total: dict[str, int] | None, baseline: dict[str, int]) -> bool:
+    """``thread_total`` — a rollout record's post-turn cumulative — describes a
+    turn that ran AFTER ``baseline``: no component smaller, at least one
+    larger.
+
+    This is the staleness test that does not depend on having read the
+    rollout before. A turn id can only be compared against one the harness
+    happened to read on an earlier leg, and that memory lags whenever a leg's
+    read yields nothing (file absent, unreadable, id-less) — an intermediate
+    turn's record then looks new. Codex's own cumulative cannot lag: it is
+    monotone, and the harness's recorded total is never ahead of it (a
+    reconstructed baseline is short, never long), so "has not moved past what
+    we already recorded" means "a turn already billed".
+    """
+    if thread_total is None:
+        return False
+    return all(thread_total[k] >= baseline.get(k, 0) for k in _USAGE_KEYS) and any(
+        thread_total[k] > baseline.get(k, 0) for k in _USAGE_KEYS
+    )
+
+
 def _usage_from(
     events: list[dict[str, Any]],
     rollout_path: str | None,
@@ -782,7 +819,19 @@ def _usage_from(
     # below may drop it, because "offered one we could not trust" and "offered
     # none" are different things to record.
     rollout_offered = rollout_turn is not None
-    stale = rollout_turn_id is not None and rollout_turn_id == previous_turn_id
+    # Two independent staleness gates; either one condemns the record.
+    # The turn id catches a repeat of the exact turn last read. The watermark
+    # catches every other lag, including the one the id gate cannot see: a leg
+    # whose own read yielded no id leaves the memory pointing at an OLDER
+    # turn, so an intermediate turn's record has a different id and sails
+    # through. Codex's post-turn cumulative is checked against what the
+    # harness has already recorded, which needs no prior read at all.
+    stale_by_id = rollout_turn_id is not None and rollout_turn_id == previous_turn_id
+    rollout_thread_total = _as_usage(rollout_thread)
+    stale_by_total = rollout_thread_total is not None and not _advances(
+        rollout_thread_total, prev
+    )
+    stale = stale_by_id or stale_by_total
     if stale:
         # A previous leg's record, not this leg's. Its figures are already
         # billed. rate_limits survives: it is last-known-value by design.
@@ -836,7 +885,12 @@ def _usage_from(
             turn_id=fresh_turn_id,
         )
     turn = _as_usage(rollout_turn)
-    if turn is not None:
+    # Unpartitionable here too means "reject", not "raise": the same
+    # codex-internal inconsistency must not abort a failed leg when it is
+    # tolerated on a completed one (review round 8, I-2). The leg then falls
+    # through to the zeros-plus-caveats path below, which is honest and keeps
+    # the run alive.
+    if turn is not None and _partitionable(turn):
         non_cached, out, cache_write, cached = _partition(turn)
         # Codex's own post-turn thread total when the payload carried one;
         # only fall back to reconstruction (which inherits any earlier gap)
@@ -870,7 +924,13 @@ def _usage_from(
         rate_limits=rate_limits,
         usage_missing=True,
         baseline_gap=True,
-        caveats=(USAGE_CAVEAT_MISSING,),
+        # "Nobody could tell us" and "codex told us something we could not
+        # trust" are different failures; the record distinguishes them.
+        caveats=(
+            (USAGE_CAVEAT_MISSING, USAGE_CAVEAT_ROLLOUT_REJECTED)
+            if rollout_offered
+            else (USAGE_CAVEAT_MISSING,)
+        ),
         turn_id=fresh_turn_id,
     )
 

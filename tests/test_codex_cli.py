@@ -1633,16 +1633,20 @@ def test_dead_start_legs_record_the_threads_they_abandoned(monkeypatch, tmp_path
     assert r.raw["dead_turn_thread_ids"][0] != r.raw["thread_id"]
 
 
-def test_build_timeout_is_clamped_and_a_typo_is_announced(monkeypatch, capsys):
+def test_an_unusable_build_timeout_falls_back_to_the_default_and_says_so(monkeypatch, capsys):
     # 0 is the common "no limit" idiom. Round 7's clamp turned it into a
     # 1-second timeout that kills every leg instantly — worse than either
     # reading of the value, and silent about it (review round 8, N-2).
+    monkeypatch.setattr(codex_cli, "_WARNED", set())
     monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "0")
     assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
     assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out  # not silent
+    # ...once per value, not once per leg: _build_timeout runs on every leg.
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert capsys.readouterr().out == ""
     monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "-30")
     assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
-    capsys.readouterr()
+    assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out
     monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "60m")
     assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
     assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out  # not silent
@@ -1973,3 +1977,95 @@ def test_dead_resume_legs_do_not_duplicate_the_thread_id(monkeypatch, tmp_path, 
     assert r2.raw["dead_turn_retries"] == 1
     assert r2.raw["dead_turn_thread_ids"] == []
     assert r2.raw["thread_id"] == OK_THREAD_ID
+
+
+# --------------------------------------------------------------------------
+# Review round 8, second pass: the turn-id gate alone is a one-slot "last id I
+# happened to see", and it LAGS whenever a leg's rollout read yields no id
+# (file absent, unreadable, id-less, or itself rejected as stale). An
+# intermediate turn's record then passes the "!=" test and is billed to the
+# wrong attempt with usage_faithful true. Codex's own post-turn
+# thread_token_usage is the watermark that does not depend on a prior read.
+
+
+def test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never_read_the_rollout(
+    monkeypatch, tmp_path, isolated_env
+):
+    """C1 repro A. Leg 1 runs before its rollout is on disk, so nothing is
+    remembered; the file then appears and leg 2 — a genuinely DEAD resume —
+    reads turn 1's record. With only the id gate, turn 1's 15359 tokens are
+    billed a second time, the leg reads as ``usage_source: "rollout"``, and
+    the dead-turn retry never runs because the leg no longer looks dead."""
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
+    # The rollout lands only AFTER leg 1 has been read: leg 1 credits no id.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r1.raw["usage_source"] == "stream" and r1.input_tokens == 15359 - 12160
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_a_failed_leg_is_not_billed_the_previous_turn_when_the_gate_lagged(
+    monkeypatch, tmp_path, isolated_env
+):
+    """C1 repro B. Leg 1 reads turn 1 (id remembered). Leg 2 completes while
+    the rollout is unreadable, so the remembered id stays at turn 1's. Leg 3
+    then fails and finds the file ending on TURN 2's record: a different id,
+    so the id gate passes it — and leg 2's 16119 tokens are recorded a second
+    time as leg 3's own, marked faithful. Codex's post-turn thread total has
+    not moved past the one already recorded, which is what gives it away."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
+    rollout_file = next((tmp_path / "codex-home" / "sessions").rglob("rollout-*.jsonl"))
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        if len(legs.calls) == 1:
+            rollout_file.unlink()                      # unreadable for leg 2
+        elif len(legs.calls) == 2:
+            _write_rollout(tmp_path, _rollout_lines())  # turns 1-2 back, for leg 3
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r2.input_tokens == 16119 - 12160  # leg 2 already billed turn 2
+    # Leg 3 must NOT be billed turn 2 again. Its own usage is genuinely
+    # unknown, so it records zeros and says both why and that a rollout
+    # figure was offered and refused.
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["missing", "rollout_turn_rejected"]
+    assert (r3.input_tokens, r3.cache_read_tokens) == (0, 0)
+
+
+def test_an_unpartitionable_rollout_does_not_kill_a_failed_leg_either(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The recovery path refuses an unpartitionable rollout figure rather than
+    raising (N-8), but the rollout-sourced FAILURE path still partitioned it
+    unguarded — so the same codex-internal inconsistency that is tolerated on
+    a completed leg aborted a paid run on a failed one. Same answer on both:
+    reject the figure, record zeros, mark it, keep the run."""
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    o = json.loads(lines[last])
+    u = o["payload"]["turn_token_usage"]
+    u["cached_input_tokens"] = u["input_tokens"] + 1  # cache slice exceeds the prompt
+    lines[last] = json.dumps(o, separators=(",", ":"))
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path,
+                                         {0: _rollout_through_turn1(), 1: lines}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")  # must not raise
+    assert r2.raw["usage_source"] == "none"
+    assert r2.raw["usage_caveats"] == ["missing", "rollout_turn_rejected"]
+    assert (r2.input_tokens, r2.output_tokens) == (0, 0)

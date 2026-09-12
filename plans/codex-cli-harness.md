@@ -355,15 +355,23 @@ rule, as implemented in `_usage_from`:
   it is malformed, or it still ends on the *previous* turn's
   `token_usage_record` because codex died before writing this turn's
   `turn_context` — a stale record that must be refused, or one turn is billed
-  to two attempts and a dead leg is captured instead of retried. In every one
+  to two attempts and a dead leg is captured instead of retried. Staleness is
+  caught two ways, because either alone leaves a hole: the record's `turn_id`
+  against the one last credited, AND codex's own post-turn
+  `thread_token_usage` against the total already recorded. The id memory
+  *lags* whenever a leg's own read yields nothing (rollout absent,
+  unreadable, id-less), so an intermediate turn's record carries an id that
+  has never been seen and passes; the cumulative cannot lag, since it is
+  monotone and the recorded total is never ahead of it. In every one
   of those the successor's stream delta still spans both turns. So rather
   than claim recovery always works, every leg whose `usage_delta` is not a
   measure of that leg alone is **marked**: `raw["usage_faithful"] = false`
   plus `raw["usage_caveats"]` drawn from a fixed vocabulary — `"missing"`
   (short: nothing readable, zeros), `"absorbed_missing_leg"` (long: it
-  carries an earlier unreadable turn), `"rollout_turn_rejected"` (a rollout
+  carries an earlier unreadable turn), and `"rollout_turn_rejected"` (a rollout
   figure existed but was stale, was not a component-wise share of the stream
-  delta, or could not be partitioned). A consumer of the results file needs
+  delta, or could not be partitioned) — never on its own, always naming why
+  one of the first two could not be avoided. A consumer of the results file needs
   only `usage_faithful` to know a figure is an estimate; it never needs to
   know how the adapter works. An over-reported attempt is exactly as
   unfaithful as a zero-reported one, so both carry it. A rejected rollout
@@ -634,7 +642,11 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     previous turn's. The marker clears on the next leg, since the stream's
     thread total repairs the baseline. A dead resume leg that appended no
     `turn_context` is retried rather than handed the previous turn's tokens
-    (round 8, N-15 — reasoned by the reviewer, executed here). Ordinary
+    (round 8, N-15 — reasoned by the reviewer, executed here), including when
+    the start leg never read the rollout at all, and a failed leg is not
+    billed a turn its predecessor already recorded. An unpartitionable
+    rollout figure is refused on the failure path too, rather than aborting
+    a paid run. Ordinary
     stream- and rollout-sourced legs, and a final unreadable leg with no
     successor, are pinned too. Tests that care which turn a leg reads stage
     the rollout the way codex fills it, one turn at a time.

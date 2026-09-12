@@ -296,3 +296,46 @@ def test_build_removes_orphans_from_prior_run(tmp_path: Path):
     assert (docs / "index.html").is_file()
     assert (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").is_file()
     assert (docs / "results" / "eval-chess-backend" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").is_file()
+
+
+def test_build_flags_an_attempt_whose_tokens_are_not_its_own(tmp_path: Path):
+    """The codex-cli harness marks any attempt whose token figures are not a
+    measure of that attempt alone. The raw JSON is collapsed by default, so a
+    reader of the per-attempt table would otherwise see an over- or
+    under-reported figure with nothing saying so. Attempts without the marker
+    — and legacy records, which have no ``raw`` at all — must stay clean."""
+    run = dict(SAMPLE_RUN)
+    run["per_attempt"] = [
+        dict(run["per_attempt"][0], raw={"usage_faithful": True, "usage_caveats": []}),
+        dict(
+            run["per_attempt"][1],
+            raw={"usage_faithful": False, "usage_caveats": ["absorbed_missing_leg"]},
+        ),
+    ]
+    results = tmp_path / "results" / "eval-chess-frontend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(run)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    # One marker in the table (plus the one in the explanatory line above it).
+    assert run_html.count("absorbed_missing_leg") >= 1
+    assert run_html.count("&#9888;") == 2
+    assert "not a measure of this attempt alone" in run_html
+
+
+def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
+    """A run whose attempts are all faithful, and a legacy run with no ``raw``
+    at all, must carry no warning glyph in the table — a false warning on
+    every historical record would make the marker worthless."""
+    results = tmp_path / "results" / "eval-chess-frontend"
+    results.mkdir(parents=True)
+    (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
+        json.dumps(SAMPLE_RUN)
+    )
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs)
+    run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    assert run_html.count("&#9888;") == 1  # only the explanatory line
