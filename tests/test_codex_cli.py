@@ -1834,12 +1834,16 @@ def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(
     monkeypatch, tmp_path, isolated_env
 ):
     """``_read_rollout`` takes the last ``token_usage_record`` after the last
-    ``turn_context``. A resume leg that dies BEFORE codex appends a
-    ``turn_context`` leaves the file ending on the PREVIOUS turn's record, so
-    the dead leg is handed turn 1's tokens, reads as ``usage_source:
-    "rollout"``, and is captured as an attempt failure instead of being
-    retried — billing turn 1 to two attempts. Round 8 reasoned this (N-15);
-    this executes it. The record's ``turn_id`` is what tells them apart."""
+    ``turn_context``, and the reset on ``turn_context`` is what keeps a dead
+    leg dead. WITHOUT it, a resume leg that dies BEFORE codex appends a
+    ``turn_context`` would leave the file ending on the PREVIOUS turn's
+    record, and the dead leg WOULD HAVE BEEN handed turn 1's tokens, read as
+    ``usage_source: "rollout"`` and captured as an attempt failure instead of
+    retried — billing turn 1 to two attempts. Round 8 reasoned that (N-15);
+    this executes it. Both halves of the counterfactual are now historical:
+    round 9 deleted rollout-sourced usage entirely, so ``usage_source`` can
+    only be ``"stream"`` or ``"none"``. The reset still earns its keep — it is
+    what stops the stale record standing as dead-leg EVIDENCE."""
     _write_rollout(tmp_path, _rollout_through_turn1())
     dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
     legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
@@ -2211,3 +2215,91 @@ def test_a_rollout_cumulative_that_is_not_comparable_is_refused(
     assert r3.raw["usage_delta"] == {k: leg3_total[k] - leg1_total[k] for k in leg1_total}
     assert (r3.cache_creation_tokens, r3.input_tokens) == (100, 17119 - 12960 - 100)
     assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+# --------------------------------------------------------------------------
+# Review round 10, N-3/N-4: two guards that survived as mutants — relaxing
+# either left all 255 tests passing. Same shape as round 9's N-1/N-2.
+
+
+def _drop_usage_key(stream: str, key: str) -> str:
+    """The real success envelope with one key deleted from ``turn.completed``'s
+    usage object — a renamed/dropped field, as a CLI format change would give."""
+    out, dropped = [], False
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "turn.completed":
+            del obj["usage"][key]
+            dropped = True
+        out.append(json.dumps(obj, separators=(",", ":")))
+    assert dropped, "fixture has no turn.completed"
+    return "\n".join(out) + "\n"
+
+
+def test_a_completed_turn_whose_usage_lost_output_tokens_aborts_the_run(
+    monkeypatch, tmp_path, isolated_env
+):
+    """N-3. ``_as_usage``'s presence check on ``input_tokens`` /
+    ``output_tokens`` IS the calibration tripwire: it is what turns a renamed
+    or dropped field into the never-a-zero-token-success ``HarnessError``
+    rather than a silently recorded zero. Relaxing it to
+    ``if not isinstance(obj, dict)`` left the whole suite green, because
+    ``obj.get(key) or 0`` then normalises the missing field to 0 and a real
+    paid turn records as a free success.
+
+    Driven end to end through ``start_build`` on the REAL success envelope
+    with the key deleted, so it pins the abort and not merely the helper."""
+    assert codex_cli._as_usage({"input_tokens": 1}) is None
+    stream = _drop_usage_key(OK_START, "output_tokens")
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="A success is never recorded"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    # No retry: a miscalibrated parser is not a transport blip.
+    assert len(legs.calls) == 1
+
+
+def _unpair_turn_token_usage(lines: list[str]) -> list[str]:
+    """Every ``token_usage_record`` with its ``turn_token_usage`` removed and
+    its ``thread_token_usage`` left in place — a record "shaped some other
+    way", which is exactly what the pairing guard exists to ignore."""
+    out, seen = [], 0
+    for line in lines:
+        obj = json.loads(line)
+        if obj.get("type") == "token_usage_record":
+            assert obj["payload"].pop("turn_token_usage", None) is not None
+            assert isinstance(obj["payload"].get("thread_token_usage"), dict)
+            seen += 1
+        out.append(json.dumps(obj, separators=(",", ":")))
+    assert seen, "no token_usage_record in the staged rollout"
+    return out
+
+
+def test_a_thread_total_with_no_turn_figure_beside_it_is_not_dead_leg_evidence(
+    monkeypatch, tmp_path, isolated_env
+):
+    """N-4. ``_read_rollout`` only adopts a ``thread_token_usage`` that is
+    PAIRED with a ``turn_token_usage`` — the guard the comment justifies as
+    "so a record shaped some other way is ignored rather than guessed at".
+    Replacing that condition with ``True`` left all 255 tests passing.
+
+    This is ``test_turn_with_usage_but_no_items_is_not_dead`` (M21) with one
+    thing changed: the staged rollout's records carry a cumulative but no turn
+    figure. M21's leg is CAPTURED because the rollout is evidence it worked;
+    with the pairing broken the rollout says nothing, so the identical leg is
+    dead and must be RETRIED. Un-guarded, the unpaired cumulative would be
+    read as evidence and the leg captured — the mutant this kills."""
+    _write_rollout(tmp_path, _unpair_turn_token_usage(_rollout_through_turn1()))
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC, identical to M21's: the real success envelope minus its
+    # agent_message item, with turn.completed swapped for the real turn.failed.
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln and '"item.' not in ln]
+        + [failed_line]
+    ) + "\n"
+    legs = _Legs([(stream, "", 1)] * (1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES))
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    with pytest.raises(HarnessError, match="no model activity"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
