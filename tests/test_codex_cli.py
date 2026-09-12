@@ -996,7 +996,7 @@ def test_read_rollout_ignores_usage_from_earlier_turns():
     lines = _rollout_lines() + [_last_turn_context_line()]  # SYNTHETIC tail: the dead turn's context line
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    turn, rate_limits = codex_cli._read_rollout(fh.name)
+    turn, _thread, rate_limits = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
     assert turn is None
     assert rate_limits is not None and rate_limits["plan_type"] == "plus"
@@ -1071,7 +1071,7 @@ def test_read_rollout_takes_the_last_usage_record_of_the_turn():
     lines.insert(idx, json.dumps(earlier, separators=(",", ":")))
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    turn, _ = codex_cli._read_rollout(fh.name)
+    turn, _thread, _rl = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
     assert turn == real["payload"]["turn_token_usage"]
 
@@ -1279,12 +1279,16 @@ def test_cache_writes_on_the_rollout_path_and_the_next_delta(monkeypatch, tmp_pa
     recorded as writes — not dropped, not counted as reads — and the thread
     total advances by them, so the next leg's delta holds only its own 100.
     (Contributed by the round-6 reviewer; SYNTHETIC write counts on real lines.)"""
-    lines = []
-    for ln in _rollout_lines():
-        o = json.loads(ln)
-        if o.get("type") == "token_usage_record":
-            o["payload"]["turn_token_usage"]["cache_write_input_tokens"] = 400
-        lines.append(json.dumps(o, separators=(",", ":")))
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    o = json.loads(lines[last])
+    # Turn 2 wrote 400 to the cache. thread_token_usage moves with it: it is
+    # codex's own post-turn total and is what the harness adopts as the next
+    # leg's baseline, so leaving it at 0 would describe a thread that cannot
+    # exist (turn 1's stream reported 0 writes).
+    o["payload"]["turn_token_usage"]["cache_write_input_tokens"] = 400
+    o["payload"]["thread_token_usage"]["cache_write_input_tokens"] = 400
+    lines[last] = json.dumps(o, separators=(",", ":"))
     _write_rollout(tmp_path, lines)
     failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
     failed_resume = "\n".join(
@@ -1376,7 +1380,7 @@ def test_rate_limits_come_from_the_last_token_count(tmp_path):
     lines[last] = lines[last].replace('"used_percent":0.0', '"used_percent":7.0', 1)
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    _, rate_limits = codex_cli._read_rollout(fh.name)
+    _turn, _thread, rate_limits = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
     assert rate_limits["primary"]["used_percent"] == 7.0
 
@@ -1417,3 +1421,134 @@ def test_a_failing_rate_limit_display_never_fails_the_leg(monkeypatch, tmp_path,
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert r.raw["usage_source"] == "stream" and r.raw["rate_limits"]["plan_type"] == "plus"
+
+
+# --------------------------------------------------------------------------
+# Review round 7, I-1: a leg whose usage cannot be found must not silently
+# donate its tokens to the NEXT leg's delta. All built from the REAL rollout
+# lines and the REAL recorded streams.
+
+
+def _turn3_figures() -> tuple[dict[str, int], dict[str, int]]:
+    """(SYNTHETIC turn-3 increment, thread total after turn 3) on top of the
+    real thread total the recorded resume stream reports."""
+    total_after_turn2 = {k: v for k, v in _usage_line(OK_RESUME).items()}
+    turn3 = {"input_tokens": 1000, "cached_input_tokens": 800, "cache_write_input_tokens": 0,
+             "output_tokens": 7, "reasoning_output_tokens": 3}
+    return turn3, {k: total_after_turn2[k] + turn3[k] for k in turn3}
+
+
+def _stream_reporting(total: dict[str, int]) -> str:
+    """The real resume stream with its turn.completed usage swapped for ``total``."""
+    return _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")),
+        json.dumps(total, separators=(",", ":")),
+    )
+
+
+def _failed_resume_stream() -> str:
+    """SYNTHETIC: the real resume success envelope with turn.completed swapped
+    for the real turn.failed line — the model was active, then the turn failed."""
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    return "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+
+
+def _rollout_plus_turn3(turn: dict[str, int], thread: dict[str, int]) -> list[str]:
+    """SYNTHETIC third turn appended to the REAL rollout: the real
+    ``turn_context`` and ``token_usage_record`` lines with turn-3 figures."""
+    def _with_total(u: dict[str, int]) -> dict[str, int]:
+        return {**u, "total_tokens": u["input_tokens"] + u["output_tokens"]}
+
+    ctx = json.loads(_last_turn_context_line())
+    ctx["payload"]["turn_id"] = "turn-3"
+    record = json.loads(
+        [ln for ln in _rollout_lines() if json.loads(ln).get("type") == "token_usage_record"][-1]
+    )
+    record["payload"]["turn_id"] = "turn-3"
+    record["payload"]["usage"] = _with_total(turn)
+    record["payload"]["turn_token_usage"] = _with_total(turn)
+    record["payload"]["thread_token_usage"] = _with_total(thread)
+    return _rollout_lines() + [
+        json.dumps(ctx, separators=(",", ":")),
+        json.dumps(record, separators=(",", ":")),
+    ]
+
+
+def test_leg_with_unreadable_usage_is_marked_and_not_absorbed_by_the_next_delta(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Leg 2 fails after model activity while its rollout is unreadable (not
+    on disk yet): its usage is genuinely unknown. It must be recorded as
+    MISSING — a zero-filled delta plus ``usage_missing`` — and, crucially,
+    leg 3 must record only its OWN turn: before this fix leg 3's delta was
+    ``thread total − a stale baseline`` and quietly carried turn 2's tokens
+    (review round 7, I-1; the reviewer executed exactly this)."""
+    turn3, total_after_turn3 = _turn3_figures()
+    rollout3 = _rollout_plus_turn3(turn3, total_after_turn3)
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        # The rollout only becomes readable in time for leg 3 — leg 2's usage
+        # is lost for good, which is the case under test.
+        if len(legs.calls) == 2:
+            _write_rollout(tmp_path, rollout3)
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "fix it again")
+
+    # Leg 2: zero tokens, but marked — not indistinguishable from a free turn.
+    assert r2.raw["usage_source"] == "none"
+    assert r2.raw["usage_missing"] is True
+    assert r2.raw["usage_delta"] == {k: 0 for k in r2.raw["usage_delta"]}  # a dict, never None
+    assert (r2.input_tokens, r2.output_tokens, r2.cache_tokens) == (0, 0, 0)
+    # Leg 3: its own turn only. The stale baseline must not leak into it.
+    assert r3.raw["usage_delta"] == turn3
+    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
+    assert r3.raw["reasoning_output_tokens"] == 3
+    assert r3.raw["usage_missing"] is False
+    json.dumps(r2.raw), json.dumps(r3.raw)
+
+
+def test_rollout_sourced_thread_total_uses_codex_thread_token_usage(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The rollout payload carries codex's own ``thread_token_usage`` next to
+    ``turn_token_usage``. A rollout-sourced leg must adopt that authoritative
+    total instead of reconstructing ``previous + turn``: after a leg with
+    unreadable usage the reconstruction is short by the missing turn and every
+    later delta inherits the error (review round 7, I-1)."""
+    turn3, total_after_turn3 = _turn3_figures()
+    turn4 = {"input_tokens": 500, "cached_input_tokens": 400, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn4 = {k: total_after_turn3[k] + turn4[k] for k in turn4}
+    rollout3 = _rollout_plus_turn3(turn3, total_after_turn3)
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        if len(legs.calls) == 2:  # readable from leg 3 on; leg 2's usage is lost
+            _write_rollout(tmp_path, rollout3)
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h.continue_build(r1.session_handle, "fix it")          # leg 2: usage missing
+    r3 = h.continue_build(r1.session_handle, "fix it")     # leg 3: rollout-sourced failure
+    r4 = h.continue_build(r1.session_handle, "fix it")     # leg 4: back on the stream
+
+    assert r3.raw["usage_source"] == "rollout" and r3.raw["usage_delta"] == turn3
+    # Leg 4's delta is taken against the baseline leg 3 left behind. With the
+    # reconstruction that baseline was short by turn 2 and leg 4 absorbed it.
+    assert r4.raw["usage_source"] == "stream"
+    assert r4.raw["usage_delta"] == turn4

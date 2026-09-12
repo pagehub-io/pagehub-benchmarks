@@ -92,9 +92,13 @@ each leg records the delta against the previous total; ``input_tokens``
 includes the cached and cache-write slices (partitioned out for pricing);
 ``output_tokens`` includes reasoning. A failed turn carries no usage on the
 stream, so that path reads this turn's ``turn_token_usage`` from codex's
-rollout file. ``rate_limits`` (5-hour and weekly ``used_percent``) is read
-from the rollout on every leg and recorded — the only place codex reports
-subscription budget.
+rollout file, and adopts the ``thread_token_usage`` recorded beside it as the
+next leg's baseline. A leg whose usage no source could supply is recorded with
+a zero-filled delta and ``raw["usage_missing"]`` rather than looking free, and
+the next leg takes its share from the rollout instead of from a baseline that
+is short by the missing turn. ``rate_limits`` (5-hour and weekly
+``used_percent``) is read from the rollout on every leg and recorded — the
+only place codex reports subscription budget.
 """
 
 from __future__ import annotations
@@ -451,6 +455,13 @@ class _Usage:
     delta: dict[str, int] | None = None
     thread_total: dict[str, int] | None = None
     rate_limits: dict[str, Any] | None = None
+    # This leg spent tokens that could not be read from any source: its zeros
+    # are "unknown", not "free". Recorded as raw["usage_missing"].
+    usage_missing: bool = False
+    # ``thread_total`` is not codex's own figure (it was carried over, or
+    # reconstructed on top of a carried-over one), so the next leg cannot
+    # trust a stream delta taken against it.
+    baseline_gap: bool = False
 
 
 def _as_usage(obj: Any) -> dict[str, int] | None:
@@ -487,8 +498,11 @@ def _stream_usage(events: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, 
     return (verbatim if isinstance(verbatim, dict) else None), _as_usage(verbatim)
 
 
-def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """``(this turn's turn_token_usage, last rate_limits)`` from codex's rollout.
+def _read_rollout(
+    rollout_path: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    """``(this turn's turn_token_usage, the paired thread_token_usage, last
+    rate_limits)`` from codex's rollout.
 
     Recorded shape (``tests/fixtures/codex_rollout_ok.jsonl``): top-level
     ``{"type":"token_usage_record","payload":{"turn_id":…,"usage":…,
@@ -498,18 +512,21 @@ def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict
     "secondary":{…"window_minutes":10080…},"plan_type":…}}}``. "This turn" =
     the lines after the last ``turn_context`` (the leg that just ran is the
     last turn appended); the last ``token_usage_record`` there carries the
-    turn's running total. Best-effort: any read/parse problem ⇒ ``(None, None)``.
-    The on-disk format is codex-internal and may change — this is the
-    failure-path fallback and the rate-limit source, never the primary usage
-    source.
+    turn's running total, and the ``thread_token_usage`` of that SAME payload
+    is codex's own authoritative thread total after the turn — preferred over
+    reconstructing one (review round 7). Best-effort: any read/parse problem
+    ⇒ ``(None, None, None)``. The on-disk format is codex-internal and may
+    change — this is the failure-path fallback and the rate-limit source,
+    never the primary usage source.
     """
     if not rollout_path:
-        return None, None
+        return None, None, None
     try:
         lines = Path(rollout_path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return None, None
+        return None, None, None
     turn_usage: dict[str, Any] | None = None
+    thread_usage: dict[str, Any] | None = None
     rate_limits: dict[str, Any] | None = None
     for line in lines:
         line = line.strip()
@@ -523,11 +540,17 @@ def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict
             continue
         payload = obj.get("payload")
         if obj.get("type") == "turn_context":
-            turn_usage = None  # a new turn starts; only its own records count
+            # A new turn starts; only its own records count. The thread total
+            # is cumulative, so an earlier turn's is still the truth until a
+            # record of this turn replaces it — but it is only returned
+            # paired with a turn usage (see below).
+            turn_usage = None
         elif obj.get("type") == "token_usage_record" and isinstance(payload, dict):
             candidate = payload.get("turn_token_usage")
             if isinstance(candidate, dict):
                 turn_usage = candidate
+                thread_candidate = payload.get("thread_token_usage")
+                thread_usage = thread_candidate if isinstance(thread_candidate, dict) else None
         elif (
             obj.get("type") == "event_msg"
             and isinstance(payload, dict)
@@ -535,7 +558,8 @@ def _read_rollout(rollout_path: str | None) -> tuple[dict[str, Any] | None, dict
             and isinstance(payload.get("rate_limits"), dict)
         ):
             rate_limits = _trim_rate_limits(payload["rate_limits"])
-    return turn_usage, rate_limits
+    # thread_usage is only meaningful alongside the turn it was recorded with.
+    return turn_usage, (thread_usage if turn_usage is not None else None), rate_limits
 
 
 def _trim_rate_limits(rate_limits: dict[str, Any]) -> dict[str, Any]:
@@ -584,6 +608,7 @@ def _usage_from(
     rollout_path: str | None,
     *,
     previous_thread_total: dict[str, int] | None,
+    baseline_has_gap: bool = False,
 ) -> _Usage:
     """Map one leg's event stream (and, for failed turns, codex's rollout)
     onto token counts. Calibrated against the recorded fixtures named in
@@ -592,15 +617,25 @@ def _usage_from(
     Primary source: ``turn.completed.usage`` on the stream — the thread
     total, so this leg = total − ``previous_thread_total`` (zero for the
     first leg of a thread). Failure path (``turn.failed`` carries no usage):
-    this turn's ``turn_token_usage`` from the rollout. Neither ⇒
-    ``source="none"`` with zeros (a *completed* turn landing here raises in
-    :meth:`CodexCliHarness._attempt`). ``rate_limits`` is read from the
+    this turn's ``turn_token_usage`` from the rollout, with the rollout's own
+    ``thread_token_usage`` as the new baseline. Neither ⇒ ``source="none"``
+    with zeros and ``usage_missing`` (a *completed* turn landing here raises
+    in :meth:`CodexCliHarness._attempt`). ``rate_limits`` is read from the
     rollout on every leg, best-effort — it is the only place codex reports
     subscription usage (5-hour and weekly ``used_percent``).
+
+    ``baseline_has_gap`` says an earlier leg spent tokens nobody could read,
+    so ``previous_thread_total`` is short by an unknown amount. A stream
+    delta taken against it would silently bill the missing turn to THIS leg
+    (review round 7, I-1), so when the rollout offers this turn's own
+    ``turn_token_usage`` it is used for the leg's share instead; the stream's
+    thread total still becomes the new baseline, which closes the gap. Only
+    then — the rollout is codex-internal and must not become the routine
+    source of the per-leg figures.
     """
     prev = previous_thread_total or {k: 0 for k in _USAGE_KEYS}
     verbatim, total = _stream_usage(events)
-    rollout_turn, rate_limits = _read_rollout(rollout_path)
+    rollout_turn, rollout_thread, rate_limits = _read_rollout(rollout_path)
     if total is not None:
         delta = {k: total[k] - prev.get(k, 0) for k in _USAGE_KEYS}
         if any(v < 0 for v in delta.values()):
@@ -608,10 +643,15 @@ def _usage_from(
                 f"codex thread usage went backwards (previous total {prev}, now {total}) — "
                 "the cumulative reading in _usage_from no longer holds; refusing to record"
             )
+        source = "stream"
+        recovered = _as_usage(rollout_turn) if baseline_has_gap else None
+        if recovered is not None:
+            delta = recovered
+            source = "stream+rollout_turn"
         non_cached, out, cache_write, cached = _partition(delta)
         return _Usage(
             raw=verbatim,
-            source="stream",
+            source=source,
             input_tokens=non_cached,
             output_tokens=out,
             cache_creation_tokens=cache_write,
@@ -625,6 +665,10 @@ def _usage_from(
     turn = _as_usage(rollout_turn)
     if turn is not None:
         non_cached, out, cache_write, cached = _partition(turn)
+        # Codex's own post-turn thread total when the payload carried one;
+        # only fall back to reconstruction (which inherits any earlier gap)
+        # when it did not.
+        authoritative = _as_usage(rollout_thread)
         return _Usage(
             raw=rollout_turn,
             source="rollout",
@@ -635,10 +679,21 @@ def _usage_from(
             cache_tokens_reported="cached_input_tokens" in (rollout_turn or {}),
             reasoning_output_tokens=turn["reasoning_output_tokens"],
             delta=turn,
-            thread_total={k: prev.get(k, 0) + turn[k] for k in _USAGE_KEYS},
+            thread_total=authoritative or {k: prev.get(k, 0) + turn[k] for k in _USAGE_KEYS},
             rate_limits=rate_limits,
+            baseline_gap=baseline_has_gap and authoritative is None,
         )
-    return _Usage(raw=None, source="none", thread_total=previous_thread_total, rate_limits=rate_limits)
+    return _Usage(
+        raw=None,
+        source="none",
+        # Zeros, not None: a published field must not change type, and this
+        # leg's share really is unknown — usage_missing is what says so.
+        delta={k: 0 for k in _USAGE_KEYS},
+        thread_total=previous_thread_total,
+        rate_limits=rate_limits,
+        usage_missing=True,
+        baseline_gap=True,
+    )
 
 
 def _refuse_operator_instructions() -> None:
@@ -752,6 +807,10 @@ class CodexCliHarness(Harness):
         # own share is the delta against this. Reset per start_build (new
         # thread).
         self._thread_total: dict[str, int] | None = None
+        # True once a spent leg's usage could not be read from any source:
+        # _thread_total is then short by an unknown amount and a stream delta
+        # taken against it would mis-bill the next leg (see _usage_from).
+        self._thread_total_gap = False
         # Empty directory used as HOME for every codex subprocess of this run
         # (see _subprocess_env). Created in start_build, reused by resumes.
         self._home_override: str | None = None
@@ -875,7 +934,12 @@ class CodexCliHarness(Harness):
                 )
             terminal = _terminal_event(events)
             rollout_path = _find_rollout(thread_id)
-            usage = _usage_from(events, rollout_path, previous_thread_total=self._thread_total)
+            usage = _usage_from(
+                events,
+                rollout_path,
+                previous_thread_total=self._thread_total,
+                baseline_has_gap=self._thread_total_gap,
+            )
             errors = _error_messages(events)
             completed = terminal is not None and terminal.get("type") == "turn.completed"
             if completed:
@@ -957,6 +1021,7 @@ class CodexCliHarness(Harness):
     ) -> AttemptResult:
         if usage.thread_total is not None:
             self._thread_total = usage.thread_total
+        self._thread_total_gap = usage.baseline_gap
         if usage.rate_limits:
             # Printed only for legs that return: a dead leg's rollout shows
             # the previous turn's (stale) figures.
@@ -969,6 +1034,10 @@ class CodexCliHarness(Harness):
             "usage_source": usage.source,
             # This leg's own share (the stream reports the thread total).
             "usage_delta": usage.delta,
+            # True when this leg spent tokens nobody could read: the zeros
+            # above mean "unknown", not "free". Never true on a completed
+            # turn (that raises in _attempt).
+            "usage_missing": usage.usage_missing,
             "reasoning_output_tokens": usage.reasoning_output_tokens,
             # Subscription budget as codex last reported it (5-hour + weekly
             # windows, used_percent) — best-effort from the rollout.
@@ -1027,6 +1096,7 @@ class CodexCliHarness(Harness):
             shutil.rmtree(home, ignore_errors=True)
             raise
         self._thread_total = None
+        self._thread_total_gap = False
         self._worktree_dir = worktree_dir
         self._model = model
         self._effort = effort
