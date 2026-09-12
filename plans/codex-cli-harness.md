@@ -22,8 +22,12 @@ rollout-based per-attempt usage recovery** — no rollout turn record is ever
 attributed to a leg, because neither the turn id nor codex's cumulative
 proves a record *belongs* to one; a leg's own figure is the stream delta or
 nothing. The rollout keeps three jobs and no others (cumulative baseline
-repair, dead-leg evidence, rate limits) and the caveat vocabulary is down to
-the two values the code can actually produce (§4.5, §4.8 item 19).
+repair, dead-leg evidence, rate limits) and the caveat vocabulary holds only
+values the code can actually produce (§4.5, §4.8 item 19). **Amended after
+review round 11:** that vocabulary gained a third such value,
+`"dead_leg_unmeasured"`, for an attempt whose figure is short by a thread a
+dead start leg abandoned — previously published as `usage_faithful: true`
+and therefore unflagged on the results site (§4.5, §4.8 item 19).
 
 ## 1. Goal
 
@@ -206,7 +210,10 @@ codex exec resume <thread_id> --ignore-user-config \
 - No `--skip-git-repo-check` (a non-repo cwd is a runner bug; fail loudly).
   No `--color` (stdout is JSONL; stderr is only used for bounded,
   ANSI-stripped diagnostic tails). No `--ephemeral`: the rollout is needed
-  both for resume and as the failure-path usage source (§4.5).
+  both for resume and for the three jobs in §4.5 (cumulative baseline repair,
+  dead-leg evidence, rate limits) — *the second half is superseded: this read
+  "as the failure-path usage source" until round 9 deleted rollout-sourced
+  usage; the failure path now records zeros marked `["missing"]`* (§4.5).
 - The adapter remembers `worktree_dir`, `model`, mapped `effort` from
   `start_build` (mirrors `ClaudeCodeHarness._worktree_dir/_model`).
 
@@ -390,23 +397,51 @@ rule, as implemented in `_usage_from`:
   that was not its own. So the inference is deleted, not refined: every leg
   whose `usage_delta` is not a provable measure of that leg alone is
   **marked**: `raw["usage_faithful"] = false` plus `raw["usage_caveats"]` from
-  a two-value vocabulary — `"missing"` (short: nothing measured it, zeros) and
+  a three-value vocabulary — `"missing"` (short: nothing measured it, zeros),
   `"absorbed_missing_leg"` (the delta was taken against a baseline not known
-  to be whole, so it may span an earlier unmeasured turn). Both values are
+  to be whole, so it may span an earlier unmeasured turn) and
+  `"dead_leg_unmeasured"` (*added round 11*: a leg of this attempt was
+  classified dead and retried onto a **new** thread, so the abandoned thread's
+  spend is billed to no attempt anywhere in the run and this figure is short
+  by a whole turn). All three values are
   reachable; a vocabulary entry that the code cannot emit is worse than none,
   which is why `"rollout_turn_rejected"` went with the recovery it described.
+  The first two are leg-level and set in `_usage_from`; the third is a
+  property of the **attempt** and can only be set in `_result`, the first
+  place that knows a retry happened. It is gated on an abandoned thread id
+  rather than on `dead_turn_retries` because a dead **resume** leg is retried
+  on the *same* thread — its spend lands inside the next leg's stream delta,
+  and both legs are this attempt, so nothing is lost and nothing is marked.
+  Why this is not merely a JSON nicety: the results site gates its warning
+  marker solely on `usage_caveats`, so before round 11 a published page could
+  show an understated cost with no marker at all (executed end to end by the
+  reviewer, and now pinned by a test that renders the record through
+  `tools/build_site.py`).
   Marking errs toward marking: a delta taken against a re-anchored baseline is
   often exactly right and is still flagged, because the harness cannot show
   it. A consumer of the results file needs only `usage_faithful` to know a
   figure is an estimate; it never needs to know how the adapter works. An
   over-reported attempt is exactly as unfaithful as a zero-reported one, so
   both carry it.
-- **Dead-leg detection** (§4.6 rule 2) is the rollout's other job. A leg with
+- **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
+  jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured
-  — unless codex's rollout records a turn beyond a baseline **known to be
-  whole**, which is the one case where "some turn ran beyond what we billed"
-  really does mean "this leg ran": nothing else could have moved it. Against a
-  baseline that is not known whole the same record proves nothing, and the leg
+  — unless codex's rollout records a turn beyond a baseline with **no recorded
+  gap**, which is evidence that **this attempt** did work even though this
+  leg's stream said nothing. (*Superseded, review round 10: this read "a
+  baseline known to be whole … which is the one case where 'some turn ran
+  beyond what we billed' really does mean 'this leg ran': nothing else could
+  have moved it" — a claim about the LEG, and too strong. A dead-classified
+  leg never reaches `_result`, so it leaves no recorded gap behind, which
+  means a gapless baseline is not necessarily a whole one and the record
+  beyond it can belong to an earlier leg of the same attempt. The decision is
+  unchanged and still sound, because every leg that can move the cumulative
+  under a gapless baseline belongs to the attempt being classified, and the
+  attempt — not the leg — is the granularity every decision here is taken at.
+  The corrected form is in `codex_cli.py` `_advances` and `_Usage
+  .active_per_rollout`, and §4.6 rule 2 states it as the `not
+  baseline_has_gap` conjunct.*) Against a baseline with a recorded gap the
+  same record proves nothing, and the leg
   stays dead. Capturing a dead leg is the failure that corrupts a benchmark's
   headline metric rather than its cost column (review round 9).
 - `raw["rate_limits"]` (5-hour + weekly `used_percent`, `plan_type`) is read
@@ -501,11 +536,17 @@ error text**, and treats "the model never ran" the same on every attempt:
    `CODEX_DEAD_TURN_RETRIES` times (default **2**; **D5**). Rationale:
    transient transport/backend failures cost no tokens to retry, and a
    retry avoids consuming an `attempt` for something the model never saw.
+   (*Qualified round 11*: "cost no tokens" is the expectation, not something
+   the harness can verify — a dead leg is precisely one whose spend nothing
+   could read. Where the retry abandons a thread, the attempt is marked
+   `["dead_leg_unmeasured"]` rather than assumed free; §4.5.)
    A deterministic `invalid_prompt` costs ≤ 2 dead legs (~15 s each with
    codex's own reconnects) before failing loudly. Dead-leg wall time is
    counted; `raw["dead_turn_retries"]` and the dead legs' error messages
    (`raw["dead_turn_errors"]`, bounded) are recorded on the attempt that
-   eventually returns — the abandoned threads are not otherwise referenced. Side effects: a dead *start* leg leaves an
+   eventually returns, along with `raw["dead_turn_thread_ids"]` — the
+   abandoned threads are not otherwise referenced, and their unbillable spend
+   is what `["dead_leg_unmeasured"]` marks (§4.5). Side effects: a dead *start* leg leaves an
    abandoned thread (new `thread_id` on retry); a dead *resume* leg leaves
    the follow-up user message in the thread history (the model may see it
    up to three times).
@@ -516,7 +557,9 @@ error text**, and treats "the model never ran" the same on every attempt:
    run; the message tells the operator to rerun or switch model.
 5. **Non-dead failure** (model activity, then `turn.failed` / non-zero exit)
    ⇒ **captured**: the attempt records **zeros** with `usage_source: "none"`,
-   `usage_missing: true` and `usage_caveats: ["missing"]` (§4.5) — **the
+   `usage_missing: true` and `usage_caveats: ["missing"]` (§4.5; plus
+   `"dead_leg_unmeasured"` if a retry of this same attempt also abandoned a
+   thread — the caveats are a list, not an enum) — **the
    rollout is not a usage source** (*amended round 9*: a `turn.failed` carries
    no usage on the stream and nothing stands in for it, because no rollout
    record can be shown to belong to this leg). `session_handle` =
@@ -703,14 +746,23 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     tests: a dead resume after an unmeasured start leg is **retried, not
     captured** (the control — a *completing* start leg — always was), a failed
     leg on a short baseline is not billed an earlier turn, and the winning
-    attempt is not handed one either. The rollout's two remaining jobs are
-    pinned in both directions: its cumulative re-anchors the baseline so the
+    attempt is not handed one either. Two of the rollout's three remaining
+    jobs are pinned in both directions (the third, `rate_limits`, is asserted
+    on the real rollout by the fixture tests): its cumulative re-anchors the baseline so the
     next leg keeps only its own turn (cache-write component included), and is
     refused when it has not advanced or is not component-wise comparable; and
-    a leg with no items and no stream usage is captured when a whole baseline
-    says the rollout has moved on, retried when the baseline is short. Tests
+    a leg with no items and no stream usage is captured when a baseline with
+    no recorded gap says the rollout has moved on, retried when the baseline
+    is short. Tests
     that care which turn a leg reads stage the rollout the way codex fills it,
-    one turn at a time.
+    one turn at a time. **An attempt short by an abandoned thread says so**
+    (*round 11*): a dead start leg retried onto a new thread yields
+    `usage_faithful: false` / `["dead_leg_unmeasured"]` while a dead *resume*
+    leg (same thread, spend inside the next delta) stays faithful — and,
+    because the defect was invisible at the harness boundary, one test carries
+    the record through `execute_benchmark_run`, the results JSON and
+    `tools/build_site.py` and asserts the rendered page shows the warning
+    marker.
 
 `make test` and `make lint` green at each stage (§6).
 

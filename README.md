@@ -128,7 +128,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   whose `--json` stream layout differs fails the usage parse rather than
   being refused up front. A differing *rollout* layout does not: that read is
   best-effort and yields nothing on any problem, which costs the baseline
-  repair and the dead-leg evidence but never fails a leg.
+  repair, the dead-leg evidence and the rate-limit display, but never fails a
+  leg.
   `benchmarks/eval-chess-backend.yaml` carries a `codex-cli` / `gpt-6-astra`
   row.
 - **Login:** `codex login` (or `codex login --device-auth` on a headless box).
@@ -218,11 +219,18 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   subscription budget.
   **`raw.usage_faithful` is the field to read before trusting an attempt's
   token counts.** It is `false` when `raw.usage_delta` is not a measure of
-  that attempt alone, and `raw.usage_caveats` says which of the two reasons
+  that attempt alone, and `raw.usage_caveats` says which of the three reasons
   applies: `"missing"` — the turn was spent but nothing measured it, so the
-  attempt records zeros — or `"absorbed_missing_leg"` — this attempt's delta
+  attempt records zeros; `"absorbed_missing_leg"` — this attempt's delta
   was taken against a baseline that is not known to be whole, because an
-  earlier turn went unmeasured, so it may span that turn as well as this one.
+  earlier turn went unmeasured, so it may span that turn as well as this one;
+  or `"dead_leg_unmeasured"` — a leg of this attempt was classified dead and
+  retried onto a *new* thread, so whatever the abandoned thread spent is
+  billed to no attempt anywhere in the run and this figure is short by a whole
+  turn (`raw.dead_turn_thread_ids` names the threads; review round 11). Only a
+  dead **start** leg can do this: a dead resume leg is retried on the same
+  thread, so its spend is inside the next leg's delta, which is the same
+  attempt's figure either way.
   The adapter used to try to avoid the second case by taking the attempt's
   share from the rollout's own turn record. It cannot: nothing about a rollout
   record proves *which turn it belongs to*, and against the short baseline
@@ -243,7 +251,8 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   way no attempt is silently wrong — but a run containing an unfaithful
   attempt should be read as an estimate, not a bill. An unreadable *final*
   attempt likewise has no successor, and its tokens are simply absent from the
-  totals.
+  totals — as is an abandoned thread's spend, on any attempt carrying
+  `"dead_leg_unmeasured"`.
   `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
   a Plus plan (it is printed for attempts that return a result; a dead,
@@ -261,7 +270,9 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   Claude adapter on a non-zero exit. When such a leg is retried and the
   attempt does eventually record, the threads the dead legs abandoned are
   listed in `raw.dead_turn_thread_ids` (a dead start leg opens a fresh thread
-  each time) with their errors in `raw.dead_turn_errors`. A turn in which the model did work and
+  each time) with their errors in `raw.dead_turn_errors` — and, because
+  whatever those threads spent is billed to no attempt, that attempt is marked
+  `usage_faithful: false` / `["dead_leg_unmeasured"]` (above). A turn in which the model did work and
   then failed is recorded as a failed attempt with the error text under
   `raw.harness_error`, graded as-is, and the thread is resumed.
   `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each `codex exec` leg
