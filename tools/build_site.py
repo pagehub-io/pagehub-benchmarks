@@ -323,7 +323,8 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
             # numbers: the raw JSON is collapsed by default, so a reader would
             # otherwise see an over- or under-reported figure with nothing to
             # say so. Absent on claude-code and on legacy records, which
-            # therefore get no marker rather than a false warning.
+            # therefore get no marker rather than a false warning
+            # (test_build_marks_no_attempt_when_the_harness_reports_none).
             a["usage_caveats"] = (
                 [str(c) for c in raw.get("usage_caveats") or []]
                 if isinstance(raw, dict)

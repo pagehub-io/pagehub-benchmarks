@@ -161,16 +161,23 @@ class _Preflight:
 class _PreflightSequence:
     """``_Preflight`` whose ``codex login status`` answer CHANGES per call, so
     a second run on the same harness instance can be told apart from the
-    first (review round 14). The last entry repeats."""
+    first (review round 14). The last entry repeats.
 
-    def __init__(self, stderrs: list[str]) -> None:
+    ``returncodes`` (round 15) scripts a run whose pre-flight FAILS after an
+    earlier one passed — the sequence that used to leave the instance holding
+    a completed run's worktree/model/effort with no throwaway HOME."""
+
+    def __init__(self, stderrs: list[str], returncodes: list[int] | None = None) -> None:
         self.stderrs = list(stderrs)
+        self.returncodes = list(returncodes or [])
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, cmd, **kwargs):  # noqa: ANN001
         self.calls.append({"cmd": list(cmd), **kwargs})
-        stderr = self.stderrs[min(len(self.calls) - 1, len(self.stderrs) - 1)]
-        return subprocess.CompletedProcess(cmd, 0, "", stderr)
+        idx = len(self.calls) - 1
+        stderr = self.stderrs[min(idx, len(self.stderrs) - 1)]
+        rc = self.returncodes[min(idx, len(self.returncodes) - 1)] if self.returncodes else 0
+        return subprocess.CompletedProcess(cmd, rc, "", stderr)
 
 
 @pytest.fixture
@@ -2023,17 +2030,138 @@ def test_a_new_run_refreshes_the_auth_mode_it_publishes(monkeypatch, tmp_path, i
     assert h._home_override != home_a
 
 
+
+# --------------------------------------------------------------------------
+# Review round 15: a start_build that RAISES must not leave the instance half
+# in the previous run. The throwaway HOME is the half that matters — it is
+# the layer that stops codex's ``bash -lc`` re-sourcing the operator's
+# ~/.bashrc into the agent's shell (37 secret-named variables on this runner
+# box, verified 2026-09-11) — and it was the one attribute the failure path
+# cleared while leaving worktree/model/effort set, so continue_build's guard
+# waved the instance through onto the operator's real HOME.
+
+
+def test_a_failed_start_never_leaves_a_resume_on_the_operators_home(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Executed sequence: a good run, then a start_build whose pre-flight
+    fails, then a resume. Before round 15 the resume spawned codex with
+    ``env["HOME"] == os.environ["HOME"]`` — the configuration
+    ``_subprocess_env``'s docstring records as re-exporting every secret in
+    the operator's profile into the agent's shell."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(
+        monkeypatch,
+        legs,
+        _PreflightSequence([f"{CHATGPT_LINE}\n", "Not logged in\n"], returncodes=[0, 1]),
+    )
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls[0]["env"]["HOME"] != os.environ["HOME"]
+
+    with pytest.raises(HarnessError, match="not logged in"):
+        h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+
+    assert len(legs.calls) == 1, "a codex leg was spawned after a failed start_build"
+    assert all(c["env"]["HOME"] != os.environ["HOME"] for c in legs.calls)
+
+
+@pytest.mark.parametrize("fails_at", ["preflight", "start_leg"])
+def test_a_failed_start_clears_every_per_run_attribute(
+    monkeypatch, tmp_path, isolated_env, fails_at
+):
+    """The class, not the one attribute (round 15).
+
+    ``continue_build``'s guard names three of the harness's SEVEN per-run
+    attributes; the HOME leak was in a fourth. Rather than grow the guard once
+    per attribute, a ``start_build`` that raises — at either of the two points
+    it can — now leaves the instance exactly as constructed. Comparing against
+    a pristine instance's ``vars()`` means an attribute added later is covered
+    without anyone remembering to extend a list here.
+
+    ``start_leg`` is the second instance of the shape, found by enumerating
+    rather than by another review round: the pre-flight passes, the start leg
+    raises, and every attribute is then THIS run's while no thread exists.
+    Executed before the fix — a resume with an earlier run's handle passed the
+    guard, ran in this run's worktree with this run's model, and billed the
+    whole thread cumulative (7158 tokens) to one attempt as ``usage_faithful``
+    where its own share was 3199."""
+    pristine = dict(vars(CodexCliHarness()))
+    if fails_at == "preflight":
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+        preflight = _PreflightSequence(
+            [f"{CHATGPT_LINE}\n", "Not logged in\n"], returncodes=[0, 1]
+        )
+        expected = "not logged in"
+    else:
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1), ("", "", 1)])
+        preflight = _Preflight()
+        expected = "no thread.started"
+    _install(monkeypatch, legs, preflight)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    # A run that also leaves the baseline gap set, so every attribute differs.
+    h.continue_build(a1.session_handle, "fix it")
+    assert dict(vars(h)) != pristine
+
+    with pytest.raises(HarnessError, match=expected):
+        h.start_build(str(tmp_path / "other"), "p", "gpt-6-other", {"effort": "high"})
+    assert dict(vars(h)) == pristine, "a failed start_build left per-run state behind"
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+
+
+def test_a_codex_subprocess_is_refused_without_the_runs_throwaway_home(isolated_env):
+    """The boundary itself (round 15). ``_subprocess_env``'s ``home_override``
+    used to default to ``None`` and silently leave the operator's HOME in
+    place, so every defence above it was the only thing standing between a
+    coding bug and the agent's ``bash -lc`` re-sourcing ~/.bashrc."""
+    with pytest.raises(HarnessError, match="operator's HOME"):
+        codex_cli._subprocess_env("")
+
+
+def test_a_resume_is_refused_when_the_throwaway_home_is_missing(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The guard clause, pinned on its own: whatever future path clears the
+    throwaway HOME without clearing the rest, ``continue_build`` refuses
+    rather than spawning codex on the operator's home. Removing
+    ``_home_override`` from the guard fails here — the resume gets as far as
+    ``_subprocess_env`` and raises the wrong error."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h._home_override = None
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+    assert len(legs.calls) == 1
+
+
 # Files that cite tests by name. Plan §4.5 carries the statement-to-test table
 # the round-13 review asked for; README.md's run-total rule and the caveat
 # comments in codex_cli.py and tools/build_site.py name their own pins inline.
 # (Round 14: README cited NONE, so every README claim was covered only
 # transitively by a plan row restating the same rule.)
+# (Round 15: templates/ joined the contract's scope — run.html carries the
+# largest block of normative caveat prose in the repo and is the only
+# statement of these rules a reader of a published result ever sees, and
+# three independent inversions of it left the whole suite green.)
 _DOCS_CITING_TESTS = (
     "plans/codex-cli-harness.md",
     "README.md",
     "pagehub_benchmarks/harnesses/codex_cli.py",
     "tools/build_site.py",
+    "templates/run.html",
+    "templates/_marks.html",
 )
+
+# The §4.5 table's shape floors. Bump BOTH when the table grows; the tests
+# below derive everything else from the rows themselves, so these two lines
+# are the only hand-maintained numbers left.
+_MIN_TABLE_ROWS = 22
 
 
 def test_every_test_named_in_the_docs_exists():
@@ -2044,7 +2172,16 @@ def test_every_test_named_in_the_docs_exists():
     for every normative claim about ``usage_faithful`` and the caveats — but a
     table of test names is only load-bearing while the names resolve. This
     fails the build when a cited test is renamed or deleted, so the citation
-    has to be updated with it rather than quietly becoming decoration."""
+    has to be updated with it rather than quietly becoming decoration.
+
+    **What this does NOT certify** (stated here and in §4.5 because round 15
+    found the guarantee reads stronger than it is): it checks the table's
+    shape and that every cited name RESOLVES to a test that exists. It does
+    not check that a cited test pins the statement beside it — repointing a
+    row at an unrelated real test passes. That property is established by
+    mutation, per review round, recorded in the commit messages. A green build
+    means the citations resolve; it is not a certificate that the table is
+    honest."""
     root = Path(__file__).resolve().parent.parent
     defined: set[str] = set()
     for path in sorted((root / "tests").glob("test_*.py")):
@@ -2065,16 +2202,37 @@ def test_every_test_named_in_the_docs_exists():
     # leaving a statement quietly unpinned again (round 14 — the old floor of
     # 15 against 23 citations left eight rows of slack).
     plan = (root / "plans" / "codex-cli-harness.md").read_text().splitlines()
-    header = next(i for i, ln in enumerate(plan) if ln.strip() == "| Statement | Pinned by |")
+    header = next(
+        (i for i, ln in enumerate(plan)
+         if ln.strip().startswith("| Statement") and "Pinned by" in ln),
+        None,
+    )
+    assert header is not None, "§4.5's statement-to-test table header was not found"
     rows = list(itertools.takewhile(lambda ln: ln.strip().startswith("|"), plan[header + 2:]))
-    assert len(rows) >= 18, f"§4.5's statement-to-test table has shrunk to {len(rows)} rows"
+    assert len(rows) >= _MIN_TABLE_ROWS, (
+        f"§4.5's statement-to-test table has shrunk to {len(rows)} rows"
+    )
+    statements, row_cites = [], set()
     for row in rows:
-        pinned_by = set(re.findall(r"\btest_[a-z0-9_]+", row.rstrip().rstrip("|").rsplit("|", 1)[-1]))
+        cells = row.rstrip().rstrip("|").rsplit("|", 1)
+        pinned_by = set(re.findall(r"\btest_[a-z0-9_]+", cells[-1]))
         assert pinned_by, f"a table row names no test: {row}"
         assert pinned_by <= defined, f"row cites tests that do not exist: {row}"
+        statements.append(cells[0].strip())
+        row_cites |= pinned_by
+    # Derived floors, so nobody has to remember to bump them. Repointing the
+    # whole table at one real test — which every check above still passes —
+    # collapses row_cites to a single name and fails here.
+    assert len(statements) == len(set(statements)), "two §4.5 rows state the same thing"
+    assert len(row_cites) >= len(rows), (
+        f"{len(rows)} rows cite only {len(row_cites)} distinct tests between them"
+    )
+    assert row_cites <= set(cited), "the doc scan did not read the table it is checking"
     # A silent regex change that stops matching would make all of it vacuous.
     assert "test_a_dead_resume_leg_leaves_the_attempt_faithful" in cited
-    assert len(cited) >= 28, f"expected the §4.5 table to be cited; found {sorted(cited)}"
+    assert len(cited) >= len(row_cites), (
+        f"expected the §4.5 table to be cited; found {sorted(cited)}"
+    )
 
 
 def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(

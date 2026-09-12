@@ -296,7 +296,18 @@ throwaway HOME holds only a `.bash_profile` that re-exports the runner's
 skips that reset only because `WSL_DISTRO_NAME` is set; reproduced with it
 unset) and the runner's locale (see the Locale row of §3.4); nothing else.
 The directory is removed if the pre-flight fails; otherwise it is left
-behind (one tiny file per run). Side effects: the agent has no
+behind (one tiny file per run). **The override is not optional at the
+boundary** (*round 15*): `_subprocess_env` requires a non-empty home and
+raises without one, rather than defaulting to the operator's HOME, and
+`continue_build` refuses a resume that has no throwaway home to run in.
+Both exist because the harness's per-run state was how this layer came off
+silently — a `start_build` that raised used to clear the home alone while
+leaving the worktree, model and effort of the PREVIOUS run in place, so a
+resume passed a guard that checked three of the seven per-run attributes and
+spawned codex on the operator's real HOME (executed with the repo's fakes:
+`env["HOME"] == /home/gavin`, the U7 configuration). `start_build` now clears
+every per-run attribute on entry and on either failure path, so the instance
+is in exactly one run or in none. Side effects: the agent has no
 `~/.gitconfig`, `~/.ssh`, `~/.npmrc`, pip cache etc. — appropriate for a
 benchmark build from an empty repo, and `.git` is read-only in the sandbox
 anyway. Operator-side
@@ -451,21 +462,40 @@ rule, as implemented in `_usage_from`:
   marking is reverted.
   Marking errs toward marking: a delta taken against a re-anchored baseline is
   often exactly right and is still flagged, because the harness cannot show
-  it. A consumer of the results file needs only `usage_faithful` to know a
-  figure is an estimate; it never needs to know how the adapter works. An
+  it. A consumer of the results file needs only `usage_faithful` to know an
+  **attempt's** figure is an estimate; it never needs to know how the adapter
+  works. The RUN-level rule — which caveats shorten a total — is the one thing
+  such a consumer must apply itself (see the run-total paragraph in
+  `README.md`). An
   over-reported attempt is exactly as unfaithful as a zero-reported one, so
   both carry it.
 - **Every statement above is pinned by a named test** (*added round 13*). The
   leg-vs-attempt wording drifted for four consecutive review rounds because
   the instrument kept being a phrase sweep, and prose has no build that fails.
   The standing check is mechanical instead: **for every normative statement in
-  this section, in `README.md`, and in the docstrings and comments of
-  `codex_cli.py` and `tools/build_site.py` that asserts when `usage_faithful`
-  is false, when a caveat is emitted, or which figures a caveat makes a lower
-  bound, name the test that fails if the statement is implemented as
-  written.** A statement no test can pin is a statement that will drift again,
-  and is either wrong or a coverage gap. `test_every_test_named_in_the_docs_exists`
-  fails if a name below stops resolving, so the table cannot rot silently.
+  this section, in `README.md`, in the page copy under `templates/`, and in
+  the docstrings and comments of `codex_cli.py` and `tools/build_site.py` that
+  asserts when `usage_faithful` is false, when a caveat is emitted, or which
+  figures a caveat makes a lower bound, name the test that fails if the
+  statement is implemented as written.** A statement no test can pin is a
+  statement that will drift again, and is either wrong or a coverage gap.
+
+  `templates/` joined that scope in round 15, and is the part of it a reader
+  actually meets: `run.html` carries the largest block of normative caveat
+  prose in the repo and is the only statement of these rules anyone reading a
+  published result ever sees. Three independent inversions of that copy — the
+  neutral caveat made lower-bound, the dead leg retried on the same thread,
+  the marked attempt called exact — each left the whole suite green.
+
+  **What the guard does and does not certify.** `test_every_test_named_in_the_docs_exists`
+  checks the *shape* of the table and that every cited name *resolves* to a
+  test that exists: a renamed or deleted test, an emptied cell, or a deleted
+  row fails the build. It does **not** check that a cited test pins the
+  statement beside it — repointing a row at an unrelated real test passes.
+  That property is established by mutation (implement the statement as
+  written; the cited test must fail), which is done per review round and
+  recorded in the commit messages, not by this test. A green build means the
+  citations resolve; it is not a certificate that the table is honest.
 
   | Statement | Pinned by |
   |---|---|
@@ -484,9 +514,13 @@ rule, as implemented in `_usage_from`:
   | `"dead_leg_unmeasured"` makes them a lower bound too — its own pin, since dropping it from `RUN_TOTAL_LOWER_BOUND_CAVEATS` leaves the row above green (round 14) | `test_an_abandoned_thread_is_flagged_on_the_published_page`, `test_run_page_headline_presents_a_short_total_as_a_lower_bound` |
   | Every surface publishing a run total renders that lower bound | `test_run_page_headline_presents_a_short_total_as_a_lower_bound`, `test_index_presents_a_short_total_as_a_lower_bound`, `test_benchmark_page_presents_a_short_total_as_a_lower_bound`, `test_theory_page_presents_a_short_total_as_a_lower_bound` |
   | The per-attempt `⚠` is gated solely on `usage_caveats`, so an attempt the harness marks is marked on the page | `test_build_flags_an_attempt_whose_tokens_are_not_its_own`, `test_an_abandoned_thread_is_flagged_on_the_published_page` |
-  | The lower bound applies to the token-derived figures and to nothing else (`LOWER_BOUND_METRICS`): wall time, attempts and pass/fail are measured elsewhere, so marking them would devalue the marker | `test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds` |
+  | The metric-keyed lower bound on the theory comparison applies to the token-derived figures and to nothing else (`LOWER_BOUND_METRICS`): wall time, attempts and pass/fail are measured elsewhere, so marking them would devalue the marker. The other three surfaces choose the marked cells by hand in the templates, and are pinned per surface by the row above | `test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds` |
   | The vocabulary is closed and every value is classified for run totals | `test_every_harness_caveat_is_classified_for_run_totals` |
   | A *completed* turn always has usage — zeros there are a defect, not a caveat | `test_turn_completed_without_usage_raises_never_zero_token_success` |
+  | The reason list rendered beside a lower-bound total names only the caveats that shorten it — a neutral caveat present in the same run is filtered out | `test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short` |
+  | A record with no `raw` — claude-code and legacy runs — gets no marker rather than a false warning | `test_build_marks_no_attempt_when_the_harness_reports_none` |
+  | The run page's own explanation of the marker states which caveats shorten a total and which do not, in the words a reader is given | `test_the_run_page_explainer_states_the_run_total_rule` |
+  | …and its per-attempt legend states what a marked figure is — short, not provably its own, or short by an abandoned thread — never that it is exact | `test_the_run_page_legend_states_what_a_marked_attempt_means` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
   jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured

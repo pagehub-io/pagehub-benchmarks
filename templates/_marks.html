@@ -3,7 +3,10 @@
 
   A run's per-attempt caveats can make the run's OWN totals a lower bound
   rather than a measurement: see RUN_TOTAL_LOWER_BOUND_CAVEATS in
-  tools/build_site.py for which values do that and why. Marking the attempt
+  tools/build_site.py for which values do that and why. The caveats these
+  macros NAME are only the ones that shorten the total — a neutral caveat in
+  the same run is filtered out before it reaches here
+  (test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short). Marking the attempt
   row alone left the headline, the index's cost table, the benchmark page and
   the theory comparison all rendering the short figure unmarked (review
   round 12), so the marking lives here and every surface imports it.

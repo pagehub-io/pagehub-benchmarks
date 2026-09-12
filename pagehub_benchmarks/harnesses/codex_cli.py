@@ -190,10 +190,16 @@ __all__ = ["CodexCliHarness", "HarnessError", "EFFORT_MAP", "STRIPPED_ENV_VARS"]
 # -- environment / config helpers -------------------------------------------
 
 
-def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
+def _subprocess_env(home_override: str) -> dict[str, str]:
     """A copy of the current env minus every codex auth env var, with codex's
-    home pinned and — when ``home_override`` is given — ``HOME`` swapped for a
-    throwaway directory.
+    home pinned and ``HOME`` swapped for the run's throwaway directory.
+
+    ``home_override`` is REQUIRED and must be non-empty (review round 15): it
+    used to default to ``None``, which silently left the operator's real HOME
+    in place, so any caller reaching here without a run's throwaway directory
+    got the exact configuration the last paragraph of this docstring exists to
+    prevent. Refusing it here means such a bug is a raised error, not a quiet
+    loss of the isolation.
 
     ``CODEX_API_KEY`` is a live runtime credential in codex 0.154 (verified: a
     bogus value changes the 401 to "Incorrect API key provided"), so leaving
@@ -213,12 +219,16 @@ def _subprocess_env(home_override: str | None = None) -> dict[str, str]:
     empty HOME the same probe reported NONE, and login / pip / network kept
     working. Verified 2026-09-11 with gpt-5.6-sol.
     """
+    if not home_override:
+        raise HarnessError(
+            "internal: a codex subprocess was about to run with the operator's HOME — "
+            "every codex leg needs this run's throwaway home (see _prepare_home)"
+        )
     env = dict(os.environ)
     for key in (*STRIPPED_ENV_VARS, *PROFILE_ENV_VARS):
         env.pop(key, None)
     env["CODEX_HOME"] = str(_codex_home())
-    if home_override:
-        env["HOME"] = home_override
+    env["HOME"] = home_override
     return env
 
 
@@ -546,11 +556,14 @@ USAGE_CAVEAT_MISSING = "missing"
 USAGE_CAVEAT_ABSORBED = "absorbed_missing_leg"
 USAGE_CAVEAT_DEAD_LEG = "dead_leg_unmeasured"
 # The whole vocabulary, so a consumer can prove it has classified every value
-# rather than the ones it happened to think of. tools/build_site.py uses it to
-# decide which caveats make a RUN's totals a lower bound (review round 12):
-# MISSING and DEAD_LEG lose spend out of the record entirely, so every
-# aggregate derived from it is short; ABSORBED only moves spend between
-# attempts of the same run, so the run total is unaffected.
+# rather than the ones it happened to think of. The site does NOT import this
+# (round 15 — the comment used to say it did): it renders records written by
+# harness versions it cannot import, so it hard-codes the same literals, and
+# test_every_harness_caveat_is_classified_for_run_totals is what keeps the two
+# in step. The classification it makes (review round 12): MISSING and DEAD_LEG
+# lose spend out of the record entirely, so every aggregate derived from it is
+# short; ABSORBED only moves spend between attempts of the same run, so the
+# run total is unaffected.
 USAGE_CAVEATS = (USAGE_CAVEAT_MISSING, USAGE_CAVEAT_ABSORBED, USAGE_CAVEAT_DEAD_LEG)
 
 
@@ -1037,6 +1050,21 @@ class CodexCliHarness(Harness):
     name = "codex-cli"
 
     def __init__(self) -> None:
+        self._reset_run_state()
+
+    def _reset_run_state(self) -> None:
+        """Every attribute that belongs to ONE run, back to its constructed
+        value. This is the whole per-run state of the harness: ``start_build``
+        calls it on entry and on its failure path, so an instance is either in
+        exactly one run or in none — never half in the last one.
+
+        Round 15 found the half-state this exists to prevent. The old failure
+        path cleared ``_home_override`` alone; ``continue_build``'s guard
+        checked ``_worktree_dir``/``_model``/``_effort``, all three of which
+        were still the PREVIOUS run's, so a resume sailed through and spawned
+        codex on the operator's real HOME. Resetting the set — rather than
+        naming one more attribute in the guard — is what makes the next
+        attribute added here safe without anyone remembering to."""
         # Remembered from start_build so continue_build resumes in the same
         # directory with the same model and effort (one instance per run).
         self._worktree_dir: str | None = None
@@ -1389,6 +1417,8 @@ class CodexCliHarness(Harness):
         model: str,
         config: dict[str, Any],
     ) -> AttemptResult:
+        # Entering start_build ends the previous run, whatever happens next.
+        self._reset_run_state()
         effort = _map_effort(config)  # before any subprocess
         base = _throwaway_home_base()
         base.mkdir(parents=True, exist_ok=True)
@@ -1402,11 +1432,9 @@ class CodexCliHarness(Harness):
             self._home_override = home
             self._auth_mode = self._preflight()
         except BaseException:
-            self._home_override = None
+            self._reset_run_state()
             shutil.rmtree(home, ignore_errors=True)
             raise
-        self._thread_total = None
-        self._thread_total_gap = False
         self._worktree_dir = worktree_dir
         self._model = model
         self._effort = effort
@@ -1428,14 +1456,27 @@ class CodexCliHarness(Harness):
             "sandbox_workspace_write.network_access=true",
             "-",
         ]
-        return self._attempt(cmd, worktree_dir, prompt, is_start=True)
+        try:
+            return self._attempt(cmd, worktree_dir, prompt, is_start=True)
+        except BaseException:
+            # A start leg that never returned a thread leaves no run to resume,
+            # so the instance must not keep looking like one. Round 15 executed
+            # what happens otherwise: continue_build with an EARLIER run's
+            # handle passed the guard and resumed that thread in THIS run's
+            # worktree with THIS run's model, billing the whole thread
+            # cumulative to one attempt and publishing it as faithful.
+            self._reset_run_state()
+            raise
 
     def continue_build(
         self,
         session_handle: str,
         followup_prompt: str,
     ) -> AttemptResult:
-        if not self._worktree_dir or not self._model or not self._effort:
+        # Every attribute a resume leg consumes, including the throwaway HOME
+        # (round 15): a guard that checks a subset of them is a guard that lets
+        # a partially-reset instance through.
+        if not (self._worktree_dir and self._model and self._effort and self._home_override):
             raise HarnessError("continue_build called before start_build")
         if not session_handle:
             raise HarnessError(

@@ -494,7 +494,7 @@ def test_a_faithful_run_carries_no_lower_bound_marking(tmp_path: Path):
                  "theories/cheaper.html"):
         html = (docs / page).read_text()
         assert "&#8805;" not in html, page
-        assert "$12.3456" in html or "cost" in html, page
+        assert "$12.3456" in html and "&#8805;$12.3456" not in html, page
 
 
 def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_path: Path):
@@ -507,8 +507,9 @@ def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_
     other one, which is cheap to ship and hard to notice: round 14 added
     ``attempts`` and the wall time to the set, the suite as it stood (271
     tests) stayed green, and a caveated run's theory page rendered
-    ``&#8805;2 &#9888;`` on an attempt count that is complete. A lower-bound marker on a figure that is exact
-    devalues the marker everywhere it is right."""
+    ``&#8805;2 &#9888;`` on an attempt count that is complete. A lower-bound
+    marker on a figure that is exact devalues the marker everywhere it is
+    right."""
     docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"), with_theory=True)
     theory_html = (docs / "theories" / "cheaper.html").read_text()
     for metric, figure in (("attempts", "2"), ("total_wall_time_seconds", "1680s")):
@@ -518,6 +519,118 @@ def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_
     # ...and not vacuously: the token-derived cells of the SAME table ARE
     # marked, so this really is a run whose totals are a lower bound.
     assert "&#8805;$12.3456" in theory_html
+
+
+def test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short(tmp_path: Path):
+    """The reason list beside a lower-bound total names only the caveats that
+    SHORTEN it (review round 15).
+
+    ``build_site.py``'s rule comment states this normatively — "only the
+    lower-bound subset reaches the templates on purpose" — and nothing pinned
+    it: replacing the filtered list with the unfiltered ``caveats_any`` left
+    the whole suite green while the run page and the index both named
+    ``absorbed_missing_leg`` as a reason the totals are short, which is
+    exactly what the site's own rule, the plan and the README all say it is
+    not. Every other build-site test feeds ``_run_with_caveats`` a SINGLE
+    caveat, and the one multi-caveat case mixes two that are both lower-bound,
+    so no test could see the filter. Row 12 pins the boolean; this pins the
+    rendered reason."""
+    run = dict(SAMPLE_RUN)
+    run["per_attempt"] = [
+        dict(run["per_attempt"][0], raw={"usage_faithful": False, "usage_caveats": ["missing"]}),
+        dict(
+            run["per_attempt"][1],
+            raw={"usage_faithful": False, "usage_caveats": ["absorbed_missing_leg"]},
+        ),
+    ]
+    docs = _site(tmp_path, run, with_theory=True)
+    for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
+                 "theories/cheaper.html"):
+        html = (docs / page).read_text()
+        # Every aggregate tooltip the page renders, on every surface.
+        named = re.findall(r"could not attribute to any attempt \(([^)]*)\)", html)
+        assert named, f"{page} marks no total, so this asserts nothing"
+        assert set(named) == {"missing"}, (page, named)
+
+    run_html = (docs / RUN_HTML).read_text()
+    reasons = re.search(r"Reason\(s\): <code>([^<]*)</code>", run_html)
+    assert reasons and reasons.group(1) == "missing", run_html[:0] or reasons
+    # …and not vacuously: the neutral caveat IS published, on the attempt row
+    # that carries it, where it says spend MOVED rather than left the run.
+    assert "(absorbed_missing_leg)" in run_html
+
+
+# --------------------------------------------------------------------------
+# Review round 15: the reader-facing copy is inside the §4.5 contract too.
+#
+# templates/run.html carries the largest block of normative caveat prose in
+# the repo and is the only statement of these rules a reader of a published
+# result ever sees — and it was the one file the contract's scope excluded.
+# Three independent inversions of that published copy each left the whole
+# suite green: saying absorbed_missing_leg DOES shorten the totals, saying a
+# dead leg is retried on the SAME thread so nothing is short, and telling the
+# reader a marked attempt's figure is exact. The surface tests only assert
+# that the substring "lower bound" and a caveat NAME appear; nothing asserted
+# what the copy says. These two do, on the rendered page.
+
+
+def _explainer(docs: Path, marker: str) -> str:
+    """The one rendered ``<p class="muted">`` containing ``marker``."""
+    html = (docs / RUN_HTML).read_text()
+    paras = [m.group(0) for m in re.finditer(r'<p class="muted">.*?</p>', html, re.S)]
+    hits = [p for p in paras if marker in p]
+    assert len(hits) == 1, f"expected exactly one paragraph containing {marker!r}, got {len(hits)}"
+    return hits[0]
+
+
+def test_the_run_page_explainer_states_the_run_total_rule(tmp_path: Path):
+    """What the run page TELLS the reader a lower-bound total means, pinned
+    clause by clause — including which caveat does not shorten it.
+
+    Deliberate rewording is expected to update these strings; that is the
+    point. An inversion cannot, because the sentence and its negation are not
+    the same string."""
+    docs = _site(tmp_path, _run_with_caveats("missing", "dead_leg_unmeasured"))
+    para = _explainer(docs, "lower bound (&#8805;)")
+    assert (
+        "<strong>The token and cost totals above are a lower bound (&#8805;), not a "
+        "measurement</strong> — this run spent tokens that are in none of them, so the "
+        "real figures are higher by an unknown amount." in para
+    )
+    assert "<code>missing</code> — a turn was spent and nothing measured it;" in para
+    assert (
+        "<code>dead_leg_unmeasured</code> — a dead start leg was retried onto a "
+        "<em>new</em> thread, so whatever the abandoned thread spent is billed to no "
+        "attempt anywhere." in para
+    )
+    assert (
+        "(<code>absorbed_missing_leg</code> alone does <em>not</em> shorten these "
+        "totals: it moves spend between the attempt rows below.)" in para
+    )
+    # …and the copy is checked against the constants it explains, so a fourth
+    # caveat cannot be classified in build_site.py while the page still tells
+    # the reader the old vocabulary.
+    for caveat in RUN_TOTAL_LOWER_BOUND_CAVEATS:
+        assert f"<code>{caveat}</code> —" in para, caveat
+    for caveat in RUN_TOTAL_NEUTRAL_CAVEATS:
+        assert f"<code>{caveat}</code> alone does <em>not</em> shorten these totals" in para
+
+
+def test_the_run_page_legend_states_what_a_marked_attempt_means(tmp_path: Path):
+    """The per-attempt legend's three reasons, verbatim. Round 15 rewrote its
+    first two clauses to say the figure is exact and provably its own — the
+    opposite of what the marker means — and 275 tests passed."""
+    docs = _site(tmp_path, _run_with_caveats("missing"))
+    para = _explainer(docs, "on an attempt means")
+    assert (
+        "the harness could not measure that attempt's tokens exactly — the figure "
+        "is short (nothing measured that attempt&#8217;s turn), not provably its own (it "
+        "was taken against a baseline that may be short by an earlier unmeasured turn, so "
+        "it may span that turn too), or short by an abandoned thread (a dead leg was "
+        "retried onto a new thread, so whatever the harness walked away from is billed to "
+        "no attempt)." in para
+    )
+    assert "More than one reason can apply to the same attempt." in para
 
 
 def test_every_harness_caveat_is_classified_for_run_totals():
