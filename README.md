@@ -199,37 +199,45 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   share). `input_tokens` in the record is the non-cached slice;
   `cached_input_tokens` → cache reads, `cache_write_input_tokens` → cache
   writes (priced at OpenAI's write rate); `output_tokens` includes reasoning
-  (`raw.reasoning_output_tokens` is recorded separately). A failed turn
-  carries no usage on the stream, so that path reads the turn's usage from
-  codex's rollout (`raw.usage_source: "rollout"`), and the thread total is
-  re-anchored on the `thread_token_usage` codex records beside it.
+  (`raw.reasoning_output_tokens` is recorded separately).
+  **An attempt's own figure comes from that stream delta and from nothing
+  else.** A failed turn carries no usage on the stream and nothing stands in
+  for it: the attempt records zeros, `raw.usage_source: "none"` and
+  `raw.usage_missing: true` (unknown, not free). Codex's rollout is still
+  read, for exactly two things — the cumulative `thread_token_usage`, which
+  re-anchors the baseline the *next* delta is taken against (a cumulative says
+  how far the thread has got, never which turn ran, so adopting one can only
+  move the baseline toward the truth), and the evidence that an attempt whose
+  stream reported nothing did work after all, which is what separates an
+  attempt to record from a dead turn to retry.
   **`raw.usage_faithful` is the field to read before trusting an attempt's
   token counts.** It is `false` when `raw.usage_delta` is not a measure of
-  that attempt alone, and `raw.usage_caveats` says why: `"missing"` — the
-  turn was spent but no source could report it, so the attempt records zeros
-  (unknown, not free; also `raw.usage_missing: true`) — or
-  `"absorbed_missing_leg"` — this attempt's delta *includes* an earlier
-  unreadable turn, because the stream reports a thread total and the baseline
-  it was taken against was short by that turn. The adapter tries to avoid the
-  second case: when the rollout is readable and holds that turn's own figures
-  it takes the attempt's share from there instead
-  (`raw.usage_source: "stream+rollout_turn"`). That recovery is best-effort
-  and can fail — the rollout may stay unreadable, be malformed, or, when
-  codex died before writing this turn's `turn_context`, still end on the
-  *previous* turn's record. A record for a turn already billed is refused
-  (recognised by its `turn_id`, and by codex's own post-turn thread total not
-  having moved past the last one recorded) and adds
-  `"rollout_turn_rejected"`, which also appears alongside `"missing"` when
-  the refused record was the leg's only possible source.
-  An over-reported attempt is no more honest than a zero-reported one, so
-  both carry the flag. **Run totals:** when recovery fails the unreadable
-  turn's tokens are still counted once across the run, on the wrong attempt;
-  when it *succeeds* they are counted zero times, because the attempt that
-  spent them records zeros and its successor now records only its own share.
-  Either way no attempt is silently wrong — but a run containing an
-  unfaithful attempt should be read as an estimate, not a bill. An
-  unreadable *final* attempt likewise has no successor, and its tokens are
-  simply absent from the totals.
+  that attempt alone, and `raw.usage_caveats` says which of the two reasons
+  applies: `"missing"` — the turn was spent but nothing measured it, so the
+  attempt records zeros — or `"absorbed_missing_leg"` — this attempt's delta
+  was taken against a baseline that is not known to be whole, because an
+  earlier turn went unmeasured, so it may span that turn as well as this one.
+  The adapter used to try to avoid the second case by taking the attempt's
+  share from the rollout's own turn record. It cannot: nothing about a rollout
+  record proves *which turn it belongs to*, and against the short baseline
+  that makes recovery necessary in the first place, an earlier never-billed
+  turn passes every test that was tried (its turn id is one this harness never
+  saw, and codex's cumulative for it is beyond a baseline that is short).
+  Executed, that handed a **dead** attempt an earlier turn's tokens and
+  captured it instead of retrying it, and gave a winning attempt a figure that
+  was not its own — all marked faithful. The inference was removed (review
+  round 9), so marking is the whole answer, and it errs toward marking: a
+  delta taken against a re-anchored baseline is often exactly right and is
+  still flagged, because the harness cannot show that it is. An over-reported
+  attempt is no more honest than a zero-reported one, so both carry the flag.
+  **Run totals:** an unmeasured turn's tokens are counted once across the run,
+  on the following attempt (which is flagged), when its baseline could not be
+  re-anchored — and zero times when it could, because the attempt that spent
+  them records zeros and its successor starts from the newer baseline. Either
+  way no attempt is silently wrong — but a run containing an unfaithful
+  attempt should be read as an estimate, not a bill. An unreadable *final*
+  attempt likewise has no successor, and its tokens are simply absent from the
+  totals.
   `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
   a Plus plan (it is printed for attempts that return a result; a dead,

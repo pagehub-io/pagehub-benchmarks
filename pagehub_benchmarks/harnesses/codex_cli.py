@@ -90,16 +90,20 @@ mapped onto token counts, calibrated against recorded fixtures
 **thread total** (verified: the resume fixture reports start + resume), so
 each leg records the delta against the previous total; ``input_tokens``
 includes the cached and cache-write slices (partitioned out for pricing);
-``output_tokens`` includes reasoning. A failed turn carries no usage on the
-stream, so that path reads this turn's ``turn_token_usage`` from codex's
-rollout file, and adopts the ``thread_token_usage`` recorded beside it as the
-next leg's baseline. Recovery from an unreadable leg is best-effort, so the
-honest invariant is a *marking* one: ``raw["usage_faithful"]`` is false on any
-attempt whose ``usage_delta`` is not a measure of that attempt alone — short
-(nothing readable: zeros, never "free") or long (it absorbed an earlier
-unreadable leg) — and ``raw["usage_caveats"]`` says which. ``rate_limits``
-(5-hour and weekly ``used_percent``) is read from the rollout on every leg — the
-only place codex reports subscription budget.
+``output_tokens`` includes reasoning. **A leg's own figure comes from that
+stream delta and from nothing else** (review round 9): a failed turn carries
+no usage on the stream, and the leg then records zeros marked
+``usage_missing`` rather than borrowing a figure from codex's rollout, which
+cannot say which turn a record belongs to. The rollout is still read for two
+things — codex's post-turn ``thread_token_usage``, a CUMULATIVE that repairs
+the baseline the next delta is taken against, and evidence that a leg the
+stream reported nothing for did work after all (otherwise it is dead and
+retried) — plus ``rate_limits`` (5-hour and weekly ``used_percent``), the only
+place codex reports subscription budget. The honest invariant is a *marking*
+one: ``raw["usage_faithful"]`` is false on any attempt whose ``usage_delta``
+is not a measure of that attempt alone — short (nothing readable: zeros, never
+"free") or not provably its own (it may span an earlier unmeasured leg) — and
+``raw["usage_caveats"]`` says which.
 """
 
 from __future__ import annotations
@@ -521,9 +525,11 @@ _USAGE_KEYS = (
 
 # Why a leg's recorded figure is not a faithful measure of that leg. Recorded
 # verbatim in raw["usage_caveats"]; raw["usage_faithful"] is their absence.
+# Two values, and the code can produce both — a vocabulary is only useful if
+# every entry is reachable, so "rollout_turn_rejected" went with the rollout
+# recovery it described (review round 9).
 USAGE_CAVEAT_MISSING = "missing"
 USAGE_CAVEAT_ABSORBED = "absorbed_missing_leg"
-USAGE_CAVEAT_ROLLOUT_REJECTED = "rollout_turn_rejected"
 
 
 @dataclass(frozen=True)
@@ -539,14 +545,12 @@ class _Usage:
 
     ``caveats`` is the honesty record: empty when ``delta`` measures THIS leg
     and nothing else, otherwise the reasons it does not — short
-    (:data:`USAGE_CAVEAT_MISSING`) or long
-    (:data:`USAGE_CAVEAT_ABSORBED`). ``turn_id`` is the rollout turn these
-    figures were read beside, when it is one this harness has not already
-    attributed to an earlier leg.
+    (:data:`USAGE_CAVEAT_MISSING`) or not provably its own
+    (:data:`USAGE_CAVEAT_ABSORBED`).
     """
 
     raw: dict[str, Any] | None
-    source: str  # "stream" | "stream+rollout_turn" | "rollout" | "none"
+    source: str  # "stream" (the delta) | "none" (nothing measured this leg)
     # Always a dict: a published field must not change type between legs.
     delta: dict[str, int]
     input_tokens: int = 0
@@ -560,16 +564,18 @@ class _Usage:
     # This leg spent tokens that could not be read from any source: its zeros
     # are "unknown", not "free". Recorded as raw["usage_missing"].
     usage_missing: bool = False
-    # ``thread_total`` is not codex's own figure (it was carried over, or
-    # reconstructed on top of a carried-over one), so the next leg cannot
-    # trust a stream delta taken against it.
+    # ``thread_total`` is not known to be codex's cumulative after THIS leg
+    # (this leg was never measured, whatever the baseline was repaired to), so
+    # the next leg cannot prove a stream delta taken against it is its own.
     baseline_gap: bool = False
     # Why ``delta`` is not a faithful measure of this leg (empty when it is).
     caveats: tuple[str, ...] = ()
-    # The rollout turn id these figures sit beside, if it is a turn no earlier
-    # leg has already been credited with; carried so the next leg can tell a
-    # fresh record from a stale one.
-    turn_id: str | None = None
+    # Codex's rollout records the thread past everything this harness has
+    # billed, measured against a baseline known to be WHOLE: this leg did work
+    # even though its stream reported none. Only meaningful on the
+    # ``source == "none"`` path, where it separates a leg to capture from a
+    # dead leg to retry.
+    active_per_rollout: bool = False
 
 
 def _as_usage(obj: Any) -> dict[str, int] | None:
@@ -608,39 +614,40 @@ def _stream_usage(events: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, 
 
 def _read_rollout(
     rollout_path: str | None,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, str | None]:
-    """``(this turn's turn_token_usage, the paired thread_token_usage, last
-    rate_limits, that turn's turn_id)`` from codex's rollout.
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """``(codex's post-turn thread_token_usage for the last turn in the file,
+    the last rate_limits)`` from codex's rollout.
 
     Recorded shape (``tests/fixtures/codex_rollout_ok.jsonl``): top-level
     ``{"type":"token_usage_record","payload":{"turn_id":…,"usage":…,
     "turn_token_usage":…,"thread_token_usage":…}}`` after each model response,
     and ``{"type":"event_msg","payload":{"type":"token_count","info":{…},
     "rate_limits":{"primary":{"used_percent":…,"window_minutes":300,…},
-    "secondary":{…"window_minutes":10080…},"plan_type":…}}}``. "This turn" =
-    the lines after the last ``turn_context`` (the leg that just ran is the
-    last turn appended); the last ``token_usage_record`` there carries the
-    turn's running total, and the ``thread_token_usage`` of that SAME payload
-    is codex's own authoritative thread total after the turn — preferred over
-    reconstructing one (review round 7). Best-effort: any read/parse problem
-    ⇒ ``(None, None, None, None)``. The on-disk format is codex-internal and may
-    change — this is the failure-path fallback and the rate-limit source,
-    never the primary usage source.
+    "secondary":{…"window_minutes":10080…},"plan_type":…}}}``.
 
-    The ``turn_id`` is returned so the caller can tell "this turn's record"
-    from "the previous turn's record, because this turn never got as far as a
-    ``turn_context``" — indistinguishable from the figures alone (review
-    round 8, N-15).
+    **Not a per-turn usage source** (review round 9). The rollout answers two
+    questions and no others: how far along the thread's CUMULATIVE usage is —
+    which repairs the harness's baseline, and can never say which turn ran —
+    and whether a leg whose stream reported nothing did work after all. Which
+    turn a record belongs to it cannot answer: both attempts to infer that (the
+    last turn id read, then this cumulative having advanced) prove staleness
+    only, and were read backwards as proof of freshness. See :func:`_advances`.
+
+    "The last turn in the file" = the lines after the last ``turn_context``
+    (the leg that just ran is the last turn appended). A leg that died before
+    codex wrote its ``turn_context`` leaves the file ending on the PREVIOUS
+    turn's record, and that turn's cumulative must not surface as this leg's
+    evidence of work (round 8, N-15) — so the reset is what keeps a dead leg
+    dead. Best-effort: any read/parse problem ⇒ ``(None, None)``. The on-disk
+    format is codex-internal and may change.
     """
     if not rollout_path:
-        return None, None, None, None
+        return None, None
     try:
         lines = Path(rollout_path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return None, None, None, None
-    turn_usage: dict[str, Any] | None = None
+        return None, None
     thread_usage: dict[str, Any] | None = None
-    turn_id: str | None = None
     rate_limits: dict[str, Any] | None = None
     for line in lines:
         line = line.strip()
@@ -654,20 +661,16 @@ def _read_rollout(
             continue
         payload = obj.get("payload")
         if obj.get("type") == "turn_context":
-            # A new turn starts; only its own records count. The thread total
-            # is cumulative, so an earlier turn's is still the truth until a
-            # record of this turn replaces it — but it is only returned
-            # paired with a turn usage (see below).
-            turn_usage = None
-            turn_id = None
+            # A new turn starts; only its own records count from here.
+            thread_usage = None
         elif obj.get("type") == "token_usage_record" and isinstance(payload, dict):
-            candidate = payload.get("turn_token_usage")
-            if isinstance(candidate, dict):
-                turn_usage = candidate
-                thread_candidate = payload.get("thread_token_usage")
-                thread_usage = thread_candidate if isinstance(thread_candidate, dict) else None
-                tid = payload.get("turn_id")
-                turn_id = tid if isinstance(tid, str) else None
+            if isinstance(payload.get("turn_token_usage"), dict):
+                # Each record of a turn carries the running cumulative; the
+                # last one is the turn's. Paired with a turn figure so a
+                # record shaped some other way is ignored rather than guessed
+                # at.
+                candidate = payload.get("thread_token_usage")
+                thread_usage = candidate if isinstance(candidate, dict) else None
         elif (
             obj.get("type") == "event_msg"
             and isinstance(payload, dict)
@@ -675,13 +678,7 @@ def _read_rollout(
             and isinstance(payload.get("rate_limits"), dict)
         ):
             rate_limits = _trim_rate_limits(payload["rate_limits"])
-    # thread_usage is only meaningful alongside the turn it was recorded with.
-    return (
-        turn_usage,
-        (thread_usage if turn_usage is not None else None),
-        rate_limits,
-        turn_id if turn_usage is not None else None,
-    )
+    return thread_usage, rate_limits
 
 
 def _trim_rate_limits(rate_limits: dict[str, Any]) -> dict[str, Any]:
@@ -725,34 +722,28 @@ def _partition(usage: dict[str, int]) -> tuple[int, int, int, int]:
     return non_cached, usage["output_tokens"], cache_write, cached
 
 
-def _exceeds(share: dict[str, int], whole: dict[str, int]) -> bool:
-    """``share`` is not a component-wise share of ``whole``."""
-    return any(share[k] > whole.get(k, 0) for k in _USAGE_KEYS)
-
-
-def _partitionable(usage: dict[str, int]) -> bool:
-    """:func:`_partition` would not raise on ``usage``: the cache slices fit
-    inside the prompt. Used where a *raise* would be the wrong answer — the
-    rollout is codex-internal and must never fail a leg the stream reported
-    as completed (review round 8, N-8)."""
-    return (
-        usage["input_tokens"] - usage["cached_input_tokens"] - usage["cache_write_input_tokens"]
-    ) >= 0
-
-
 def _advances(thread_total: dict[str, int] | None, baseline: dict[str, int]) -> bool:
-    """``thread_total`` — a rollout record's post-turn cumulative — describes a
-    turn that ran AFTER ``baseline``: no component smaller, at least one
-    larger.
+    """``thread_total`` — a rollout record's post-turn cumulative — is beyond
+    ``baseline``: no component smaller, at least one larger.
 
-    This is the staleness test that does not depend on having read the
-    rollout before. A turn id can only be compared against one the harness
-    happened to read on an earlier leg, and that memory lags whenever a leg's
-    read yields nothing (file absent, unreadable, id-less) — an intermediate
-    turn's record then looks new. Codex's own cumulative cannot lag: it is
-    monotone, and the harness's recorded total is never ahead of it (a
-    reconstructed baseline is short, never long), so "has not moved past what
-    we already recorded" means "a turn already billed".
+    **Sound in one direction only, and which one is the whole point** (review
+    round 9). *False* means the record's turn is already inside what the
+    harness has recorded: codex's cumulative is monotone and the harness's
+    baseline is never ahead of it (a repaired baseline is short, never long),
+    so "has not moved past what we recorded" does mean "already covered".
+    *True* means only "some turn ran beyond the baseline" — never "this leg's
+    turn". When the baseline is short, which is exactly the state an
+    unmeasurable leg leaves behind, an earlier never-billed turn is beyond it
+    too. The predecessor of this code read True as freshness and adopted such
+    records as a leg's own share; three executed consequences later
+    (a dead leg captured with turn 1's tokens, a failed leg billed an earlier
+    turn, a winning attempt recording a turn that was not its own — all marked
+    faithful) that inference is gone.
+
+    So True is used for two things and no others: to move the baseline forward
+    (a cumulative names no turn, so adopting one cannot mis-attribute — at
+    worst it is short), and, against a baseline known to be WHOLE, as evidence
+    that a leg whose stream said nothing did work. Never to attribute tokens.
     """
     if thread_total is None:
         return False
@@ -767,79 +758,58 @@ def _usage_from(
     *,
     previous_thread_total: dict[str, int] | None,
     baseline_has_gap: bool = False,
-    previous_turn_id: str | None = None,
 ) -> _Usage:
-    """Map one leg's event stream (and, for failed turns, codex's rollout)
-    onto token counts. Calibrated against the recorded fixtures named in
-    :func:`_stream_usage` / :func:`_read_rollout`, not against docs.
+    """Map one leg's event stream onto token counts, with codex's rollout for
+    the thread's cumulative and its rate limits — never for a leg's own share.
+    Calibrated against the recorded fixtures named in :func:`_stream_usage` /
+    :func:`_read_rollout`, not against docs.
 
-    Primary source: ``turn.completed.usage`` on the stream — the thread
-    total, so this leg = total − ``previous_thread_total`` (zero for the
-    first leg of a thread). Failure path (``turn.failed`` carries no usage):
-    this turn's ``turn_token_usage`` from the rollout, with the rollout's own
-    ``thread_token_usage`` as the new baseline. Neither ⇒ ``source="none"``
-    with zeros and ``usage_missing`` (a *completed* turn landing here raises
-    in :meth:`CodexCliHarness._attempt`). ``rate_limits`` is read from the
-    rollout on every leg, best-effort — it is the only place codex reports
-    subscription usage (5-hour and weekly ``used_percent``).
+    **A leg's own figure comes from the stream delta and from nothing else**
+    (review round 9). ``turn.completed.usage`` is the thread total, so this
+    leg = total − ``previous_thread_total`` (zero for the first leg of a
+    thread). A ``turn.failed`` carries no usage, and nothing may stand in for
+    it: the leg records zeros with ``usage_missing`` and
+    :data:`USAGE_CAVEAT_MISSING`. (A *completed* turn landing there raises in
+    :meth:`CodexCliHarness._attempt` — a success is never recorded as free.)
 
-    ``baseline_has_gap`` says an earlier leg spent tokens nobody could read,
-    so ``previous_thread_total`` is short by an unknown amount. A stream
-    delta taken against it would silently bill the missing turn to THIS leg
-    (review round 7, I-1), so when the rollout offers this turn's own
-    ``turn_token_usage`` it is used for the leg's share instead; the stream's
-    thread total still becomes the new baseline, which closes the gap. Only
-    then — the rollout is codex-internal and must not become the routine
-    source of the per-leg figures.
+    The rollout keeps exactly two jobs. Its ``thread_token_usage`` is codex's
+    own post-turn CUMULATIVE: once it has moved past the baseline it becomes
+    the new baseline, which is the only thing stopping every later delta from
+    inheriting an unmeasured turn (review round 7, I-1). A cumulative names no
+    turn, so adopting one cannot mis-attribute tokens — at worst it is short,
+    and :func:`_advances` keeps it from moving backwards. And when a leg's
+    stream shows neither usage nor model activity, that same cumulative beyond
+    a baseline known to be WHOLE is evidence the leg worked anyway
+    (``active_per_rollout``); against a short baseline it is no evidence at
+    all, so the leg is dead and gets retried rather than captured.
 
-    **The invariant this function exists to keep** (review round 8, I-1):
-    ``delta`` either measures THIS leg and nothing else, or ``caveats`` says
-    why not. Recovery is best-effort and can fail — the rollout may be absent
-    for good, malformed, or a previous turn's — and when it does, the delta
-    still absorbs the unreadable leg. That leg is then over-reported, which is
-    no more honest than the zero-reported one, so it is marked too. The three
-    ways the figure can be unfaithful:
+    ``baseline_has_gap`` says the baseline is not known to equal codex's
+    cumulative, because an earlier leg spent tokens nobody could measure. A
+    stream delta taken against it may span that leg as well as this one and
+    nothing can prove otherwise, so the leg is marked
+    :data:`USAGE_CAVEAT_ABSORBED`. The harness used to try to recover this
+    leg's own share from the rollout's turn record instead. It could not:
+    neither the last turn id read nor the cumulative watermark proves a record
+    BELONGS to this leg, and against the very short baseline that makes
+    recovery necessary, an earlier never-billed turn passes both tests. That
+    inference is deleted, not refined.
 
-    * nothing readable at all ⇒ zeros + ``USAGE_CAVEAT_MISSING``;
-    * absorbed an earlier unreadable leg ⇒ ``USAGE_CAVEAT_ABSORBED``;
-    * a rollout figure existed but could not be trusted (stale turn, not a
-      share of the stream delta, or unpartitionable) ⇒ additionally
-      ``USAGE_CAVEAT_ROLLOUT_REJECTED``.
-
-    ``previous_turn_id`` is the rollout turn already credited to an earlier
-    leg. A leg that dies before codex writes a ``turn_context`` leaves the
-    file ending on that same record, so re-reading it would bill one turn to
-    two attempts — and would make a dead leg look spent, skipping its retry
-    (round 8, N-15).
+    **The invariant this function exists to keep** (review round 8, I-1;
+    unchanged by round 9's deletion): ``delta`` either measures THIS leg and
+    nothing else, or ``caveats`` says why not — short
+    (:data:`USAGE_CAVEAT_MISSING`: zeros meaning "unknown", never "free") or
+    not provably its own (:data:`USAGE_CAVEAT_ABSORBED`). Over-marking is the
+    honest direction: a delta taken against a repaired baseline is often
+    exactly right, and is still marked, because the harness cannot show it.
     """
     prev = previous_thread_total or {k: 0 for k in _USAGE_KEYS}
     verbatim, total = _stream_usage(events)
-    rollout_turn, rollout_thread, rate_limits, rollout_turn_id = _read_rollout(rollout_path)
-    # Codex had *a* turn figure on disk — remembered before the staleness gate
-    # below may drop it, because "offered one we could not trust" and "offered
-    # none" are different things to record.
-    rollout_offered = rollout_turn is not None
-    # Two independent staleness gates; either one condemns the record.
-    # The turn id catches a repeat of the exact turn last read. The watermark
-    # catches every other lag, including the one the id gate cannot see: a leg
-    # whose own read yielded no id leaves the memory pointing at an OLDER
-    # turn, so an intermediate turn's record has a different id and sails
-    # through. Codex's post-turn cumulative is checked against what the
-    # harness has already recorded, which needs no prior read at all.
-    stale_by_id = rollout_turn_id is not None and rollout_turn_id == previous_turn_id
-    rollout_thread_total = _as_usage(rollout_thread)
-    stale_by_total = rollout_thread_total is not None and not _advances(
-        rollout_thread_total, prev
-    )
-    stale = stale_by_id or stale_by_total
-    if stale:
-        # A previous leg's record, not this leg's. Its figures are already
-        # billed. rate_limits survives: it is last-known-value by design.
-        rollout_turn = rollout_thread = None
-    # Only a turn no earlier leg was credited with is worth remembering; an
-    # id-less record (an older or changed format) cannot be checked at all, so
-    # it stays trusted exactly as before.
-    fresh_turn_id = None if stale else rollout_turn_id
+    rollout_thread, rate_limits = _read_rollout(rollout_path)
+    # The one thing the rollout is allowed to say: codex's cumulative has
+    # moved past everything this harness has recorded. Which turn moved it is
+    # a question it is no longer asked.
+    watermark = _as_usage(rollout_thread)
+    beyond_baseline = _advances(watermark, prev)
     if total is not None:
         delta = {k: total[k] - prev.get(k, 0) for k in _USAGE_KEYS}
         if any(v < 0 for v in delta.values()):
@@ -847,72 +817,24 @@ def _usage_from(
                 f"codex thread usage went backwards (previous total {prev}, now {total}) — "
                 "the cumulative reading in _usage_from no longer holds; refusing to record"
             )
-        source = "stream"
-        caveats: tuple[str, ...] = ()
-        # The object the recorded counts were read from — which is what
-        # cache_tokens_reported annotates (round 8, N-6).
-        counted: dict[str, Any] | None = verbatim
-        if baseline_has_gap:
-            # ``prev`` is short by an earlier unreadable leg, so ``delta``
-            # spans THIS leg plus that one. Only the rollout can say what this
-            # leg's own share was — and only if the figure is this turn's, is
-            # a component-wise share of the delta, and can be partitioned.
-            # Failing any of those, adopting it would swap an over-report for
-            # an invented number, which is strictly worse.
-            recovered = _as_usage(rollout_turn)
-            if recovered is not None and not _exceeds(recovered, delta) and _partitionable(recovered):
-                delta = recovered
-                counted = rollout_turn
-                source = "stream+rollout_turn"
-            else:
-                caveats = (USAGE_CAVEAT_ABSORBED,)
-                if rollout_offered:
-                    caveats += (USAGE_CAVEAT_ROLLOUT_REJECTED,)
         non_cached, out, cache_write, cached = _partition(delta)
         return _Usage(
             raw=verbatim,
-            source=source,
+            source="stream",
             input_tokens=non_cached,
             output_tokens=out,
             cache_creation_tokens=cache_write,
             cache_read_tokens=cached,
-            cache_tokens_reported="cached_input_tokens" in (counted or {}),
+            # The object the recorded counts were read from — which is what
+            # cache_tokens_reported annotates (round 8, N-6).
+            cache_tokens_reported="cached_input_tokens" in (verbatim or {}),
             reasoning_output_tokens=delta["reasoning_output_tokens"],
             delta=delta,
+            # Codex's own figure: the baseline it leaves behind is whole, so
+            # the marking stops with this leg.
             thread_total=total,
             rate_limits=rate_limits,
-            caveats=caveats,
-            turn_id=fresh_turn_id,
-        )
-    turn = _as_usage(rollout_turn)
-    # Unpartitionable here too means "reject", not "raise": the same
-    # codex-internal inconsistency must not abort a failed leg when it is
-    # tolerated on a completed one (review round 8, I-2). The leg then falls
-    # through to the zeros-plus-caveats path below, which is honest and keeps
-    # the run alive.
-    if turn is not None and _partitionable(turn):
-        non_cached, out, cache_write, cached = _partition(turn)
-        # Codex's own post-turn thread total when the payload carried one;
-        # only fall back to reconstruction (which inherits any earlier gap)
-        # when it did not.
-        authoritative = _as_usage(rollout_thread)
-        return _Usage(
-            raw=rollout_turn,
-            source="rollout",
-            input_tokens=non_cached,
-            output_tokens=out,
-            cache_creation_tokens=cache_write,
-            cache_read_tokens=cached,
-            cache_tokens_reported="cached_input_tokens" in (rollout_turn or {}),
-            reasoning_output_tokens=turn["reasoning_output_tokens"],
-            delta=turn,
-            thread_total=authoritative or {k: prev.get(k, 0) + turn[k] for k in _USAGE_KEYS},
-            rate_limits=rate_limits,
-            baseline_gap=baseline_has_gap and authoritative is None,
-            # This leg measured its OWN turn: faithful, whatever the baseline
-            # it sits on top of (that is the next leg's problem, and flagged
-            # to it via baseline_gap).
-            turn_id=fresh_turn_id,
+            caveats=(USAGE_CAVEAT_ABSORBED,) if baseline_has_gap else (),
         )
     return _Usage(
         raw=None,
@@ -920,18 +842,16 @@ def _usage_from(
         # Zeros, not None: a published field must not change type, and this
         # leg's share really is unknown — usage_missing is what says so.
         delta={k: 0 for k in _USAGE_KEYS},
-        thread_total=previous_thread_total,
+        # Codex's cumulative when it has moved on, else what we had. Never
+        # backwards, and never reconstructed out of a turn record.
+        thread_total=watermark if beyond_baseline else previous_thread_total,
         rate_limits=rate_limits,
         usage_missing=True,
+        # Whatever the baseline was repaired to, it is not known to be codex's
+        # cumulative after THIS leg: this turn was never measured.
         baseline_gap=True,
-        # "Nobody could tell us" and "codex told us something we could not
-        # trust" are different failures; the record distinguishes them.
-        caveats=(
-            (USAGE_CAVEAT_MISSING, USAGE_CAVEAT_ROLLOUT_REJECTED)
-            if rollout_offered
-            else (USAGE_CAVEAT_MISSING,)
-        ),
-        turn_id=fresh_turn_id,
+        caveats=(USAGE_CAVEAT_MISSING,),
+        active_per_rollout=beyond_baseline and not baseline_has_gap,
     )
 
 
@@ -1046,13 +966,10 @@ class CodexCliHarness(Harness):
         # own share is the delta against this. Reset per start_build (new
         # thread).
         self._thread_total: dict[str, int] | None = None
-        # The rollout turn already credited to a leg, so the next leg can
-        # reject a record codex never replaced (a leg that died before writing
-        # its own turn_context leaves the previous one as the file's last).
-        self._last_turn_id: str | None = None
-        # True once a spent leg's usage could not be read from any source:
-        # _thread_total is then short by an unknown amount and a stream delta
-        # taken against it would mis-bill the next leg (see _usage_from).
+        # True once a leg's own share could not be measured: _thread_total is
+        # then not known to be codex's cumulative after that leg, so a stream
+        # delta taken against it is not provably the next leg's own (it may
+        # span the unmeasured one). See _usage_from.
         self._thread_total_gap = False
         # Empty directory used as HOME for every codex subprocess of this run
         # (see _subprocess_env). Created in start_build, reused by resumes.
@@ -1186,18 +1103,17 @@ class CodexCliHarness(Harness):
                 rollout_path,
                 previous_thread_total=self._thread_total,
                 baseline_has_gap=self._thread_total_gap,
-                previous_turn_id=self._last_turn_id,
             )
             errors = _error_messages(events)
             completed = terminal is not None and terminal.get("type") == "turn.completed"
             if completed:
                 if usage.source == "none":
                     raise HarnessError(
-                        f"codex ({leg_name}) reported turn.completed for thread {thread_id} but no "
-                        "token usage could be found in the event stream or the session rollout "
-                        f"({rollout_path}). A success is never recorded with zero tokens — "
-                        "the usage parser is uncalibrated or the CLI format changed "
-                        "(plans/codex-cli-harness.md §4.5, §6)."
+                        f"codex ({leg_name}) reported turn.completed for thread {thread_id} but "
+                        "no token usage could be found in the event stream — and the rollout "
+                        f"({rollout_path}) is not a usage source. A success is never recorded "
+                        "with zero tokens: the usage parser is uncalibrated or the CLI format "
+                        "changed (plans/codex-cli-harness.md §4.5, §6)."
                     )
                 return self._result(
                     leg=leg,
@@ -1217,7 +1133,18 @@ class CodexCliHarness(Harness):
                     harness_error=None,
                 )
             error_text = _harness_error_text(terminal, errors, leg.stderr, leg.returncode)
-            dead = usage.source == "none" and not _has_model_activity(events)
+            # Nothing from the model, nothing measured, and no turn recorded
+            # in the rollout beyond a baseline known whole: this turn never
+            # happened, so retry it rather than capture it as the attempt's
+            # result. A rollout record that merely sits beyond a SHORT
+            # baseline proves nothing — reading it as "this leg spent tokens"
+            # captured genuinely dead legs and corrupted attempts-to-green
+            # (review round 9, C-1).
+            dead = (
+                usage.source == "none"
+                and not _has_model_activity(events)
+                and not usage.active_per_rollout
+            )
             if dead:
                 dead_legs += 1
                 dead_leg_errors.extend(errors or [error_text])
@@ -1274,10 +1201,6 @@ class CodexCliHarness(Harness):
         if usage.thread_total is not None:
             self._thread_total = usage.thread_total
         self._thread_total_gap = usage.baseline_gap
-        if usage.turn_id is not None:
-            # Never cleared: an unreadable leg must not un-remember an earlier
-            # turn, or a later stale read would sail through.
-            self._last_turn_id = usage.turn_id
         if usage.rate_limits:
             # Printed only for legs that return: a dead leg's rollout shows
             # the previous turn's (stale) figures.
@@ -1297,9 +1220,10 @@ class CodexCliHarness(Harness):
             # THE field to read before trusting usage_delta (or the token
             # columns derived from it) as this attempt's cost: false when the
             # figure is not a measure of this attempt alone — short because
-            # nothing was readable, or long because it absorbed an earlier
-            # leg whose usage nobody could read. usage_caveats names which,
-            # from a fixed vocabulary; neither needs any harness internals to
+            # nothing measured it, or not provably its own because the
+            # baseline it was taken against may be short by an earlier
+            # unmeasured leg. usage_caveats names which, from a fixed
+            # two-value vocabulary; neither needs any harness internals to
             # interpret. An over-reported attempt is no more honest than a
             # zero-reported one, so both are marked (review round 8).
             "usage_faithful": not usage.caveats,
@@ -1375,7 +1299,6 @@ class CodexCliHarness(Harness):
             raise
         self._thread_total = None
         self._thread_total_gap = False
-        self._last_turn_id = None
         self._worktree_dir = worktree_dir
         self._model = model
         self._effort = effort

@@ -818,11 +818,15 @@ def test_rate_limits_recorded_from_rollout_on_success(monkeypatch, tmp_path, iso
     assert r.raw["usage_source"] == "stream"  # the rollout is NOT the usage source on success
 
 
-def test_non_dead_failure_takes_usage_from_rollout(monkeypatch, tmp_path, isolated_env):
+
+def test_non_dead_failure_records_no_usage_and_says_so(monkeypatch, tmp_path, isolated_env):
     """SYNTHETIC stream: the real success envelope with turn.completed swapped
     for the real turn.failed line (model produced an item, then the turn
-    failed — a failed turn carries no usage on the stream). Usage must come
-    from the rollout's turn_token_usage of the LAST turn."""
+    failed — a failed turn carries no usage on the stream). The rollout holds
+    that turn's figures, but since review round 9 it is never a leg's usage
+    source: the leg records zeros and MARKS them, rather than a figure the
+    harness cannot prove belongs to this turn. The leg is still captured (not
+    retried) and the rollout is still read for rate limits."""
     _install_rollout(tmp_path)
     failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
     stream = "\n".join(
@@ -831,13 +835,15 @@ def test_non_dead_failure_takes_usage_from_rollout(monkeypatch, tmp_path, isolat
     legs = _Legs([(stream, "", 1)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    turn2 = _rollout_turn_usages()[1]  # last turn_context in the rollout is turn 2
     assert len(legs.calls) == 1  # non-dead: not retried
-    assert r.raw["usage_source"] == "rollout"
-    assert r.raw["usage"] == turn2  # verbatim turn_token_usage
-    assert r.input_tokens == turn2["input_tokens"] - turn2["cached_input_tokens"]
-    assert r.cache_read_tokens == turn2["cached_input_tokens"]
-    assert r.output_tokens == turn2["output_tokens"]
+    assert r.raw["usage_source"] == "none"
+    assert r.raw["usage"] is None
+    assert r.raw["usage_delta"] == {k: 0 for k in r.raw["usage_delta"]}
+    assert r.raw["usage_missing"] is True
+    assert r.raw["usage_faithful"] is False and r.raw["usage_caveats"] == ["missing"]
+    assert (r.input_tokens, r.output_tokens, r.cache_read_tokens) == (0, 0, 0)
+    # No counted object, so no cache split was reported (round 4, M12).
+    assert r.raw["cache_tokens_reported"] is False
     assert "401 Unauthorized" in r.raw["harness_error"]
     assert r.raw["rate_limits"]["plan_type"] == "plus"
 
@@ -1022,20 +1028,21 @@ def _stage_rollout(legs: _Legs, tmp_path: Path, after_leg: dict[int, list[str]])
     return popen
 
 
-def test_read_rollout_ignores_usage_from_earlier_turns():
+
+def test_read_rollout_ignores_the_thread_total_of_an_earlier_turn():
     """A resumed turn that 401s gets a turn_context line appended to the
-    rollout but no usage record. Its usage must read as NONE — not as the
-    previous turn's — or a dead resume would be captured with stale tokens."""
+    rollout but no usage record. The watermark must read as NONE — not as the
+    previous turn's cumulative — or an earlier turn's record would look like
+    evidence that this leg did work, and a dead resume would be captured
+    instead of retried."""
     import tempfile as _tf
 
     lines = _rollout_lines() + [_last_turn_context_line()]  # SYNTHETIC tail: the dead turn's context line
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    turn, _thread, rate_limits, turn_id = codex_cli._read_rollout(fh.name)
+    thread_total, rate_limits = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
-    assert turn is None
-    # ...and with no turn there is no turn id to credit to the dead leg.
-    assert turn_id is None
+    assert thread_total is None
     assert rate_limits is not None and rate_limits["plan_type"] == "plus"
 
 
@@ -1055,10 +1062,14 @@ def test_dead_resume_with_real_rollout_is_retried_then_raises(monkeypatch, tmp_p
     assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
 
 
-def test_thread_total_advances_after_rollout_sourced_failure(monkeypatch, tmp_path, isolated_env):
-    """Leg 2 fails after model activity (usage from the rollout: turn 2).
-    Leg 3's stream reports the new thread total; its delta must be exactly
-    turn 3 — the failed turn must not be counted twice."""
+
+def test_thread_total_advances_after_a_failed_leg_the_rollout_covers(monkeypatch, tmp_path, isolated_env):
+    """Leg 2 fails after model activity. Its own share is unmeasurable (the
+    stream reports nothing and the rollout is not a usage source since review
+    round 9), so it records zeros — but codex's own post-turn
+    ``thread_token_usage`` beside turn 2's record repairs the cumulative
+    baseline, so leg 3's delta is exactly turn 3 and the failed turn is not
+    billed to it."""
     _write_rollout(tmp_path, _rollout_through_turn1())
     failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
     # SYNTHETIC: the real success envelope of the resume with turn.completed
@@ -1082,36 +1093,42 @@ def test_thread_total_advances_after_rollout_sourced_failure(monkeypatch, tmp_pa
     r2 = h.continue_build(r1.session_handle, "fix it")
     r3 = h.continue_build(r1.session_handle, "fix it again")
     turn2 = _rollout_turn_usages()[1]
-    assert r2.raw["usage_source"] == "rollout" and r2.input_tokens == 16119 - 12160
+    assert r2.raw["usage_source"] == "none" and r2.raw["usage_missing"] is True
+    assert (r2.input_tokens, r2.cache_read_tokens) == (0, 0)
     assert r3.raw["usage_source"] == "stream"
     assert r3.raw["usage_delta"] == turn3
     assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
     assert r3.raw["reasoning_output_tokens"] == 3  # the leg's share, not the thread total
-    # all three attempts sum to the thread total — nothing double- or under-counted
+    # Turn 2's tokens are counted on NO attempt: they sit between the last
+    # measured baseline and the repaired one. usage_missing on leg 2 is what
+    # declares the run total short by exactly that turn.
     assert r1.input_tokens + r1.cache_read_tokens + r2.input_tokens + r2.cache_read_tokens \
-        + r3.input_tokens + r3.cache_read_tokens == total_after_turn3["input_tokens"]
+        + r3.input_tokens + r3.cache_read_tokens == total_after_turn3["input_tokens"] \
+        - turn2["input_tokens"]
     assert turn2["input_tokens"] == 16119
+
 
 
 def test_read_rollout_takes_the_last_usage_record_of_the_turn():
     """A build turn makes many model requests; each token_usage_record carries
-    the turn's RUNNING total, so the last one is the turn's usage."""
+    the thread's running cumulative, so the last one is the watermark. An
+    earlier, smaller one would under-repair the baseline."""
     import tempfile as _tf
 
     lines = _rollout_lines()
     idx = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
     real = json.loads(lines[idx])
     earlier = json.loads(lines[idx])  # SYNTHETIC: an earlier, smaller running total in the same turn
-    earlier["payload"]["turn_token_usage"] = {
-        k: (v // 2 if isinstance(v, int) else v) for k, v in real["payload"]["turn_token_usage"].items()
-    }
+    for key in ("turn_token_usage", "thread_token_usage"):
+        earlier["payload"][key] = {
+            k: (v // 2 if isinstance(v, int) else v) for k, v in real["payload"][key].items()
+        }
     lines.insert(idx, json.dumps(earlier, separators=(",", ":")))
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    turn, _thread, _rl, turn_id = codex_cli._read_rollout(fh.name)
+    thread_total, _rl = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
-    assert turn == real["payload"]["turn_token_usage"]
-    assert turn_id == real["payload"]["turn_id"]
+    assert thread_total == real["payload"]["thread_token_usage"]
 
 
 # --------------------------------------------------------------------------
@@ -1215,23 +1232,6 @@ def test_dead_legs_do_not_print_stale_rate_limits(monkeypatch, tmp_path, isolate
 # Mutants that survived round 4's run (M12, M20, M21, M22)
 
 
-def test_rollout_sourced_usage_reports_cache_field_presence(monkeypatch, tmp_path, isolated_env):
-    """M12: cache_tokens_reported on the rollout path follows the field too."""
-    lines = []
-    for ln in _rollout_lines():
-        obj = json.loads(ln)
-        if obj.get("type") == "token_usage_record":
-            obj["payload"]["turn_token_usage"].pop("cached_input_tokens")  # SYNTHETIC: field absent
-        lines.append(json.dumps(obj, separators=(",", ":")))
-    _write_rollout(tmp_path, lines)
-    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
-    stream = "\n".join([ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]) + "\n"
-    legs = _Legs([(stream, "", 1)])
-    _install(monkeypatch, legs)
-    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    assert r.raw["usage_source"] == "rollout" and r.raw["cache_tokens_reported"] is False
-
-
 def test_interrupt_during_preflight_removes_home_and_reraises(monkeypatch, tmp_path, isolated_env):
     """M20: the cleanup must also run for KeyboardInterrupt (BaseException)."""
     legs = _Legs([(OK_START, "", 0)])
@@ -1242,10 +1242,18 @@ def test_interrupt_during_preflight_removes_home_and_reraises(monkeypatch, tmp_p
     assert legs.calls == []
 
 
+
 def test_turn_with_usage_but_no_items_is_not_dead(monkeypatch, tmp_path, isolated_env):
     """M21: rule 2 is 'no non-error item AND no usage'. A turn that spent
-    tokens (e.g. reasoning only) and then failed is captured, never retried."""
-    _write_rollout(tmp_path, _rollout_lines())
+    tokens (e.g. reasoning only) and then failed is captured, never retried.
+
+    The stream shows neither an item nor a usage object, so the only evidence
+    the leg worked is codex's rollout — a turn recorded beyond everything this
+    harness has billed. That inference is sound ONLY because the baseline here
+    is whole (a fresh thread, nothing billed yet); against a baseline known to
+    be short it proves nothing, which is what
+    ``test_a_dead_resume_after_an_unreadable_start_leg_is_retried`` pins."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
     failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
     # SYNTHETIC: the real success envelope minus its agent_message item and
     # with turn.completed swapped for the real turn.failed line.
@@ -1258,7 +1266,10 @@ def test_turn_with_usage_but_no_items_is_not_dead(monkeypatch, tmp_path, isolate
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert len(legs.calls) == 1
-    assert r.raw["usage_source"] == "rollout" and r.raw["dead_turn_retries"] == 0
+    assert r.raw["dead_turn_retries"] == 0
+    # Its share is still unmeasurable — "it worked" is not "how much".
+    assert r.raw["usage_source"] == "none" and r.raw["usage_missing"] is True
+    assert r.raw["usage_caveats"] == ["missing"]
     assert "harness_error" in r.raw
 
 
@@ -1312,11 +1323,15 @@ def test_cache_writes_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, 
     assert r2.input_tokens == 16119 - 12160 - 1000 == 2959 and r2.cache_read_tokens == 12160
 
 
-def test_cache_writes_on_the_rollout_path_and_the_next_delta(monkeypatch, tmp_path, isolated_env):
-    """Failure path: the failed turn's writes (400, from the rollout) are
-    recorded as writes — not dropped, not counted as reads — and the thread
-    total advances by them, so the next leg's delta holds only its own 100.
-    (Contributed by the round-6 reviewer; SYNTHETIC write counts on real lines.)"""
+
+def test_cache_writes_in_the_repaired_baseline_leave_the_next_leg_its_own_share(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Failure path: the failed turn wrote 400 to the cache. Its own share is
+    unmeasurable, but the baseline codex records beside it moves by those 400
+    — so the next leg's delta holds only its own 100 writes. A baseline that
+    dropped the write component would hand leg 3 500. (Contributed by the
+    round-6 reviewer; SYNTHETIC write counts on real lines.)"""
     lines = _rollout_lines()
     last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
     o = json.loads(lines[last])
@@ -1346,8 +1361,8 @@ def test_cache_writes_on_the_rollout_path_and_the_next_delta(monkeypatch, tmp_pa
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "x")
     r3 = h.continue_build(r1.session_handle, "y")
-    assert r2.raw["usage_source"] == "rollout"
-    assert (r2.input_tokens, r2.cache_creation_tokens, r2.cache_read_tokens) == (16119 - 12160 - 400, 400, 12160)
+    assert r2.raw["usage_source"] == "none"
+    assert (r2.input_tokens, r2.cache_creation_tokens, r2.cache_read_tokens) == (0, 0, 0)
     assert (r3.input_tokens, r3.cache_creation_tokens, r3.cache_read_tokens) == (100, 100, 800)
 
 
@@ -1418,7 +1433,7 @@ def test_rate_limits_come_from_the_last_token_count(tmp_path):
     lines[last] = lines[last].replace('"used_percent":0.0', '"used_percent":7.0', 1)
     with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
         fh.write("\n".join(lines) + "\n")
-    _turn, _thread, rate_limits, _tid = codex_cli._read_rollout(fh.name)
+    _thread_total, rate_limits = codex_cli._read_rollout(fh.name)
     os.unlink(fh.name)
     assert rate_limits["primary"]["used_percent"] == 7.0
 
@@ -1514,17 +1529,51 @@ def _rollout_plus_turn3(turn: dict[str, int], thread: dict[str, int]) -> list[st
     ]
 
 
-def test_leg_with_unreadable_usage_is_marked_and_not_absorbed_by_the_next_delta(
-    monkeypatch, tmp_path, isolated_env
+
+@pytest.mark.parametrize(
+    "rollout",
+    ["fresh_turn_3", "stale_turn_1", "unpartitionable_turn_3", "oversized_turn_3"],
+)
+def test_no_rollout_record_is_ever_adopted_as_a_legs_share(
+    monkeypatch, tmp_path, isolated_env, rollout
 ):
     """Leg 2 fails after model activity while its rollout is unreadable (not
-    on disk yet): its usage is genuinely unknown. It must be recorded as
-    MISSING — a zero-filled delta plus ``usage_missing`` — and, crucially,
-    leg 3 must record only its OWN turn: before this fix leg 3's delta was
-    ``thread total − a stale baseline`` and quietly carried turn 2's tokens
-    (review round 7, I-1; the reviewer executed exactly this)."""
+    on disk yet): its usage is genuinely unknown, so it records zeros plus
+    ``usage_missing``. The file then becomes readable before leg 3 — and
+    whatever it holds, leg 3 records the stream delta (its own turn PLUS
+    leg 2's) and is MARKED.
+
+    This is review round 9's deletion, pinned. The harness used to take leg
+    3's share from the rollout when a turn record looked fresh — by turn id,
+    then by codex's post-turn cumulative having advanced past the recorded
+    baseline. Neither test proves a record BELONGS to this leg: when the
+    baseline is short (exactly the ``usage_missing`` state this machinery
+    existed for) an earlier, never-billed turn advances past it too, and was
+    adopted with ``usage_faithful: true``. The four cases below are the ones
+    that used to be adopted (a fresh record), refused-but-marked (stale,
+    unpartitionable, oversized) — now they are all the same case, because the
+    rollout no longer answers "which turn does this record belong to":
+
+    * ``fresh_turn_3`` — leg 3's own record, id and cumulative both new: used
+      to be recovered as ``usage_source: "stream+rollout_turn"``;
+    * ``stale_turn_1`` — codex appended nothing, so the file still ends on
+      turn 1's record;
+    * ``unpartitionable_turn_3`` — cache slice exceeds the prompt (round 8,
+      N-8): must not raise on a leg the stream reported as completed;
+    * ``oversized_turn_3`` — bigger than the stream delta, so it cannot be a
+      share of it.
+    """
     turn3, total_after_turn3 = _turn3_figures()
-    rollout3 = _rollout_plus_turn3(turn3, total_after_turn3)
+    files = {
+        "fresh_turn_3": lambda: _rollout_plus_turn3(turn3, total_after_turn3),
+        "stale_turn_1": _rollout_through_turn1,
+        "unpartitionable_turn_3": lambda: _rollout_plus_turn3(
+            {**turn3, "cached_input_tokens": turn3["input_tokens"] + 1}, total_after_turn3
+        ),
+        "oversized_turn_3": lambda: _rollout_plus_turn3(
+            {**turn3, "input_tokens": 999_999}, total_after_turn3
+        ),
+    }
     legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
                   (_stream_reporting(total_after_turn3), "", 0)])
     scripted = legs.__call__
@@ -1533,38 +1582,48 @@ def test_leg_with_unreadable_usage_is_marked_and_not_absorbed_by_the_next_delta(
         # The rollout only becomes readable in time for leg 3 — leg 2's usage
         # is lost for good, which is the case under test.
         if len(legs.calls) == 2:
-            _write_rollout(tmp_path, rollout3)
+            _write_rollout(tmp_path, files[rollout]())
         return scripted(cmd, **kwargs)
 
     _install(monkeypatch, popen)
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "fix it")
-    r3 = h.continue_build(r1.session_handle, "fix it again")
+    r3 = h.continue_build(r1.session_handle, "fix it again")  # must not raise
 
+    # Leg 1 measured itself.
+    assert r1.raw["usage_faithful"] is True and r1.raw["usage_caveats"] == []
     # Leg 2: zero tokens, but marked — not indistinguishable from a free turn.
     assert r2.raw["usage_source"] == "none"
     assert r2.raw["usage_missing"] is True
     assert r2.raw["usage_delta"] == {k: 0 for k in r2.raw["usage_delta"]}  # a dict, never None
     assert (r2.input_tokens, r2.output_tokens, r2.cache_tokens) == (0, 0, 0)
-    # Leg 3: its own turn only. The stale baseline must not leak into it.
-    assert r3.raw["usage_delta"] == turn3
-    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
-    assert r3.raw["reasoning_output_tokens"] == 3
+    assert r2.raw["usage_faithful"] is False and r2.raw["usage_caveats"] == ["missing"]
+    # Leg 3: the stream delta, which spans leg 2 — never a rollout figure.
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
     assert r3.raw["usage_missing"] is False
-    # Recovery succeeded, so leg 3 measures itself and carries no caveat.
-    assert r3.raw["usage_faithful"] is True and r3.raw["usage_caveats"] == []
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
     json.dumps(r2.raw), json.dumps(r3.raw)
 
 
-def test_rollout_sourced_thread_total_uses_codex_thread_token_usage(
+
+def test_an_unmeasurable_legs_rollout_repairs_the_cumulative_baseline(
     monkeypatch, tmp_path, isolated_env
 ):
-    """The rollout payload carries codex's own ``thread_token_usage`` next to
-    ``turn_token_usage``. A rollout-sourced leg must adopt that authoritative
-    total instead of reconstructing ``previous + turn``: after a leg with
-    unreadable usage the reconstruction is short by the missing turn and every
-    later delta inherits the error (review round 7, I-1)."""
+    """The rollout payload carries codex's own ``thread_token_usage``. That
+    cumulative is one of the two jobs the rollout still has after review
+    round 9 (the other is dead-leg detection): a leg the stream could not
+    measure adopts it as the next leg's baseline, so long as it has advanced
+    past the one already recorded.
+
+    Adopting a CUMULATIVE is not adopting a turn: it never says which turn
+    ran, only that the thread is at least this far along, so it can only move
+    the baseline toward the truth. Without it the baseline stays short by
+    every unmeasured turn and each later delta inherits the error — leg 4
+    would record turn 3 + turn 4 instead of its own turn 4 (review round 7,
+    I-1)."""
     turn3, total_after_turn3 = _turn3_figures()
     turn4 = {"input_tokens": 500, "cached_input_tokens": 400, "cache_write_input_tokens": 0,
              "output_tokens": 2, "reasoning_output_tokens": 0}
@@ -1584,15 +1643,22 @@ def test_rollout_sourced_thread_total_uses_codex_thread_token_usage(
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     h.continue_build(r1.session_handle, "fix it")          # leg 2: usage missing
-    r3 = h.continue_build(r1.session_handle, "fix it")     # leg 3: rollout-sourced failure
+    r3 = h.continue_build(r1.session_handle, "fix it")     # leg 3: usage missing too
     r4 = h.continue_build(r1.session_handle, "fix it")     # leg 4: back on the stream
 
-    assert r3.raw["usage_source"] == "rollout" and r3.raw["usage_delta"] == turn3
-    # Leg 4's delta is taken against the baseline leg 3 left behind. With the
-    # reconstruction that baseline was short by turn 2 and leg 4 absorbed it.
+    # Leg 3's own share is unmeasurable: the rollout is not a usage source.
+    assert r3.raw["usage_source"] == "none" and r3.raw["usage_missing"] is True
+    assert r3.raw["usage_caveats"] == ["missing"]
+    # ...but the cumulative beside that record repaired the baseline, so leg 4
+    # keeps only turn 4. With the baseline left short it would record
+    # turn 3 + turn 4.
     assert r4.raw["usage_source"] == "stream"
     assert r4.raw["usage_delta"] == turn4
-    assert r4.raw["usage_faithful"] is True and r4.raw["usage_caveats"] == []
+    # Leg 4 still cannot PROVE the repaired baseline was whole — only that it
+    # moved forward — so it stays marked. The harness never claims more than
+    # it can show, and over-marking is the honest direction.
+    assert r4.raw["usage_faithful"] is False
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
 
 
 # --------------------------------------------------------------------------
@@ -1764,94 +1830,6 @@ def test_the_absorbed_marker_clears_once_the_baseline_is_whole_again(
     assert r4.raw["usage_faithful"] is True and r4.raw["usage_caveats"] == []
 
 
-def test_a_rollout_turn_that_cannot_be_partitioned_never_fails_a_completed_leg(
-    monkeypatch, tmp_path, isolated_env
-):
-    """On the recovery path the ROLLOUT's figures are partitioned, so a
-    rollout whose cache slices exceed its prompt raises HarnessError on a leg
-    the STREAM reported as ``turn.completed``. A codex-internal file the code
-    itself documents as unstable must never fail a successful run: reject the
-    figure, keep the stream delta, and mark the leg twice over (round 8, N-8)."""
-    turn3, total_after_turn3 = _turn3_figures()
-    broken = {**turn3, "cached_input_tokens": turn3["input_tokens"] + 1}
-    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
-                  (_stream_reporting(total_after_turn3), "", 0)])
-    scripted = legs.__call__
-
-    def popen(cmd, **kwargs):  # noqa: ANN001
-        if len(legs.calls) == 2:
-            _write_rollout(tmp_path, _rollout_plus_turn3(broken, total_after_turn3))
-        return scripted(cmd, **kwargs)
-
-    _install(monkeypatch, popen)
-    h = CodexCliHarness()
-    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    h.continue_build(r1.session_handle, "fix it")
-    r3 = h.continue_build(r1.session_handle, "again")
-    assert r3.raw["usage_source"] == "stream"
-    assert r3.raw["usage_delta"]["input_tokens"] == 17119
-    assert r3.raw["usage_faithful"] is False
-    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg", "rollout_turn_rejected"]
-
-
-def test_a_rollout_turn_bigger_than_the_stream_delta_is_rejected(
-    monkeypatch, tmp_path, isolated_env
-):
-    """The recovered figure is this leg's share of a delta that spans this leg
-    PLUS the unreadable one, so it can never exceed that delta component-wise.
-    One that does is not describing this turn — adopting it would replace an
-    over-report with a fabricated number (round 8, N-8)."""
-    turn3, total_after_turn3 = _turn3_figures()
-    huge = {**turn3, "input_tokens": 999_999}
-    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
-                  (_stream_reporting(total_after_turn3), "", 0)])
-    scripted = legs.__call__
-
-    def popen(cmd, **kwargs):  # noqa: ANN001
-        if len(legs.calls) == 2:
-            _write_rollout(tmp_path, _rollout_plus_turn3(huge, total_after_turn3))
-        return scripted(cmd, **kwargs)
-
-    _install(monkeypatch, popen)
-    h = CodexCliHarness()
-    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    h.continue_build(r1.session_handle, "fix it")
-    r3 = h.continue_build(r1.session_handle, "again")
-    assert r3.raw["usage_delta"]["input_tokens"] == 17119  # the stream delta, not 999999
-    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg", "rollout_turn_rejected"]
-
-
-def test_recovered_leg_is_faithful_and_its_cache_flag_follows_the_rollout(
-    monkeypatch, tmp_path, isolated_env
-):
-    """When the rollout DOES become readable the recovered leg measures
-    itself: faithful, no caveats. And ``cache_tokens_reported`` must annotate
-    the object the recorded counts came from — on this path the rollout's
-    ``turn_token_usage``, not the stream's cumulative object (round 8, N-6)."""
-    turn3, total_after_turn3 = _turn3_figures()
-    no_cache_turn3 = {k: v for k, v in turn3.items() if k != "cached_input_tokens"}
-    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
-                  (_stream_reporting(total_after_turn3), "", 0)])
-    scripted = legs.__call__
-
-    def popen(cmd, **kwargs):  # noqa: ANN001
-        if len(legs.calls) == 2:
-            _write_rollout(tmp_path, _rollout_plus_turn3(no_cache_turn3, total_after_turn3))
-        return scripted(cmd, **kwargs)
-
-    _install(monkeypatch, popen)
-    h = CodexCliHarness()
-    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    h.continue_build(r1.session_handle, "fix it")
-    r3 = h.continue_build(r1.session_handle, "again")
-    assert r3.raw["usage_source"] == "stream+rollout_turn"
-    assert r3.raw["usage_faithful"] is True and r3.raw["usage_caveats"] == []
-    # The stream object carries cached_input_tokens; the rollout turn does not.
-    assert "cached_input_tokens" in r3.raw["usage"]
-    assert r3.raw["cache_tokens_reported"] is False
-    assert r3.cache_read_tokens == 0 and r3.input_tokens == 1000
-
-
 def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(
     monkeypatch, tmp_path, isolated_env
 ):
@@ -1874,30 +1852,6 @@ def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(
     assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
 
 
-def test_a_stale_rollout_turn_is_not_recovered_onto_a_gapped_baseline(
-    monkeypatch, tmp_path, isolated_env
-):
-    """Same staleness on the RECOVERY path: leg 2's usage is unreadable, and
-    leg 3's rollout still ends on turn 1's record because codex appended
-    nothing for turn 3. Turn 1's figures must not be adopted as leg 3's
-    share — that would invent a number rather than over-report one."""
-    turn3, total_after_turn3 = _turn3_figures()
-    # Codex wrote turn 1 and then nothing: legs 2 and 3 both find the file
-    # ending on turn 1's record.
-    _write_rollout(tmp_path, _rollout_through_turn1())
-    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
-                  (_stream_reporting(total_after_turn3), "", 0)])
-    _install(monkeypatch, legs)
-    h = CodexCliHarness()
-    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    h.continue_build(r1.session_handle, "fix it")
-    r3 = h.continue_build(r1.session_handle, "again")
-    assert r3.raw["usage_source"] == "stream"
-    assert r3.raw["usage_delta"]["input_tokens"] == 17119  # not turn 1's 15359
-    assert r3.raw["usage_faithful"] is False
-    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg", "rollout_turn_rejected"]
-
-
 def test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it(
     monkeypatch, tmp_path, isolated_env
 ):
@@ -1913,20 +1867,26 @@ def test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it(
     assert (r2.input_tokens, r2.output_tokens) == (0, 0)
 
 
+
 def test_every_ordinary_leg_is_recorded_as_faithful(monkeypatch, tmp_path, isolated_env):
-    """The marker is only worth reading if the ordinary paths clear it: a
-    stream-sourced success, and a rollout-sourced failure that measured its
-    own turn."""
-    _write_rollout(tmp_path, _rollout_through_turn1())
-    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
-    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_lines()}))
+    """The marker is only worth reading if the ordinary paths clear it: every
+    leg the STREAM measured — a start and a resume — is faithful. The failed
+    leg beside them is marked even though its own turn is readable in the
+    rollout, because since review round 9 the rollout is never a leg's usage
+    source: a leg the stream could not measure is short, and says so."""
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    r2 = h.continue_build(r1.session_handle, "fix it")
+    r2 = h.continue_build(r1.session_handle, "again")
+    r3 = h.continue_build(r1.session_handle, "again")
     assert r1.raw["usage_source"] == "stream"
     assert r1.raw["usage_faithful"] is True and r1.raw["usage_caveats"] == []
-    assert r2.raw["usage_source"] == "rollout"
+    assert r2.raw["usage_source"] == "stream"
     assert r2.raw["usage_faithful"] is True and r2.raw["usage_caveats"] == []
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_faithful"] is False and r3.raw["usage_caveats"] == ["missing"]
 
 
 # --------------------------------------------------------------------------
@@ -1980,12 +1940,14 @@ def test_dead_resume_legs_do_not_duplicate_the_thread_id(monkeypatch, tmp_path, 
 
 
 # --------------------------------------------------------------------------
-# Review round 8, second pass: the turn-id gate alone is a one-slot "last id I
-# happened to see", and it LAGS whenever a leg's rollout read yields no id
-# (file absent, unreadable, id-less, or itself rejected as stale). An
-# intermediate turn's record then passes the "!=" test and is billed to the
-# wrong attempt with usage_faithful true. Codex's own post-turn
-# thread_token_usage is the watermark that does not depend on a prior read.
+# Review rounds 8-9: a rollout turn record must never be attributed to a leg.
+# Two gates were tried — the turn id last seen, then codex's post-turn
+# cumulative — and both prove only STALENESS ("already covered"), never
+# freshness ("belongs to this leg"). Against a SHORT baseline, which is
+# exactly the usage_missing state the machinery existed for, an earlier
+# never-billed turn advances past the baseline and was adopted as this leg's
+# share with usage_faithful true. Round 9 deleted the recovery; these pin
+# what replaced it. The two below still hold with no adoption at all.
 
 
 def test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never_read_the_rollout(
@@ -2008,15 +1970,15 @@ def test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never_read_the_rollout(
     assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
 
 
+
 def test_a_failed_leg_is_not_billed_the_previous_turn_when_the_gate_lagged(
     monkeypatch, tmp_path, isolated_env
 ):
-    """C1 repro B. Leg 1 reads turn 1 (id remembered). Leg 2 completes while
-    the rollout is unreadable, so the remembered id stays at turn 1's. Leg 3
-    then fails and finds the file ending on TURN 2's record: a different id,
-    so the id gate passes it — and leg 2's 16119 tokens are recorded a second
-    time as leg 3's own, marked faithful. Codex's post-turn thread total has
-    not moved past the one already recorded, which is what gives it away."""
+    """Leg 1 reads turn 1. Leg 2 completes while the rollout is unreadable.
+    Leg 3 then fails and finds the file ending on TURN 2's record — already
+    billed to leg 2. It must not be recorded a second time as leg 3's own.
+    Round 9 removed the question entirely: no rollout record is a leg's
+    share, so leg 3 records zeros and says its usage is missing."""
     _write_rollout(tmp_path, _rollout_through_turn1())
     rollout_file = next((tmp_path / "codex-home" / "sessions").rglob("rollout-*.jsonl"))
     legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
@@ -2036,24 +1998,23 @@ def test_a_failed_leg_is_not_billed_the_previous_turn_when_the_gate_lagged(
     r2 = h.continue_build(r1.session_handle, "fix it")
     r3 = h.continue_build(r1.session_handle, "again")
     assert r2.input_tokens == 16119 - 12160  # leg 2 already billed turn 2
-    # Leg 3 must NOT be billed turn 2 again. Its own usage is genuinely
-    # unknown, so it records zeros and says both why and that a rollout
-    # figure was offered and refused.
     assert r3.raw["usage_source"] == "none"
     assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
     assert r3.raw["usage_faithful"] is False
-    assert r3.raw["usage_caveats"] == ["missing", "rollout_turn_rejected"]
+    assert r3.raw["usage_caveats"] == ["missing"]
     assert (r3.input_tokens, r3.cache_read_tokens) == (0, 0)
+
 
 
 def test_an_unpartitionable_rollout_does_not_kill_a_failed_leg_either(
     monkeypatch, tmp_path, isolated_env
 ):
-    """The recovery path refuses an unpartitionable rollout figure rather than
-    raising (N-8), but the rollout-sourced FAILURE path still partitioned it
-    unguarded — so the same codex-internal inconsistency that is tolerated on
-    a completed leg aborted a paid run on a failed one. Same answer on both:
-    reject the figure, record zeros, mark it, keep the run."""
+    """A codex-internal inconsistency in the rollout must never abort a paid
+    run — round 8 fixed the recovery path, then the failure path. Round 9
+    removed the last place a rollout figure was partitioned at all, so this
+    now guards against re-introducing one: with a rollout whose cache slice
+    exceeds its prompt on disk, the failed leg is still recorded (zeros,
+    marked) and the run stays alive."""
     lines = _rollout_lines()
     last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
     o = json.loads(lines[last])
@@ -2067,5 +2028,186 @@ def test_an_unpartitionable_rollout_does_not_kill_a_failed_leg_either(
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "fix it")  # must not raise
     assert r2.raw["usage_source"] == "none"
-    assert r2.raw["usage_caveats"] == ["missing", "rollout_turn_rejected"]
+    assert r2.raw["usage_caveats"] == ["missing"]
     assert (r2.input_tokens, r2.output_tokens) == (0, 0)
+
+
+# --------------------------------------------------------------------------
+# Review round 9, C-1. The watermark proves staleness soundly and freshness
+# not at all, and the code acted on the freshness branch. Three scenarios the
+# reviewer executed against the adapter, each reproduced here first as a
+# failing test: a genuinely dead resume CAPTURED with turn 1's tokens instead
+# of retried (the one that corrupts attempts-to-green, not just cost), an
+# intermediate turn billed to a later failed leg, and the same on the winning
+# attempt. All built from the REAL recorded streams and rollout.
+
+
+def _failed_start_stream() -> str:
+    """SYNTHETIC: the real START success envelope with turn.completed swapped
+    for the real turn.failed line — the model was active, then the turn
+    failed, so the leg is captured rather than retried."""
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    return "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+
+
+def test_a_dead_resume_after_an_unreadable_start_leg_is_retried(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario E — the dead-leg critical, and the one consequence
+    that corrupts a benchmark OUTCOME rather than a cost figure.
+
+    The start leg fails after model activity before its rollout is on disk,
+    so nothing measured it and the baseline is short. The file then appears,
+    and leg 2 is a genuinely dead resume (the real 401 envelope: no model
+    activity, no usage). Turn 1's record advances past the short baseline, so
+    the watermark called it fresh: the dead leg was handed turn 1's 15359
+    tokens, read as ``usage_source: "rollout"`` and ``usage_faithful: true``,
+    and — because a leg with usage does not look dead — was CAPTURED as the
+    attempt's result. Two legs ran where four should have.
+
+    The control is ``test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never
+    _read_the_rollout``: leg 1 COMPLETING there leaves a whole baseline, turn
+    1's record does not advance past it, and the retry always worked. The bug
+    was specific to the short-baseline path."""
+    legs = _Legs([(_failed_start_stream(), "", 1),
+                  (_with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)])
+    # The rollout lands only AFTER leg 1: leg 1's own turn is never measured.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r1.raw["usage_source"] == "none" and r1.raw["usage_missing"] is True
+    assert r1.raw["usage_caveats"] == ["missing"]
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_a_failed_leg_on_a_short_baseline_is_not_billed_an_earlier_turn(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario A. Leg 1 completes; leg 2 spends and fails while its
+    rollout is unreadable, leaving the baseline short; leg 3 fails and finds
+    the file ending on TURN 2's record. Turn 2's cumulative advances past the
+    short baseline, so leg 3 was billed turn 2's 16119 with
+    ``usage_faithful: true`` — leg 2's tokens on leg 3's attempt, and leg 3's
+    own counted nowhere. Leg 3 must record zeros and say so; turn 2's
+    cumulative may still repair the baseline, which is what leaves leg 4 with
+    only its own turn."""
+    turn4 = {"input_tokens": 2000, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn2 = _usage_line(OK_RESUME)
+    total_after_turn4 = {k: total_after_turn2[k] + turn4[k] for k in turn4}
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    # Turns 1-2 land in time for leg 3; leg 2 was never measured.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    r4 = h.continue_build(r1.session_handle, "again")
+    assert r2.raw["usage_caveats"] == ["missing"]
+    # Not turn 2's 16119, on any field.
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
+    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (0, 0, 0)
+    assert r3.raw["usage_faithful"] is False and r3.raw["usage_caveats"] == ["missing"]
+    # The cumulative beside turn 2's record still repaired the baseline.
+    assert r4.raw["usage_delta"] == turn4
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_the_winning_attempt_is_never_handed_an_earlier_turns_figure(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario D — the same adoption on the recovery path, on the
+    attempt that PASSES, whose figure is the run's headline cost. Leg 2 spends
+    and fails unreadably; leg 3 completes and the rollout still ends on turn
+    2's record. Recovery adopted it: 16119 recorded for a turn of 1000, marked
+    faithful — strictly worse than not recovering. The honest figure is the
+    stream delta that spans both legs, marked as absorbing one of them."""
+    turn3, total_after_turn3 = _turn3_figures()
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_a_rollout_cumulative_behind_the_baseline_never_moves_it_backwards(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The baseline repair is guarded by ``_advances`` in the direction that
+    IS sound: a cumulative that has not moved past the baseline describes
+    turns already billed. Adopting it anyway would walk the baseline
+    BACKWARDS and bill those turns a second time on the next leg. Here leg 3
+    fails while the file on disk has gone back to ending on turn 1's record
+    (a rotation, a truncation, a codex upgrade moving ``sessions/``); leg 4
+    must still record only its own turn, not turn 2 all over again."""
+    turn4 = {"input_tokens": 2000, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn2 = _usage_line(OK_RESUME)
+    total_after_turn4 = {k: total_after_turn2[k] + turn4[k] for k in turn4}
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    # Turns 1-2 are billed from the stream; the file leg 3 reads ends on
+    # turn 1's record, whose cumulative (15359) is BEHIND the baseline (31478).
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    r4 = h.continue_build(r1.session_handle, "again")
+    assert r2.input_tokens == 16119 - 12160
+    assert r3.raw["usage_source"] == "none" and r3.raw["usage_caveats"] == ["missing"]
+    # turn4, not turn2 + turn4: the stale cumulative was refused.
+    assert r4.raw["usage_delta"] == turn4
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_a_rollout_cumulative_that_is_not_comparable_is_refused(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``_advances`` demands EVERY component be at least the baseline's, not
+    just one of them. A record that reports 0 where the baseline already has
+    a figure — codex's usage objects are not obliged to carry
+    ``cache_write_input_tokens``, and a missing field normalises to 0 — is not
+    describing the same history. Adopting it would drop that component of the
+    baseline and bill it a second time on the next leg: here the file's
+    cumulative has moved on in input tokens while reporting no cache writes,
+    and the 300 already billed would come back as part of leg 3's share."""
+    leg1_total = {"input_tokens": 15359, "cached_input_tokens": 12160,
+                  "cache_write_input_tokens": 300, "output_tokens": 5,
+                  "reasoning_output_tokens": 0}
+    # SYNTHETIC: advanced in input, but 0 writes where 300 are already billed.
+    incomparable = {"input_tokens": 31478, "cached_input_tokens": 24320,
+                    "cache_write_input_tokens": 0, "output_tokens": 10,
+                    "reasoning_output_tokens": 0}
+    leg3_total = {"input_tokens": 32478, "cached_input_tokens": 25120,
+                  "cache_write_input_tokens": 400, "output_tokens": 17,
+                  "reasoning_output_tokens": 0}
+    legs = _Legs([(_with_cache_write(OK_START, 300), "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(leg3_total), "", 0)])
+    _install(monkeypatch, _stage_rollout(
+        legs, tmp_path, {1: _rollout_plus_turn3(incomparable, incomparable)}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r1.cache_creation_tokens == 300
+    assert r2.raw["usage_source"] == "none"
+    # The baseline stayed at leg 1's measured total, so leg 3's delta is taken
+    # against it: 100 new writes, not the 400 the whole thread has.
+    assert r3.raw["usage_delta"] == {k: leg3_total[k] - leg1_total[k] for k in leg1_total}
+    assert (r3.cache_creation_tokens, r3.input_tokens) == (100, 17119 - 12960 - 100)
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]

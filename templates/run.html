@@ -83,7 +83,7 @@
 {% endif %}
 
 <h2>Per-attempt breakdown</h2>
-<p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (its usage was unreadable) or long (it absorbed an earlier unreadable attempt). Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
+<p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (nothing measured that attempt&#8217;s turn) or not provably its own (it was taken against a baseline that may be short by an earlier unmeasured turn, so it may span that turn too). Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
 <table>
 <thead><tr>
   <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>

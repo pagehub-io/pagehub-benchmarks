@@ -13,7 +13,15 @@ from real turns, U1–U8 are answered in §3.4, and the usage parser is coded an
 calibrated against those fixtures (§4.5). **Amended after PR #29 review round
 7:** a leg whose usage no source can supply is recorded as missing rather than
 free, and a rollout-sourced leg re-anchors the thread total on codex's own
-`thread_token_usage` (§4.5).
+`thread_token_usage` (§4.5). **Amended after PR #29 review rounds 8–9:**
+round 8 turned the per-case fixes into a class-level *marking* invariant
+(`usage_faithful` / `usage_caveats`, §4.5), and round 9 **deleted
+rollout-based per-attempt usage recovery** — no rollout turn record is ever
+attributed to a leg, because neither the turn id nor codex's cumulative
+proves a record *belongs* to one; a leg's own figure is the stream delta or
+nothing. The rollout keeps two jobs (cumulative baseline repair, dead-leg
+detection) and the caveat vocabulary is down to the two values the code can
+actually produce (§4.5, §4.8 item 19).
 
 ## 1. Goal
 
@@ -318,19 +326,24 @@ Verified fields:
 Usage — **calibrated 2026-09-11 against the recorded fixtures** (§3.4). The
 rule, as implemented in `_usage_from`:
 
-- `raw["usage_source"] ∈ {"stream", "rollout", "none"}`. Primary: the usage
-  object on the stream's terminal event (expected `turn.completed`, U1).
-  **Failure path (`turn.failed`, expected to carry no usage): read the
-  rollout** (`$CODEX_HOME`, default `~/.codex`,
-  `sessions/**/rollout-*-<thread_id>.jsonl`): the last usage-bearing
-  `event_msg` (the binary names both `last_token_usage` and
-  `total_token_usage`; which to read is settled by the fixture pair, U2)
-  belonging to this leg's turn, matched **positionally** (the last
-  `token_usage_record` after the last `turn_context` line — the leg that just
-  ran is the last turn appended; a turn with no record yet reads as none);
-  `"rollout"`. Neither ⇒ tokens `0`, `"none"`. The rollout is an unstable
-  format (§3.1), hence fallback-only and always marked. The raw usage object
-  is stored verbatim in `raw["usage"]`.
+- `raw["usage_source"] ∈ {"stream", "none"}` — two values, because **a leg's
+  own figure comes from the stream delta and from nothing else** (review
+  round 9). Source: the usage object on the stream's terminal event (expected
+  `turn.completed`, U1), stored verbatim in `raw["usage"]`. **Failure path
+  (`turn.failed`, expected to carry no usage): tokens `0`, `"none"`,
+  `usage_missing`** — nothing stands in for it.
+  The rollout (`$CODEX_HOME`, default `~/.codex`,
+  `sessions/**/rollout-*-<thread_id>.jsonl`) is still read on every leg, for
+  three things and no others: `rate_limits`; codex's post-turn
+  **`thread_token_usage`**, the *cumulative* that re-anchors the baseline the
+  next delta is taken against; and the evidence that a leg whose stream
+  reported nothing did work after all (see the dead-leg rule below). Both of
+  the latter read the last `token_usage_record` after the last `turn_context`
+  line — the leg that just ran is the last turn appended, and a turn with no
+  record yet reads as none, which is what keeps a dead leg dead. A cumulative
+  names no turn, so adopting one cannot mis-attribute tokens; a `turn_token_usage`
+  would, and is never used. The rollout is an unstable, codex-internal format
+  (§3.1) and must never fail a leg the stream reported as completed.
 - **A completed turn always has usage.** Terminal `turn.completed` with
   `usage_source == "none"` ⇒ `HarnessError` — that is a parser defect or a
   CLI format change, never a codex state, and recording `0` tokens / `$0.00`
@@ -339,44 +352,54 @@ rule, as implemented in `_usage_from`:
   console warning.
 - **The stream's usage is the thread total** (verified, U2): the adapter keeps
   the last total on the instance (reset per `start_build`) and records each
-  leg's delta; a total that goes backwards ⇒ `HarnessError`. After a
-  rollout-sourced failed leg the total is re-anchored on the
-  `thread_token_usage` codex records beside the turn's own usage (reconstructing
-  `previous + turn` only when the payload carries none), so the next delta stays
-  attributable. `raw["usage"]` is the verbatim stream object (cumulative);
-  `raw["usage_delta"]` is this leg's share. A leg whose usage no source can
-  supply records a zero-filled delta plus `raw["usage_missing"]` — unknown, not
-  free — and flags the baseline as short; the next leg then takes its share from
-  the rollout's `turn_token_usage` rather than from that baseline
-  (`usage_source: "stream+rollout_turn"`), so an unreadable leg does not bill
-  its tokens to its successor (review round 7).
-- **The honest invariant is a *marking* one** (review round 8). That recovery
-  is best-effort and has three failure modes: the rollout stays unreadable,
-  it is malformed, or it still ends on the *previous* turn's
-  `token_usage_record` because codex died before writing this turn's
-  `turn_context` — a stale record that must be refused, or one turn is billed
-  to two attempts and a dead leg is captured instead of retried. Staleness is
-  caught two ways, because either alone leaves a hole: the record's `turn_id`
-  against the one last credited, AND codex's own post-turn
-  `thread_token_usage` against the total already recorded. The id memory
-  *lags* whenever a leg's own read yields nothing (rollout absent,
-  unreadable, id-less), so an intermediate turn's record carries an id that
-  has never been seen and passes; the cumulative cannot lag, since it is
-  monotone and the recorded total is never ahead of it. In every one
-  of those the successor's stream delta still spans both turns. So rather
-  than claim recovery always works, every leg whose `usage_delta` is not a
-  measure of that leg alone is **marked**: `raw["usage_faithful"] = false`
-  plus `raw["usage_caveats"]` drawn from a fixed vocabulary — `"missing"`
-  (short: nothing readable, zeros), `"absorbed_missing_leg"` (long: it
-  carries an earlier unreadable turn), and `"rollout_turn_rejected"` (a rollout
-  figure existed but was stale, was not a component-wise share of the stream
-  delta, or could not be partitioned) — never on its own, always naming why
-  one of the first two could not be avoided. A consumer of the results file needs
-  only `usage_faithful` to know a figure is an estimate; it never needs to
-  know how the adapter works. An over-reported attempt is exactly as
-  unfaithful as a zero-reported one, so both carry it. A rejected rollout
-  figure never raises on a leg the stream reported as `turn.completed`: the
-  rollout is a codex-internal format and must not fail a successful run.
+  leg's delta; a total that goes backwards ⇒ `HarnessError`. After a leg the
+  stream could not measure, the total is re-anchored on the
+  `thread_token_usage` codex records in the rollout — **only when it has
+  advanced past the total already recorded**, so the baseline never walks
+  backwards and bills a turn twice; there is no reconstruction from a turn
+  figure (review rounds 7 and 9). `raw["usage"]` is the verbatim stream object
+  (cumulative); `raw["usage_delta"]` is this leg's share. A leg whose usage the
+  stream did not report records a zero-filled delta plus `raw["usage_missing"]`
+  — unknown, not free — and leaves the baseline flagged as not-known-whole,
+  whatever it was re-anchored to, because *this* turn was never measured.
+- **The honest invariant is a *marking* one** (review round 8), and marking is
+  now the whole answer (review round 9). The adapter used to try to recover a
+  leg's own share from the rollout's `turn_token_usage` whenever the baseline
+  was short. That recovery needed to know a record was *this leg's*, and
+  nothing in the rollout says so. Two gates were tried and both prove
+  **staleness only**: the record's `turn_id` against the one last credited,
+  and codex's post-turn `thread_token_usage` against the total already
+  recorded. "Has not moved past what we recorded" does mean "already billed" —
+  but the *converse* is not a proof of freshness, and the converse is the
+  branch the code acted on. When the baseline is short, which is exactly the
+  `usage_missing` state the recovery existed for, an earlier never-billed turn
+  is beyond it too, and its id has never been seen. Executed against the
+  recorded fixtures: a genuinely dead resume leg was handed turn 1's tokens,
+  read as `usage_faithful: true`, and was **captured instead of retried**
+  (attempts-to-green, not just cost); a later failed leg was billed an earlier
+  turn while its own went uncounted; and a *winning* attempt recorded a turn
+  that was not its own. So the inference is deleted, not refined: every leg
+  whose `usage_delta` is not a provable measure of that leg alone is
+  **marked**: `raw["usage_faithful"] = false` plus `raw["usage_caveats"]` from
+  a two-value vocabulary — `"missing"` (short: nothing measured it, zeros) and
+  `"absorbed_missing_leg"` (the delta was taken against a baseline not known
+  to be whole, so it may span an earlier unmeasured turn). Both values are
+  reachable; a vocabulary entry that the code cannot emit is worse than none,
+  which is why `"rollout_turn_rejected"` went with the recovery it described.
+  Marking errs toward marking: a delta taken against a re-anchored baseline is
+  often exactly right and is still flagged, because the harness cannot show
+  it. A consumer of the results file needs only `usage_faithful` to know a
+  figure is an estimate; it never needs to know how the adapter works. An
+  over-reported attempt is exactly as unfaithful as a zero-reported one, so
+  both carry it.
+- **Dead-leg detection** (§4.6 rule 2) is the rollout's other job. A leg with
+  no model activity *and* no stream usage is dead and is retried, not captured
+  — unless codex's rollout records a turn beyond a baseline **known to be
+  whole**, which is the one case where "some turn ran beyond what we billed"
+  really does mean "this leg ran": nothing else could have moved it. Against a
+  baseline that is not known whole the same record proves nothing, and the leg
+  stays dead. Capturing a dead leg is the failure that corrupts a benchmark's
+  headline metric rather than its cost column (review round 9).
 - `raw["rate_limits"]` (5-hour + weekly `used_percent`, `plan_type`) is read
   from the rollout's last `token_count` on every leg, best-effort — the only
   place codex reports subscription budget. Printed to the console only for
@@ -570,11 +593,12 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
    then `HarnessError` whose message contains `401 Unauthorized`. **7b:** a
    dead start leg followed by a captured leg keeps the dead leg's messages in
    `raw["dead_turn_errors"]` (+ total) on the returned attempt.
-8. **non-dead failure** (after smoke — needs the rollout usage shape):
-   labelled synthetic stream = the real failure envelope plus a non-error
-   `item.completed`, then `turn.failed`, with a recorded rollout under a
-   temp `CODEX_HOME` ⇒ captured, no retry, `usage_source == "rollout"`,
-   tokens counted, `raw["harness_error"]` set.
+8. **non-dead failure:** labelled synthetic stream = the real failure
+   envelope plus a non-error `item.completed`, then `turn.failed`, with a
+   recorded rollout under a temp `CODEX_HOME` ⇒ captured, no retry,
+   `usage_source == "none"` with zeros marked `["missing"]` (the rollout is
+   not a usage source — review round 9), `raw["harness_error"]` set, and
+   `rate_limits` still read from that rollout.
 9. **no `thread.started`** ⇒ `start_build` raises after exactly **one**
    subprocess call (no dead-turn retry).
 10. **timeout** ⇒ SIGTERM then SIGKILL to the group, drain attempted,
@@ -631,25 +655,30 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     data: one rollout per thread, one terminal event per leg), the 500-char
     bound on unparsed lines, an unresolved writable-root comparison (needs a
     writable location outside `/tmp` to test), and the rate-limit print label.
-19. **Per-attempt usage is faithful or says it is not** (review rounds 7–8,
-    on the REAL rollout lines and REAL streams). Recovery works: an
-    unreadable leg is marked `usage_missing` and the next leg takes its own
-    turn from the rollout. Recovery fails, and the absorbing leg is marked
-    `usage_faithful: false` / `["absorbed_missing_leg"]`, when the rollout is
-    never readable (reproducing the reviewer's executed 17119 = its own 1000
-    + the lost leg's 16119), and `+ ["rollout_turn_rejected"]` when the
-    rollout figure is unpartitionable, exceeds the stream delta, or is a
-    previous turn's. The marker clears on the next leg, since the stream's
-    thread total repairs the baseline. A dead resume leg that appended no
-    `turn_context` is retried rather than handed the previous turn's tokens
-    (round 8, N-15 — reasoned by the reviewer, executed here), including when
-    the start leg never read the rollout at all, and a failed leg is not
-    billed a turn its predecessor already recorded. An unpartitionable
-    rollout figure is refused on the failure path too, rather than aborting
-    a paid run. Ordinary
-    stream- and rollout-sourced legs, and a final unreadable leg with no
-    successor, are pinned too. Tests that care which turn a leg reads stage
-    the rollout the way codex fills it, one turn at a time.
+19. **Per-attempt usage is faithful or says it is not** (review rounds 7–9,
+    on the REAL rollout lines and REAL streams). A leg the stream could not
+    measure is marked `usage_missing` / `["missing"]` and records zeros —
+    including the final leg of a run, which has no successor to reconcile
+    against. Its successor's delta is marked `usage_faithful: false` /
+    `["absorbed_missing_leg"]` (reproducing the reviewer's executed 17119 =
+    its own 1000 + the lost leg's 16119) and the marker clears on the leg
+    after, since the stream's own thread total is a whole baseline.
+    **No rollout turn record is ever adopted as a leg's share** — pinned over
+    the four rollout states that used to be treated differently (this leg's
+    own record, a previous turn's, an unpartitionable one, one bigger than the
+    stream delta): the answer is the same marked stream delta in all four, and
+    none of them raises. Round 9's three executed scenarios have their own
+    tests: a dead resume after an unmeasured start leg is **retried, not
+    captured** (the control — a *completing* start leg — always was), a failed
+    leg on a short baseline is not billed an earlier turn, and the winning
+    attempt is not handed one either. The rollout's two remaining jobs are
+    pinned in both directions: its cumulative re-anchors the baseline so the
+    next leg keeps only its own turn (cache-write component included), and is
+    refused when it has not advanced or is not component-wise comparable; and
+    a leg with no items and no stream usage is captured when a whole baseline
+    says the rollout has moved on, retried when the baseline is short. Tests
+    that care which turn a leg reads stage the rollout the way codex fills it,
+    one turn at a time.
 
 `make test` and `make lint` green at each stage (§6).
 
@@ -661,7 +690,9 @@ the **ChatGPT** login mode (a stored API key is refused); effort **required**
 in YAML and why; sandbox = workspace-write + network on, `.git` read-only and
 installs confined to the worktree/`/tmp` (asymmetry vs. Claude); what tokens
 are and aren't reported (from the fixtures; cache `0` +
-`cache_tokens_reported:false` when absent; `usage_source`);
+`cache_tokens_reported:false` when absent; `usage_source`, and the
+`usage_faithful` / `usage_caveats` marking with what each caveat means and
+what it implies for the run totals);
 `CODEX_BUILD_TIMEOUT_SECONDS`, `CODEX_DEAD_TURN_RETRIES`;
 `--ignore-user-config` and the trust-entry accumulation; codex's own
 preamble as a comparability caveat; when a run crashes vs. records (§4.6);
