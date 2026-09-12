@@ -13,15 +13,17 @@ from real turns, U1–U8 are answered in §3.4, and the usage parser is coded an
 calibrated against those fixtures (§4.5). **Amended after PR #29 review round
 7:** a leg whose usage no source can supply is recorded as missing rather than
 free, and a rollout-sourced leg re-anchors the thread total on codex's own
-`thread_token_usage` (§4.5). **Amended after PR #29 review rounds 8–9:**
+`thread_token_usage` (§4.5) — *the second half is superseded: round 9 left no
+rollout-sourced leg to re-anchor anything, and the cumulative now repairs the
+baseline directly on every leg*. **Amended after PR #29 review rounds 8–9:**
 round 8 turned the per-case fixes into a class-level *marking* invariant
 (`usage_faithful` / `usage_caveats`, §4.5), and round 9 **deleted
 rollout-based per-attempt usage recovery** — no rollout turn record is ever
 attributed to a leg, because neither the turn id nor codex's cumulative
 proves a record *belongs* to one; a leg's own figure is the stream delta or
-nothing. The rollout keeps two jobs (cumulative baseline repair, dead-leg
-detection) and the caveat vocabulary is down to the two values the code can
-actually produce (§4.5, §4.8 item 19).
+nothing. The rollout keeps three jobs and no others (cumulative baseline
+repair, dead-leg evidence, rate limits) and the caveat vocabulary is down to
+the two values the code can actually produce (§4.5, §4.8 item 19).
 
 ## 1. Goal
 
@@ -90,6 +92,12 @@ was not allowed to guess at. Every one was settled by execution once
   the rollout would have to become the primary source for every leg, which
   contradicts §4.5's fallback-only stance and the step-3 acceptance — that
   outcome requires a v6 of this spec before Stage 2, not a quiet change.
+  **Answered in §3.4, and its premise superseded (round 9):** `turn.completed`
+  does carry usage, so the contingency never fired — and "the failure path
+  must read the rollout" is no longer true either. §4.5 now takes a
+  *no-fallback* stance, not a fallback-only one: a failed leg records zeros
+  marked `usage_missing`, and no rollout turn record is ever attributed to a
+  leg. Kept for the history of what was asked.
 - **U2** Usage semantics: is `cached_input_tokens` a subset of
   `input_tokens`? Is `cache_write_input_tokens` a subset too, and ever
   non-zero? Does `output_tokens` include `reasoning_output_tokens`? **On a
@@ -136,7 +144,7 @@ both turns' rollout usage payloads (0.4).
 
 | # | Result |
 |---|---|
-| U1 | `turn.completed{usage:{input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens}}` on the stream (`tests/fixtures/codex_exec_ok.jsonl`); the rollout additionally writes `token_usage_record{usage, turn_token_usage, thread_token_usage, turn_id}` and `event_msg token_count{info:{total_token_usage,last_token_usage}, rate_limits}` (`codex_rollout_ok.jsonl`, message bodies removed). A `turn.failed` was not observed with usage (unchanged assumption; rollout fallback stands). |
+| U1 | `turn.completed{usage:{input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens}}` on the stream (`tests/fixtures/codex_exec_ok.jsonl`); the rollout additionally writes `token_usage_record{usage, turn_token_usage, thread_token_usage, turn_id}` and `event_msg token_count{info:{total_token_usage,last_token_usage}, rate_limits}` (`codex_rollout_ok.jsonl`, message bodies removed). A `turn.failed` was not observed with usage (unchanged assumption; **round 9 deleted the rollout fallback** — a failed leg now records zeros marked `usage_missing`, §4.6 rule 5). |
 | U2 | **The stream's usage on a resumed thread is the thread total** (resume fixture: 31478 = 15359 + 16119 input; matches `thread_token_usage`) ⇒ per-leg delta on the instance. `total_tokens == input_tokens + output_tokens` on both turns ⇒ cached input is a subset of input (cache writes were 0 in every recording; treating them as a subset too rests on OpenAI's pricing tooltip, not on data); `output_tokens` includes reasoning. `cache_write_input_tokens` was 0. Sub-agent tokens: unobserved (delegation is off by default — see below). |
 | U3/U4 | No `invalid_prompt` on this account today (both Astra turns completed). `gpt-5.6-sol` works (used for the CLI-mechanics probes to spare Astra allowance). |
 | U5 | Sandbox executes commands: `/tmp` writable, `$HOME` read-only, `pip` and network work, a backgrounded `http.server 8003` did **not** outlive `codex exec`. |
@@ -334,7 +342,8 @@ rule, as implemented in `_usage_from`:
   `usage_missing`** — nothing stands in for it.
   The rollout (`$CODEX_HOME`, default `~/.codex`,
   `sessions/**/rollout-*-<thread_id>.jsonl`) is still read on every leg, for
-  three things and no others: `rate_limits`; codex's post-turn
+  three jobs and no others — cumulative baseline repair, dead-leg evidence,
+  rate limits: `rate_limits`; codex's post-turn
   **`thread_token_usage`**, the *cumulative* that re-anchors the baseline the
   next delta is taken against; and the evidence that a leg whose stream
   reported nothing did work after all (see the dead-leg rule below). Both of
@@ -469,10 +478,25 @@ error text**, and treats "the model never ran" the same on every attempt:
    `HarnessError` immediately, no retry (nothing to resume, nothing to
    classify; test 9 asserts a single call). Otherwise a turn is **dead** when
    it ended without model activity: no `item.*` event whose
-   `item.type != "error"` **and** no usage reported (stream or rollout).
+   `item.type != "error"`, **no stream usage**, **and** no rollout cumulative
+   beyond a baseline with no recorded gap (*amended round 9* — the
+   `not baseline_has_gap` conjunct is the fix for that round's critical:
+   against a short baseline the rollout proves nothing, because an earlier
+   never-billed turn sits beyond it too, so the leg stays dead and is
+   retried).
    Auth/transport failures and `invalid_prompt` on an untouched prompt are
    dead; "wrote half the code then the backend 500'd" is not. A turn whose
    terminal event is `turn.completed` is **never** dead — rule 8 governs it.
+   **The rollout half of this test is conditional on a gapless baseline** —
+   "no *recorded* gap", which is not quite "whole": a dead-classified leg
+   never records one (review round 10). A turn that spent tokens on reasoning
+   alone and then failed is captured rather than retried (M21) only while
+   nothing earlier in the run went unmeasured; after an unmeasurable leg the
+   identical turn is instead retried, and if the retries are alike the run
+   aborts under rule 4
+   (§4.8 item 19). Losing that attempt is the honest outcome — the
+   alternative, deleted in round 9, was billing it an earlier turn's tokens
+   and marking the result faithful.
 3. **Dead turn ⇒ retry the identical leg** after a 5 s pause, up to
    `CODEX_DEAD_TURN_RETRIES` times (default **2**; **D5**). Rationale:
    transient transport/backend failures cost no tokens to retry, and a
@@ -491,7 +515,11 @@ error text**, and treats "the model never ran" the same on every attempt:
    and a pushed branch. This is the one place `invalid_prompt` crashes the
    run; the message tells the operator to rerun or switch model.
 5. **Non-dead failure** (model activity, then `turn.failed` / non-zero exit)
-   ⇒ **captured**: usage from the rollout (§4.5), `session_handle` =
+   ⇒ **captured**: the attempt records **zeros** with `usage_source: "none"`,
+   `usage_missing: true` and `usage_caveats: ["missing"]` (§4.5) — **the
+   rollout is not a usage source** (*amended round 9*: a `turn.failed` carries
+   no usage on the stream and nothing stands in for it, because no rollout
+   record can be shown to belong to this leg). `session_handle` =
    thread_id, `raw["harness_error"]` = the `turn.failed` message (else the
    last `error` event's message, else the ANSI-stripped stderr tail, else
    `"codex exited N"`), `raw["exit_code"]`.
@@ -624,8 +652,10 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     each was shown to survive the suite as a mutation before these existed):
     a turn whose `turn_context` has no usage record reads as *no usage* (not
     the previous turn's), end to end a dead resume with the real rollout on
-    disk is retried then raises; after a rollout-sourced failure the thread
-    total advances so the next leg's delta is exactly its own turn; within a
+    disk is retried then raises; after a failed leg whose turn the rollout
+    covers, the thread total advances so the next leg's delta is exactly its
+    own turn (`test_thread_total_advances_after_a_failed_leg_the_rollout_covers`
+    — the failed leg itself records zeros); within a
     turn the **last** `token_usage_record` wins.
 16. **Throwaway HOME:** under the configured base, shared by pre-flight and
     both legs, contains only the PATH + locale profile; the base refuses
@@ -641,9 +671,11 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     `cache_write_input_tokens == 0`, so these use SYNTHETIC writes on the real
     envelopes): a start leg with 1000 writes records 2199 non-cached input +
     1000 cache-creation; a resume leg after a 300-write start records its
-    1000 share of a 1300 total; a rollout-sourced failure records its 400
-    writes as writes and advances the thread total so the next leg's delta
-    is only its own 100; through the runner with real pricing
+    1000 share of a 1300 total; a failed leg whose turn the rollout covers
+    records **(0, 0, 0)** marked `["missing"]` — *round 9 deleted the rollout
+    as a usage source, so its 400 writes are not billed to it* — while the
+    baseline-repair half still holds: the thread total advances so the next
+    leg's delta is only its own 100; through the runner with real pricing
     `cost_usd == $0.0469` (writes priced once, at the write rate). A failing
     rate-limit display never fails a leg. Also pinned: the pre-flight needs exit 0 even when the
     ChatGPT line is present; `harness_error` falls back to the LAST error;

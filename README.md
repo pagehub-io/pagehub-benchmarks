@@ -58,7 +58,8 @@ tools/build_site.py             results/**/*.json → docs/ (Jinja2; `make site`
 templates/, static/             site templates + plain CSS
 tests/                          unit tests (FakeHarness + FakeGrader — no real claude / codex / evals)
 tests/fixtures/                 recorded `codex exec --json` streams + one session rollout file (the
-                                failure-path usage and rate-limit source) the codex adapter is tested against
+                                cumulative-baseline, dead-leg-evidence and rate-limit source) the codex
+                                adapter is tested against
 ```
 
 ## Usage
@@ -124,8 +125,10 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
 
 - **Version:** developed and tested against `codex` 0.154.0 (`npm i -g
   @openai/codex`). Nothing checks the version at run time — an older CLI
-  whose `--json` stream or rollout layout differs fails the usage parse
-  rather than being refused up front.
+  whose `--json` stream layout differs fails the usage parse rather than
+  being refused up front. A differing *rollout* layout does not: that read is
+  best-effort and yields nothing on any problem, which costs the baseline
+  repair and the dead-leg evidence but never fails a leg.
   `benchmarks/eval-chess-backend.yaml` carries a `codex-cli` / `gpt-6-astra`
   row.
 - **Login:** `codex login` (or `codex login --device-auth` on a headless box).
@@ -204,12 +207,15 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   else.** A failed turn carries no usage on the stream and nothing stands in
   for it: the attempt records zeros, `raw.usage_source: "none"` and
   `raw.usage_missing: true` (unknown, not free). Codex's rollout is still
-  read, for exactly two things — the cumulative `thread_token_usage`, which
+  read, for three jobs and no others — cumulative baseline repair, dead-leg
+  evidence, rate limits: the cumulative `thread_token_usage`, which
   re-anchors the baseline the *next* delta is taken against (a cumulative says
   how far the thread has got, never which turn ran, so adopting one can only
-  move the baseline toward the truth), and the evidence that an attempt whose
+  move the baseline toward the truth); the evidence that an attempt whose
   stream reported nothing did work after all, which is what separates an
-  attempt to record from a dead turn to retry.
+  attempt to record from a dead turn to retry; and `raw.rate_limits` (the
+  5-hour and weekly `used_percent`), the only place codex reports the
+  subscription budget.
   **`raw.usage_faithful` is the field to read before trusting an attempt's
   token counts.** It is `false` when `raw.usage_delta` is not a measure of
   that attempt alone, and `raw.usage_caveats` says which of the two reasons

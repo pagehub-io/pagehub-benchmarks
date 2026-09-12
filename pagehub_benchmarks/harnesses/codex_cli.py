@@ -94,12 +94,13 @@ includes the cached and cache-write slices (partitioned out for pricing);
 stream delta and from nothing else** (review round 9): a failed turn carries
 no usage on the stream, and the leg then records zeros marked
 ``usage_missing`` rather than borrowing a figure from codex's rollout, which
-cannot say which turn a record belongs to. The rollout is still read for two
-things — codex's post-turn ``thread_token_usage``, a CUMULATIVE that repairs
-the baseline the next delta is taken against, and evidence that a leg the
-stream reported nothing for did work after all (otherwise it is dead and
-retried) — plus ``rate_limits`` (5-hour and weekly ``used_percent``), the only
-place codex reports subscription budget. The honest invariant is a *marking*
+cannot say which turn a record belongs to. The rollout has three jobs and no
+others: cumulative baseline repair, dead-leg evidence, rate limits — codex's
+post-turn ``thread_token_usage``, a CUMULATIVE that repairs the baseline the
+next delta is taken against; evidence that a leg the stream reported nothing
+for did work after all (otherwise it is dead and retried); and ``rate_limits``
+(5-hour and weekly ``used_percent``), the only place codex reports
+subscription budget. The honest invariant is a *marking*
 one: ``raw["usage_faithful"]`` is false on any attempt whose ``usage_delta``
 is not a measure of that attempt alone — short (nothing readable: zeros, never
 "free") or not provably its own (it may span an earlier unmeasured leg) — and
@@ -536,9 +537,12 @@ USAGE_CAVEAT_ABSORBED = "absorbed_missing_leg"
 class _Usage:
     """Token counts extracted for one leg, plus where they came from.
 
-    ``raw`` is the usage object exactly as codex reported it (on the stream:
-    the thread-cumulative object; from the rollout: this turn's
-    ``turn_token_usage``). ``delta`` is this leg's share after partitioning —
+    ``raw`` is the thread-cumulative usage object exactly as codex reported
+    it on the stream's ``turn.completed``, or ``None`` when the stream
+    reported none. There is no other source: round 9 deleted the rollout
+    branch, so the only two values this field can take are the stream's
+    verbatim object and ``None``. ``delta`` is this leg's share after
+    partitioning —
     the numbers that go into the :class:`AttemptResult`. ``thread_total`` is
     the cumulative thread usage after this leg, remembered on the harness so
     the next leg's delta can be taken.
@@ -571,16 +575,32 @@ class _Usage:
     # Why ``delta`` is not a faithful measure of this leg (empty when it is).
     caveats: tuple[str, ...] = ()
     # Codex's rollout records the thread past everything this harness has
-    # billed, measured against a baseline known to be WHOLE: this leg did work
-    # even though its stream reported none. Only meaningful on the
-    # ``source == "none"`` path, where it separates a leg to capture from a
-    # dead leg to retry.
+    # billed, with no RECORDED gap in the baseline: THIS ATTEMPT did work even
+    # though this leg's stream reported none. Not "this leg did work" — a
+    # dead-classified leg bypasses ``_result``, so it leaves no gap behind and
+    # its own tokens can be what moved the cumulative (review round 10). The
+    # decision is still right because every leg that can move the cumulative
+    # under a gapless baseline belongs to the attempt being classified, and
+    # the attempt is the granularity this decision is taken at. Only
+    # meaningful on the ``source == "none"`` path, where it separates an
+    # attempt to capture from a dead leg to retry.
     active_per_rollout: bool = False
 
 
 def _as_usage(obj: Any) -> dict[str, int] | None:
     """Normalise a codex usage object to the five known integer fields, or
-    ``None`` if it isn't one (missing/invalid ``input_tokens``/``output_tokens``)."""
+    ``None`` if it isn't one (missing/invalid ``input_tokens``/``output_tokens``).
+
+    That presence check is the calibration tripwire: a renamed or dropped
+    ``input_tokens``/``output_tokens`` turns into the never-a-zero-token-
+    success :class:`HarnessError` rather than a silent zero. It is incomplete
+    on purpose but worth naming (review round 10): ``cached_input_tokens`` is
+    covered by ``cache_tokens_reported``, while a renamed or dropped
+    ``cache_write_input_tokens`` normalises to 0 and prices the run as plain
+    non-cached input, OVERSTATING cost with nothing flagged. Every recording
+    so far has it at 0, so no fixture would notice — a future recording with
+    non-zero writes must be re-calibrated here.
+    """
     if not isinstance(obj, dict) or "input_tokens" not in obj or "output_tokens" not in obj:
         return None
     out: dict[str, int] = {}
@@ -625,13 +645,15 @@ def _read_rollout(
     "rate_limits":{"primary":{"used_percent":…,"window_minutes":300,…},
     "secondary":{…"window_minutes":10080…},"plan_type":…}}}``.
 
-    **Not a per-turn usage source** (review round 9). The rollout answers two
-    questions and no others: how far along the thread's CUMULATIVE usage is —
-    which repairs the harness's baseline, and can never say which turn ran —
-    and whether a leg whose stream reported nothing did work after all. Which
-    turn a record belongs to it cannot answer: both attempts to infer that (the
-    last turn id read, then this cumulative having advanced) prove staleness
-    only, and were read backwards as proof of freshness. See :func:`_advances`.
+    **Not a per-turn usage source** (review round 9). The rollout has three
+    jobs and no others: cumulative baseline repair, dead-leg evidence, rate
+    limits — how far along the thread's CUMULATIVE usage is (which repairs the
+    harness's baseline, and can never say which turn ran), whether a leg whose
+    stream reported nothing did work after all, and the ``rate_limits`` this
+    function also returns. Which turn a record belongs to it cannot answer:
+    both attempts to infer that (the last turn id read, then this cumulative
+    having advanced) prove staleness only, and were read backwards as proof of
+    freshness. See :func:`_advances`.
 
     "The last turn in the file" = the lines after the last ``turn_context``
     (the leg that just ran is the last turn appended). A leg that died before
@@ -742,8 +764,18 @@ def _advances(thread_total: dict[str, int] | None, baseline: dict[str, int]) -> 
 
     So True is used for two things and no others: to move the baseline forward
     (a cumulative names no turn, so adopting one cannot mis-attribute — at
-    worst it is short), and, against a baseline known to be WHOLE, as evidence
-    that a leg whose stream said nothing did work. Never to attribute tokens.
+    worst it is short), and, against a baseline with no RECORDED gap, as
+    evidence that the ATTEMPT being classified did work even though this leg's
+    stream said nothing. Never to attribute tokens.
+
+    Read that second use precisely (review round 10). ``not baseline_has_gap``
+    means "no *recorded* gap", not "whole": a dead-classified leg never
+    reaches :meth:`CodexCliHarness._result`, so a leg that spent tokens and
+    was then retried records no gap, and the record sitting beyond the
+    baseline can be that leg's rather than this one's. Capturing is still the
+    right call, because every leg that can move the cumulative under a gapless
+    baseline belongs to the SAME ATTEMPT — and the attempt, not the leg, is
+    the granularity every decision here is taken at.
     """
     if thread_total is None:
         return False
@@ -772,16 +804,24 @@ def _usage_from(
     :data:`USAGE_CAVEAT_MISSING`. (A *completed* turn landing there raises in
     :meth:`CodexCliHarness._attempt` — a success is never recorded as free.)
 
-    The rollout keeps exactly two jobs. Its ``thread_token_usage`` is codex's
+    The rollout has three jobs and no others: cumulative baseline repair,
+    dead-leg evidence, rate limits. Its ``thread_token_usage`` is codex's
     own post-turn CUMULATIVE: once it has moved past the baseline it becomes
     the new baseline, which is the only thing stopping every later delta from
     inheriting an unmeasured turn (review round 7, I-1). A cumulative names no
     turn, so adopting one cannot mis-attribute tokens — at worst it is short,
-    and :func:`_advances` keeps it from moving backwards. And when a leg's
-    stream shows neither usage nor model activity, that same cumulative beyond
-    a baseline known to be WHOLE is evidence the leg worked anyway
-    (``active_per_rollout``); against a short baseline it is no evidence at
-    all, so the leg is dead and gets retried rather than captured.
+    and :func:`_advances` keeps it from moving backwards. Adopting it is also
+    what makes the backwards-usage guard in this function reachable at all
+    (review round 10): the repaired baseline is codex's ROLLOUT accounting
+    while the next leg's delta is taken from its STREAM accounting, so a
+    divergence between the two shows up as a negative delta and aborts the run
+    rather than recording a wrong figure. The two agree on every recorded
+    fixture, so this needs codex-side drift — and failing loudly is the right
+    direction. And when a leg's stream shows neither usage nor model activity,
+    that same cumulative beyond a baseline with no RECORDED gap is evidence
+    the ATTEMPT worked anyway (``active_per_rollout``, whose soundness
+    :func:`_advances` spells out); against a short baseline it is no evidence
+    at all, so the leg is dead and gets retried rather than captured.
 
     ``baseline_has_gap`` says the baseline is not known to equal codex's
     cumulative, because an earlier leg spent tokens nobody could measure. A
