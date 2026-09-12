@@ -29,6 +29,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr:hover td { background: #f7f8fa; }
 .pass { color: #2b8a3e; font-weight: 600; }
 .fail { color: #c92a2a; font-weight: 600; }
+.warn { color: #e8590c; font-weight: 600; cursor: help; }
 .cards { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 2rem; }
 .card { border: 1px solid #e3e3e3; border-radius: 8px; padding: .85rem 1rem; min-width: 230px; flex: 1; }
 .card h3 { margin: 0 0 .4rem; }
@@ -38,7 +39,7 @@ tr:hover td { background: #f7f8fa; }
 ul.links { list-style: none; padding: 0; }
 ul.links li { margin: .25rem 0; }
 .failures { background: #fff5f5; border: 1px solid #ffc9c9; border-radius: 4px; padding: .4rem .6rem; margin: .3rem 0; font-size: .82rem; }
-@media (prefers-color-scheme: dark) { .failures { background: #2a1d1f; border-color: #5c2a2e; } .pass { color: #69db7c; } .fail { color: #ff8787; } .card dt { color: #888; } }
+@media (prefers-color-scheme: dark) { .failures { background: #2a1d1f; border-color: #5c2a2e; } .pass { color: #69db7c; } .fail { color: #ff8787; } .warn { color: #ffa94d; } .card dt { color: #888; } }
 .failures ul { margin: .2rem 0; padding-left: 1.2rem; }
 .prompt-block { background: #f3f4f6; border: 1px solid #e3e3e3; border-radius: 4px; padding: .6rem .8rem; margin: .3rem 0; max-height: 70vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: .8rem; }
 @media (prefers-color-scheme: dark) { .prompt-block { background: #1e2128; border-color: #2c3038; } }

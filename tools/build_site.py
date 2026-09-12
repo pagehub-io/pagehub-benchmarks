@@ -263,13 +263,25 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         rec["template_var_rows"] = _template_var_rows(rec.get("template_vars") or {})
         # Per-attempt rendered_prompt is also opt-in; default to empty string
         # so the template can `{% if a.rendered_prompt %}` it. Same for
-        # ``raw`` (the full claude -p JSON object): legacy records lack it.
+        # ``raw`` (claude-code: the full claude -p JSON object; codex-cli: a bounded
+        # summary of the codex exec --json stream): legacy records lack it.
         for a in rec.get("per_attempt") or []:
             a.setdefault("rendered_prompt", "")
             a.setdefault("raw", None)
             raw = a.get("raw")
             a["raw_pretty"] = (
                 json.dumps(raw, indent=2, sort_keys=True) if raw else ""
+            )
+            # The harness marks any attempt whose token figures are not a
+            # measure of that attempt alone (codex-cli). Surface it beside the
+            # numbers: the raw JSON is collapsed by default, so a reader would
+            # otherwise see an over- or under-reported figure with nothing to
+            # say so. Absent on claude-code and on legacy records, which
+            # therefore get no marker rather than a false warning.
+            a["usage_caveats"] = (
+                [str(c) for c in raw.get("usage_caveats") or []]
+                if isinstance(raw, dict)
+                else []
             )
         runs.append(rec)
     # newest first

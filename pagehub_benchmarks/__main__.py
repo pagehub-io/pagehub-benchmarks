@@ -25,6 +25,7 @@ from pagehub_benchmarks.config import (
     ConfigError,
     load_benchmark,
 )
+from pagehub_benchmarks.harnesses import HARNESSES
 from pagehub_benchmarks.runner.run import dry_run_report, run_benchmark
 
 
@@ -122,7 +123,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("run", help="run a benchmark's harness matrix")
     r.add_argument("benchmark", help="benchmark name (benchmarks/<name>.yaml) or a path")
-    r.add_argument("--harness", help="only this harness from the matrix")
+    r.add_argument(
+        "--harness",
+        help=f"only this harness from the matrix (known: {', '.join(sorted(HARNESSES))})",
+    )
     r.add_argument("--model", help="only this model from the matrix")
     r.add_argument(
         "--effort",
