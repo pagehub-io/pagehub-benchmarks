@@ -2226,7 +2226,9 @@ def test_a_rollout_cumulative_that_is_not_comparable_is_refused(
 
 # --------------------------------------------------------------------------
 # Review round 10, N-3/N-4: two guards that survived as mutants — relaxing
-# either left all 255 tests passing. Same shape as round 9's N-1/N-2.
+# either left all 255 tests passing (the suite as it stood BEFORE the two
+# tests below; they are what kills those mutants now). Same shape as round
+# 9's N-1/N-2.
 
 
 def _drop_usage_key(stream: str, key: str) -> str:
@@ -2288,7 +2290,8 @@ def test_a_thread_total_with_no_turn_figure_beside_it_is_not_dead_leg_evidence(
     """N-4. ``_read_rollout`` only adopts a ``thread_token_usage`` that is
     PAIRED with a ``turn_token_usage`` — the guard the comment justifies as
     "so a record shaped some other way is ignored rather than guessed at".
-    Replacing that condition with ``True`` left all 255 tests passing.
+    Replacing that condition with ``True`` left all 255 tests passing — the
+    suite as it stood before this test.
 
     This is ``test_turn_with_usage_but_no_items_is_not_dead`` (M21) with one
     thing changed: the staged rollout's records carry a cumulative but no turn
