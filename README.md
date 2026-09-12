@@ -122,9 +122,12 @@ head-to-head against Claude Code with the identical prompt, grader and run
 record. The adapter is `pagehub_benchmarks/harnesses/codex_cli.py`; the design
 and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
 
-- **Version:** `codex` ≥ 0.153.0 on PATH (developed and tested against
-  0.154.0; `npm i -g @openai/codex`). `benchmarks/eval-chess-backend.yaml`
-  carries a `codex-cli` / `gpt-6-astra` row.
+- **Version:** developed and tested against `codex` 0.154.0 (`npm i -g
+  @openai/codex`). Nothing checks the version at run time — an older CLI
+  whose `--json` stream or rollout layout differs fails the usage parse
+  rather than being refused up front.
+  `benchmarks/eval-chess-backend.yaml` carries a `codex-cli` / `gpt-6-astra`
+  row.
 - **Login:** `codex login` (or `codex login --device-auth` on a headless box).
   Runs require the **ChatGPT-subscription** login: before the first attempt the
   adapter runs `codex login status` and refuses unless it reports `Logged in
@@ -141,13 +144,13 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   is passed as `-c model_reasoning_effort=…` on **every** attempt. Without it a
   run takes the model default — and a bare `codex exec resume` was observed to
   reset the effort to that default mid-run — silently changing results between
-  runs. (`~/.codex/config.toml` is a separate matter: it is excluded outright by
+  runs. (`$CODEX_HOME/config.toml` is a separate matter: it is excluded outright by
   `--ignore-user-config` on both legs.) Codex accepts any string here without
   validating it,
   so the adapter's explicit map is the only guard. `ultra` (automatic sub-agent
   delegation) is deliberately not mapped. `--ignore-user-config` is passed on
   both legs so the operator's config never leaks in; codex still appends a
-  `[projects."<worktree>"] trust_level` entry to `~/.codex/config.toml` per run
+  `[projects."<worktree>"] trust_level` entry to `$CODEX_HOME/config.toml` per run
   (harmless; prune occasionally).
 - **Sandbox:** `--sandbox workspace-write` (never `danger-full-access`) with
   network enabled inside the sandbox. Compared with Claude Code (which runs
@@ -164,7 +167,7 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   sandbox's writable roots, so the agent cannot plant skills or edit it for
   its later turns — with `CODEX_HOME` pinned to your real login directory,
   disables codex's login-shell snapshot (otherwise written to
-  `~/.codex/shell_snapshots/` in plaintext, values included) and filters
+  `$CODEX_HOME/shell_snapshots/` in plaintext, values included) and filters
   inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — a probe
   agent then saw no secret-named variables where it previously listed 37 from
   `~/.bashrc`. (That throwaway HOME holds only a `.bash_profile` restoring
@@ -191,23 +194,44 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   runs `codex exec resume <thread_id>` with the failing-eval output. Token
   counts come from the `--json` stream's `turn.completed.usage`, which on a
   resumed thread is the **thread total** — the adapter records each attempt's
-  delta (`raw.usage` is the verbatim cumulative object, `raw.usage_delta` the
-  attempt's share). `input_tokens` in the record is the non-cached slice;
+  delta (`raw.usage` is the verbatim usage object codex reported —
+  thread-cumulative on the stream path — and `raw.usage_delta` the attempt's
+  share). `input_tokens` in the record is the non-cached slice;
   `cached_input_tokens` → cache reads, `cache_write_input_tokens` → cache
   writes (priced at OpenAI's write rate); `output_tokens` includes reasoning
   (`raw.reasoning_output_tokens` is recorded separately). A failed turn
   carries no usage on the stream, so that path reads the turn's usage from
   codex's rollout (`raw.usage_source: "rollout"`), and the thread total is
-  re-anchored on the `thread_token_usage` codex records beside it. If a spent
-  turn's usage cannot be found at all, the attempt records zeros with
-  `raw.usage_missing: true` — unknown, not free — and the next attempt takes
-  its own share from the rollout rather than from a baseline that is short
-  (`raw.usage_source: "stream+rollout_turn"`). `raw.rate_limits` carries
+  re-anchored on the `thread_token_usage` codex records beside it.
+  **`raw.usage_faithful` is the field to read before trusting an attempt's
+  token counts.** It is `false` when `raw.usage_delta` is not a measure of
+  that attempt alone, and `raw.usage_caveats` says why: `"missing"` — the
+  turn was spent but no source could report it, so the attempt records zeros
+  (unknown, not free; also `raw.usage_missing: true`) — or
+  `"absorbed_missing_leg"` — this attempt's delta *includes* an earlier
+  unreadable turn, because the stream reports a thread total and the baseline
+  it was taken against was short by that turn. The adapter tries to avoid the
+  second case: when the rollout is readable and holds that turn's own figures
+  it takes the attempt's share from there instead
+  (`raw.usage_source: "stream+rollout_turn"`). That recovery is best-effort
+  and can fail — the rollout may stay unreadable, be malformed, or, when
+  codex died before writing this turn's `turn_context`, still end on the
+  *previous* turn's record, which is refused rather than billed twice and
+  adds `"rollout_turn_rejected"`. When it fails the tokens are still counted
+  once across the run, just on the wrong attempt — and that attempt says so.
+  An over-reported attempt is no more honest than a zero-reported one, so
+  both carry the flag; an unreadable *final* attempt has no successor to
+  absorb it, and its tokens are simply absent from the run totals.
+  `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
   a Plus plan (it is printed for attempts that return a result; a dead,
   retried leg never prints one). If codex ever reports no cache split, the
   cache columns show `0` and `raw.cache_tokens_reported` is `false`.
   `raw.rollout_path` is relative to `$CODEX_HOME` (the record is published).
+  The diagnostic text fields — `raw.stderr_tail`, `raw.harness_error`,
+  `raw.errors`, `raw.final_event` — are codex's own output, published to the
+  results site verbatim and not scrubbed; they can contain absolute paths
+  from the machine the run happened on.
 - **When a run crashes vs. records:** a turn in which the model never ran
   (not logged in, usage limit hit, provider outage, a rejected prompt — see
   openai/codex#43237) is retried `CODEX_DEAD_TURN_RETRIES` times (default 2)
