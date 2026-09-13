@@ -24,11 +24,15 @@ def test_loads_shipped_eval_chess_backend_benchmark():
     assert spec.grader.collection == "eval-chess-backend"
     assert spec.grader.fixture_bundle == "fixtures/eval-chess-backend.json"
     assert spec.grader.env == {"eval-chess-backend_url": "http://host.docker.internal:8003"}
-    assert len(spec.harnesses) == 1
+    assert len(spec.harnesses) == 2  # claude-code + codex-cli rows
     h = spec.harnesses[0]
     assert h.harness == "claude-code"
     assert h.model == "claude-opus-4-7"
     assert h.config == {"effort": "xhigh"}
+    h2 = spec.harnesses[1]
+    assert h2.harness == "codex-cli"
+    assert h2.model == "gpt-6-astra"
+    assert h2.config == {"effort": "high"}
     # the prompt file exists, is non-empty, and does not mention PRs / git push
     text = spec.read_prompt()
     assert text and "that is all" in text

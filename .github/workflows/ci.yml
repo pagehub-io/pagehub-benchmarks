@@ -1,7 +1,9 @@
 name: ci
 
 # CI runs lint + the unit tests ONLY. It must never run a real benchmark —
-# that invokes `claude` and pagehub-evals, costs tokens, and needs secrets.
+# that invokes `claude` / `codex` and pagehub-evals, costs tokens, and needs
+# secrets. The codex adapter is tested against recorded `codex exec --json`
+# fixtures under tests/fixtures/.
 # The runner is exercised here through FakeHarness / FakeGrader.
 
 on:

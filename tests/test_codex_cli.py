@@ -1,0 +1,3087 @@
+"""Codex CLI adapter, driven by REAL recorded ``codex exec --json`` streams.
+
+``tests/fixtures/codex_exec_unauthenticated.jsonl`` (start) and
+``…_resume_unauthenticated.jsonl`` (resume) are verbatim captures from codex-cli
+0.154.0 on a logged-out box: ``thread.started`` → ``turn.started`` → ``error``
+× n → ``item.completed{type: error}`` → ``turn.failed``; exit 1. They are the
+ground truth for the failure envelope. No test here spawns a real ``codex``:
+``subprocess.Popen`` (the legs) and ``subprocess.run`` (the ``codex login
+status`` pre-flight) are faked.
+
+Streams marked SYNTHETIC below are the real envelope with one line changed to
+exercise a classification branch; they assert behaviour of *our* classifier,
+never a shape of codex's output. Token usage is tested against the recorded
+success fixtures and rollout further down.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import os
+import re
+import subprocess
+import time
+import types
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from pagehub_benchmarks.harnesses import HARNESSES, codex_cli, get_harness
+from pagehub_benchmarks.harnesses.codex_cli import (
+    EFFORTS,
+    STRIPPED_ENV_VARS,
+    CodexCliHarness,
+    HarnessError,
+    _parse_jsonl,
+)
+
+FIXTURES = Path(__file__).parent / "fixtures"
+START_FIXTURE = (FIXTURES / "codex_exec_unauthenticated.jsonl").read_text()
+RESUME_FIXTURE = (FIXTURES / "codex_exec_resume_unauthenticated.jsonl").read_text()
+CHATGPT_LINE = "Logged in using ChatGPT"
+
+
+def _thread_id_of(stream: str) -> str:
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "thread.started":
+            return obj["thread_id"]
+    raise AssertionError("fixture has no thread.started")
+
+
+START_THREAD_ID = _thread_id_of(START_FIXTURE)
+
+
+def _synthetic_non_dead_failure(stream: str) -> str:
+    """SYNTHETIC: the real failure envelope plus one non-error item after
+    ``turn.started`` — 'the model did something, then the turn failed'."""
+    lines = stream.splitlines()
+    idx = next(i for i, ln in enumerate(lines) if '"turn.started"' in ln)
+    item = json.dumps(
+        {"type": "item.completed", "item": {"id": "synthetic_1", "type": "synthetic_non_error_item"}}
+    )
+    return "\n".join(lines[: idx + 1] + [item] + lines[idx + 1 :]) + "\n"
+
+
+def _synthetic_completed_no_usage(stream: str) -> str:
+    """SYNTHETIC: the real envelope with ``turn.failed`` swapped for a bare
+    ``turn.completed`` — a 'success' that reports nothing we can price."""
+    lines = [ln for ln in stream.splitlines() if '"turn.failed"' not in ln]
+    return "\n".join(lines + [json.dumps({"type": "turn.completed"})]) + "\n"
+
+
+# --------------------------------------------------------------------------
+# fakes for the subprocess layer
+
+
+class _FakePipe:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeProc:
+    """``dies_on_sigterm``: after ``wait()`` the process reports exited, so no
+    SIGKILL follows. Otherwise ``poll()`` keeps saying alive ⇒ SIGKILL path."""
+
+    def __init__(self, stdout: str, stderr: str, returncode: int, *,
+                 raise_first: BaseException | None = None, dies_on_sigterm: bool = False):
+        self._stdout, self._stderr, self.returncode = stdout, stderr, returncode
+        self._raise_first = raise_first
+        self._dies_on_sigterm = dies_on_sigterm
+        self.pid = 4242
+        self.stdin, self.stdout, self.stderr = _FakePipe(), _FakePipe(), _FakePipe()
+        self.communicate_calls: list[dict[str, Any]] = []
+        self._waited = False
+
+    def communicate(self, input=None, timeout=None):  # noqa: ANN001
+        self.communicate_calls.append({"input": input, "timeout": timeout})
+        if self._raise_first is not None and len(self.communicate_calls) == 1:
+            raise self._raise_first
+        return self._stdout, self._stderr
+
+    def wait(self, timeout=None):  # noqa: ANN001
+        self._waited = True
+        return self.returncode
+
+    def poll(self):
+        return self.returncode if (self._dies_on_sigterm and self._waited) else None
+
+    @property
+    def pipes_closed(self) -> bool:
+        return all(p.closed for p in (self.stdin, self.stdout, self.stderr))
+
+
+class _Legs:
+    """Scripted ``subprocess.Popen`` replacement; records every call.
+
+    ``raise_first`` makes the FIRST leg's first ``communicate`` raise that
+    exception (``TimeoutExpired`` for the timeout path, ``KeyboardInterrupt``
+    for the interrupt path)."""
+
+    def __init__(self, script: list[tuple[str, str, int]], *,
+                 raise_first: BaseException | None = None, dies_on_sigterm: bool = False):
+        self.script = list(script)
+        self.calls: list[dict[str, Any]] = []
+        self.procs: list[_FakeProc] = []
+        self._raise_first = raise_first
+        self._dies_on_sigterm = dies_on_sigterm
+
+    def __call__(self, cmd, **kwargs):  # noqa: ANN001
+        stdout, stderr, rc = self.script[min(len(self.calls), len(self.script) - 1)]
+        self.calls.append({"cmd": list(cmd), **kwargs})
+        proc = _FakeProc(
+            stdout, stderr, rc,
+            raise_first=self._raise_first if not self.procs else None,
+            dies_on_sigterm=self._dies_on_sigterm,
+        )
+        self.procs.append(proc)
+        return proc
+
+
+class _Preflight:
+    """Scripted ``subprocess.run`` replacement for ``codex login status``."""
+
+    def __init__(self, stdout: str = "", stderr: str = CHATGPT_LINE + "\n", returncode: int = 0,
+                 *, raise_with: Exception | None = None):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
+        self.raise_with = raise_with
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, cmd, **kwargs):  # noqa: ANN001
+        self.calls.append({"cmd": list(cmd), **kwargs})
+        if self.raise_with is not None:
+            raise self.raise_with
+        return subprocess.CompletedProcess(cmd, self.returncode, self.stdout, self.stderr)
+
+
+class _PreflightSequence:
+    """``_Preflight`` whose ``codex login status`` answer CHANGES per call, so
+    a second run on the same harness instance can be told apart from the
+    first (review round 14). The last entry repeats.
+
+    ``returncodes`` (round 15) scripts a run whose pre-flight FAILS after an
+    earlier one passed — the sequence that used to leave the instance holding
+    a completed run's worktree/model/effort with no throwaway HOME."""
+
+    def __init__(self, stderrs: list[str], returncodes: list[int] | None = None) -> None:
+        self.stderrs = list(stderrs)
+        self.returncodes = list(returncodes or [])
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, cmd, **kwargs):  # noqa: ANN001
+        self.calls.append({"cmd": list(cmd), **kwargs})
+        idx = len(self.calls) - 1
+        stderr = self.stderrs[min(idx, len(self.stderrs) - 1)]
+        rc = self.returncodes[min(idx, len(self.returncodes) - 1)] if self.returncodes else 0
+        return subprocess.CompletedProcess(cmd, rc, "", stderr)
+
+
+# Captured at import, BEFORE `isolated_env` patches the name out, so a test
+# can put the real function back and drive its own raise path through
+# start_build rather than through a stand-in that cannot fail the same way.
+_REAL_THROWAWAY_HOME_BASE = codex_cli._throwaway_home_base
+
+
+@pytest.fixture
+def isolated_env(monkeypatch, tmp_path):
+    """No real codex home is globbed; no real sleeps; a known env to check."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.delenv("CODEX_DEAD_TURN_RETRIES", raising=False)
+    monkeypatch.delenv("CODEX_BUILD_TIMEOUT_SECONDS", raising=False)
+    for var in STRIPPED_ENV_VARS:
+        monkeypatch.setenv(var, f"{var.lower()}-should-be-dropped")
+    homes = tmp_path / "codex-homes"
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: homes)
+    sleeps: list[float] = []
+    # Give the module under test its OWN `time`, rather than reaching through
+    # it into the stdlib: `codex_cli.time is time`, so the old
+    # `setattr(codex_cli.time, "sleep", ...)` replaced time.sleep GLOBALLY for
+    # the duration of every test using this fixture, and
+    # test_wall_time_sums_legs_and_excludes_pauses installed a 4-value
+    # iterator as the global time.monotonic — any unrelated caller during
+    # that test raises StopIteration (round 16, N-12). The namespace carries
+    # everything codex_cli uses from `time`, so a new call site fails loudly
+    # here rather than silently reaching the real clock.
+    monkeypatch.setattr(
+        codex_cli,
+        "time",
+        types.SimpleNamespace(
+            time=time.time,
+            monotonic=time.monotonic,
+            sleep=lambda s: sleeps.append(s),
+        ),
+    )
+    return sleeps
+
+
+def _install(monkeypatch, legs: _Legs, preflight: _Preflight | None = None) -> _Preflight:
+    preflight = preflight or _Preflight()
+    monkeypatch.setattr(codex_cli.subprocess, "Popen", legs)
+    monkeypatch.setattr(codex_cli.subprocess, "run", preflight)
+    return preflight
+
+
+NON_DEAD_START = _synthetic_non_dead_failure(START_FIXTURE)
+NON_DEAD_RESUME = _synthetic_non_dead_failure(RESUME_FIXTURE)
+
+
+# --------------------------------------------------------------------------
+# 1 + 2: argv, byte-exact; prompt on stdin verbatim; cwd = worktree
+
+
+def test_start_argv_byte_exact_and_prompt_on_stdin(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    prompt = 'Line one "quoted" and `ticks`.\n\n## {{ not_jinja }} $HOME — ✓\n- bullet\n'
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), prompt, "gpt-6-astra", {"effort": "high"})
+
+    call = legs.calls[0]
+    assert call["cmd"] == [
+        "codex", "exec", "--ignore-user-config",
+        "--disable", "shell_snapshot",
+        "-c", "shell_environment_policy.experimental_use_profile=false",
+        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+        "-m", "gpt-6-astra", "--json",
+        "-C", str(tmp_path), "--sandbox", "workspace-write",
+        "-c", 'model_reasoning_effort="high"',
+        "-c", "sandbox_workspace_write.network_access=true",
+        "-",
+    ]
+    assert call["cwd"] == str(tmp_path)
+    assert call["start_new_session"] is True
+    assert call["stdin"] is subprocess.PIPE
+    assert legs.procs[0].communicate_calls[0]["input"] == prompt  # verbatim, on stdin
+    assert "danger-full-access" not in call["cmd"]
+
+
+def test_resume_argv_byte_exact(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1), (NON_DEAD_RESUME, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p1", "gpt-6-astra", {"effort": "xhigh"})
+    followup = "The conformance evals are still failing:\n\n- thing broke\n\nFix it."
+    h.continue_build(r1.session_handle, followup)
+
+    call = legs.calls[1]
+    assert call["cmd"] == [
+        "codex", "exec", "resume", START_THREAD_ID, "--ignore-user-config",
+        "--disable", "shell_snapshot",
+        "-c", "shell_environment_policy.experimental_use_profile=false",
+        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+        "--json",
+        "-m", "gpt-6-astra",
+        "-c", 'model_reasoning_effort="xhigh"',
+        "-c", 'sandbox_mode="workspace-write"',
+        "-c", "sandbox_workspace_write.network_access=true",
+        "-",
+    ]
+    assert "-C" not in call["cmd"] and "--sandbox" not in call["cmd"]  # not flags of `resume`
+    assert call["cwd"] == str(tmp_path)
+    assert legs.procs[1].communicate_calls[0]["input"] == followup
+
+
+# --------------------------------------------------------------------------
+# 3: effort mapping
+
+
+@pytest.mark.parametrize("effort", sorted(EFFORTS))
+def test_effort_maps_one_to_one(monkeypatch, tmp_path, isolated_env, effort):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": effort})
+    cmd = legs.calls[0]["cmd"]
+    assert f'model_reasoning_effort="{effort}"' in cmd
+    assert cmd[cmd.index(f'model_reasoning_effort="{effort}"') - 1] == "-c"
+
+
+@pytest.mark.parametrize(
+    "config",
+    [{"effort": "ultra"}, {"effort": "minimal"}, {"effort": "bogus"}, {"effort": "High"},
+     {"effort": None}, {"effort": 1}, {"effort": ""}, {}, None],
+)
+def test_effort_unmapped_or_missing_raises_before_any_subprocess(monkeypatch, tmp_path, isolated_env, config):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    preflight = _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="config.effort"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", config)
+    assert legs.calls == [] and preflight.calls == []
+
+
+# --------------------------------------------------------------------------
+# 4: environment
+
+
+def test_env_strips_all_three_auth_vars_on_legs_and_preflight(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    preflight = _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    for env in (legs.calls[0]["env"], preflight.calls[0]["env"]):
+        for var in STRIPPED_ENV_VARS:
+            assert var not in env
+        assert env["PATH"] == "/usr/bin"
+        assert env["CODEX_HOME"].endswith("codex-home")  # pinned to the (test) codex home
+    assert STRIPPED_ENV_VARS == ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
+    # nothing added beyond the inherited env except the pinned CODEX_HOME — on
+    # the leg AND the pre-flight; HOME is swapped, never dropped
+    removed = set(STRIPPED_ENV_VARS) | set(codex_cli.PROFILE_ENV_VARS)
+    expected = {k for k in os.environ if k not in removed} | {"CODEX_HOME", "HOME"}
+    assert set(legs.calls[0]["env"]) == expected
+    assert set(preflight.calls[0]["env"]) == expected
+
+
+def test_env_home_is_a_throwaway_dir_and_codex_home_is_pinned(monkeypatch, tmp_path, isolated_env):
+    """codex runs the agent's commands with `bash -lc`; with the operator's
+    HOME that re-sources ~/.bashrc and its secrets into the agent's shell.
+    The subprocess gets an empty HOME, while CODEX_HOME still points at the
+    real login directory (verified 2026-09-11: secrets NONE, login works)."""
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    monkeypatch.delenv("LC_ALL", raising=False)
+    legs = _Legs([(NON_DEAD_START, "", 1), (NON_DEAD_RESUME, "", 1)])
+    preflight = _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    h.continue_build(r1.session_handle, "again")
+    envs = [preflight.calls[0]["env"], legs.calls[0]["env"], legs.calls[1]["env"]]
+    homes = {e["HOME"] for e in envs}
+    assert len(homes) == 1  # one throwaway HOME per run, shared by pre-flight and both legs
+    home = Path(homes.pop())
+    assert home.is_dir() and home != Path(os.environ["HOME"])
+    assert home.parent == tmp_path / "codex-homes" and home.name.startswith("run-")
+    # nothing but the PATH + locale profile: no secrets, no operator dotfiles
+    assert [p.name for p in home.iterdir()] == [".bash_profile"]
+    assert (home / ".bash_profile").read_text() == (
+        'export PATH=/usr/bin:"$PATH"\n'
+        "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8\n"
+    )
+    for e in envs:
+        assert e["CODEX_HOME"] == os.environ["CODEX_HOME"]  # the real codex home, not <HOME>/.codex
+
+
+def test_home_profile_restores_runner_path_and_locale(monkeypatch, tmp_path):
+    """codex forces C.UTF-8 and a stock /etc/profile resets PATH for login
+    shells; the profile re-exports the runner's PATH and locale (LC_ALL over
+    LANG), shell-quoted."""
+    monkeypatch.setenv("PATH", "/opt/py/bin:/usr/bin")
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
+    codex_cli._prepare_home(str(tmp_path))
+    assert (tmp_path / ".bash_profile").read_text() == (
+        'export PATH=/opt/py/bin:/usr/bin:"$PATH"\n'
+        "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 LC_CTYPE=de_DE.UTF-8\n"
+    )
+    monkeypatch.setenv("LC_ALL", "x; touch /tmp/pwned")  # hostile values are quoted, never executed
+    monkeypatch.setenv("PATH", "/usr/bin:$(touch /tmp/pwned)")
+    codex_cli._prepare_home(str(tmp_path))
+    text = (tmp_path / ".bash_profile").read_text()
+    assert "LC_ALL='x; touch /tmp/pwned'" in text
+    assert "PATH='/usr/bin:$(touch /tmp/pwned)':\"$PATH\"" in text
+
+
+def test_home_profile_really_restores_path_and_locale_in_a_login_shell(monkeypatch, tmp_path):
+    """Execute it: a real `/bin/bash -lc` with codex's forced C.UTF-8 env and
+    WSL_DISTRO_NAME unset (so a stock /etc/profile resets PATH) must end up
+    with the runner's PATH and locale."""
+    import shutil as _shutil
+
+    if not Path("/bin/bash").exists() or _shutil.which("bash") is None:
+        pytest.skip("no bash")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'runner-bin'}:{os.environ['PATH']}")
+    monkeypatch.setenv("LANG", "C")  # a locale every box can load
+    monkeypatch.delenv("LC_ALL", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_cli._prepare_home(str(home))
+    env = {k: v for k, v in os.environ.items() if k != "WSL_DISTRO_NAME"}
+    # Start bash with a reset-like PATH (what a stock /etc/profile leaves), so
+    # the assertion passes only if .bash_profile restores the runner's PATH —
+    # whatever this box's /etc/profile does.
+    env.update(HOME=str(home), PATH="/usr/bin:/bin",
+               LANG="C.UTF-8", LC_ALL="C.UTF-8", LC_CTYPE="C.UTF-8")
+    out = subprocess.run(
+        ["/bin/bash", "-lc", 'echo "$PATH"; echo "$LC_ALL"'],
+        env=env, capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    assert out[0].split(":")[0] == str(tmp_path / "runner-bin")
+    assert out[1] == "C"
+
+
+def test_home_stays_empty_without_path_or_locale(monkeypatch, tmp_path):
+    monkeypatch.delenv("PATH", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
+    monkeypatch.delenv("LC_ALL", raising=False)
+    codex_cli._prepare_home(str(tmp_path))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_throwaway_home_base_is_outside_the_sandbox_writable_roots(monkeypatch):
+    """A HOME under /tmp or $TMPDIR is writable by the sandboxed agent (it
+    could plant $HOME/.agents/skills for its later turns) — refuse it."""
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes").resolve()
+    monkeypatch.setenv("XDG_CACHE_HOME", "/srv/cache")
+    assert codex_cli._throwaway_home_base() == Path("/srv/cache/pagehub-benchmarks/codex-homes").resolve()
+    monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache")
+    with pytest.raises(HarnessError, match="writable to the agent"):
+        codex_cli._throwaway_home_base()
+    monkeypatch.setenv("TMPDIR", "/var/scratch")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/var/scratch/c")
+    with pytest.raises(HarnessError, match="/var/scratch"):
+        codex_cli._throwaway_home_base()
+
+
+def test_throwaway_home_removed_when_preflight_fails(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(stdout="", stderr="Not logged in\n", returncode=1))
+    with pytest.raises(HarnessError):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert list((tmp_path / "codex-homes").iterdir()) == []
+
+
+def test_relative_codex_home_is_made_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", "rel-codex")
+    assert codex_cli._subprocess_env("/x")["CODEX_HOME"] == str(tmp_path / "rel-codex")
+
+
+def test_codex_home_defaults_to_runner_home_dot_codex_when_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    env = codex_cli._subprocess_env("/tmp/throwaway")
+    assert env["CODEX_HOME"] == str(tmp_path / ".codex")
+    assert env["HOME"] == "/tmp/throwaway"
+
+
+# --------------------------------------------------------------------------
+# 5: pre-flight — ChatGPT-subscription login required
+
+
+def test_preflight_not_logged_in_raises_without_exec(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(stdout="", stderr="Not logged in\n", returncode=1))
+    with pytest.raises(HarnessError, match="not logged in with a ChatGPT subscription"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert legs.calls == []
+
+
+def test_preflight_api_key_login_raises_without_exec(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(stdout="Logged in using an API key - sk-…\n", stderr="", returncode=0))
+    with pytest.raises(HarnessError, match="Logged in using an API key") as excinfo:
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert legs.calls == []
+    assert "sk-" not in str(excinfo.value)  # the key fragment after " - " is not echoed
+
+
+def test_preflight_chatgpt_proceeds_and_records_auth_mode(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    # a coloured TTY-style line (colon-form CSI params) must still match, a
+    # preceding chatter line mentioning "logged in" must not be what gets
+    # recorded, and any " - suffix" is never stored in the record
+    coloured = f"note: previously logged in elsewhere\n\x1b[38:2:0:255:0m{CHATGPT_LINE} - workspace x\x1b[0m\n"
+    preflight = _install(monkeypatch, legs, _Preflight(stdout=coloured, stderr="", returncode=0))
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert preflight.calls[0]["cmd"] == ["codex", "login", "status"]
+    assert preflight.calls[0]["timeout"] == codex_cli.PREFLIGHT_TIMEOUT_SECONDS
+    assert len(legs.calls) == 1
+    assert r.raw["auth_mode"] == CHATGPT_LINE
+
+
+def test_preflight_file_not_found_propagates_unwrapped(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(raise_with=FileNotFoundError("codex")))
+    with pytest.raises(FileNotFoundError):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert legs.calls == []
+
+
+def test_preflight_timeout_raises(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs, _Preflight(raise_with=subprocess.TimeoutExpired("codex", 30)))
+    with pytest.raises(HarnessError, match="login status"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert legs.calls == []
+
+
+# --------------------------------------------------------------------------
+# 7: dead turns — the real logged-out streams — retried, then raise on either leg
+
+
+def test_dead_start_turn_is_retried_then_raises(monkeypatch, tmp_path, isolated_env):
+    sleeps = isolated_env
+    legs = _Legs([(START_FIXTURE, "some stderr", 1)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="401 Unauthorized"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(legs.calls) == 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+    assert sleeps == [codex_cli.DEAD_TURN_RETRY_PAUSE_SECONDS] * codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_dead_resume_turn_is_retried_then_raises(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1), (RESUME_FIXTURE, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + (1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES)
+
+
+def test_dead_turn_retry_count_is_env_tunable(monkeypatch, tmp_path, isolated_env):
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "0")
+    legs = _Legs([(START_FIXTURE, "", 1)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(legs.calls) == 1 and isolated_env == []
+
+
+# --------------------------------------------------------------------------
+# non-dead failure (model activity, then turn.failed) is CAPTURED, not raised
+
+
+def test_non_dead_failure_is_captured_with_error_text(monkeypatch, tmp_path, isolated_env):
+    osc_link = "\x1b]8;;https://example\x1b\\link\x1b]8;;\x1b\\"
+    legs = _Legs([(NON_DEAD_START, f"\x1b[31mERROR\x1b[0m codex_api: ws failed {osc_link}\n", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(legs.calls) == 1  # never retried
+    assert r.session_handle == START_THREAD_ID
+    assert (r.input_tokens, r.output_tokens, r.cache_tokens) == (0, 0, 0)
+    assert r.reported_cost_usd is None
+    raw = r.raw
+    assert "401 Unauthorized" in raw["harness_error"]
+    assert raw["exit_code"] == 1
+    assert raw["thread_id"] == START_THREAD_ID
+    assert raw["final_event"]["type"] == "turn.failed"
+    assert raw["usage"] is None and raw["usage_source"] == "none"
+    assert raw["cache_tokens_reported"] is False
+    assert raw["dead_turn_retries"] == 0
+    assert raw["rollout_path"] is None  # CODEX_HOME points at an empty dir
+    assert raw["effort"] == "high" and raw["model"] == "gpt-6-astra"
+    assert raw["event_counts"]["error"] >= 1 and raw["event_counts"]["turn.failed"] == 1
+    assert raw["errors_total"] == len(raw["errors"]) >= 1
+    assert raw["stderr_tail"] == "ERROR codex_api: ws failed link\n"  # CSI colours + OSC link stripped
+    json.dumps(raw)  # plain JSON types only — must round-trip through RunRecord.write
+
+
+def test_wall_time_sums_legs_and_excludes_pauses(monkeypatch, tmp_path, isolated_env):
+    ticks = iter([0.0, 10.0, 100.0, 130.0])  # leg 1: 10 s, leg 2: 30 s
+    monkeypatch.setattr(codex_cli.time, "monotonic", lambda: next(ticks))
+    legs = _Legs([(START_FIXTURE, "", 1), (NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert r.wall_time_seconds == pytest.approx(40.0)
+    assert r.raw["dead_turn_retries"] == 1
+    assert isolated_env == [codex_cli.DEAD_TURN_RETRY_PAUSE_SECONDS]
+
+
+def test_dead_leg_error_messages_survive_into_the_returned_attempt(monkeypatch, tmp_path, isolated_env):
+    """A retried attempt must say WHY its earlier legs were dead — the
+    abandoned thread is not referenced anywhere else in the record."""
+    legs = _Legs([(START_FIXTURE, "", 1), (NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    dead_msgs = codex_cli._error_messages(_parse_jsonl(START_FIXTURE)[0])
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_errors_total"] == len(dead_msgs) >= 1
+    assert r.raw["dead_turn_errors"] == dead_msgs[: codex_cli.RAW_LIST_LIMIT]
+    assert any("401 Unauthorized" in m for m in r.raw["dead_turn_errors"])
+    assert r.raw["errors_total"] == len(codex_cli._error_messages(_parse_jsonl(NON_DEAD_START)[0]))
+
+
+# --------------------------------------------------------------------------
+# 9: no thread.started ⇒ raise after exactly one call (no retry)
+
+
+@pytest.mark.parametrize("stdout", ["", "not json at all\n", json.dumps({"type": "turn.started"}) + "\n"])
+def test_no_thread_started_raises_after_one_call(monkeypatch, tmp_path, isolated_env, stdout):
+    legs = _Legs([(stdout, "", 1)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="no thread.started"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(legs.calls) == 1 and isolated_env == []
+
+
+# --------------------------------------------------------------------------
+# 10: timeout kills the whole process group, drains, raises
+
+
+def test_timeout_kills_process_group_and_drains(monkeypatch, tmp_path, isolated_env):
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "7")
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=subprocess.TimeoutExpired("codex", 7))
+    _install(monkeypatch, legs)
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid + 1)
+    monkeypatch.setattr(codex_cli.os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+    with pytest.raises(HarnessError, match="timed out after 7s"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    proc = legs.procs[0]
+    assert proc.communicate_calls[0]["timeout"] == 7
+    # SIGTERM to the group; poll() still None afterwards ⇒ SIGKILL to the group
+    assert signals == [(4243, codex_cli.signal.SIGTERM), (4243, codex_cli.signal.SIGKILL)]
+    # a second, bounded communicate() drained the pipes, then they were closed
+    assert proc.communicate_calls[1]["timeout"] == codex_cli.DRAIN_TIMEOUT_SECONDS
+    assert proc.pipes_closed
+
+
+def test_timeout_sigterm_alone_when_group_exits(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=subprocess.TimeoutExpired("codex", 1),
+                 dies_on_sigterm=True)
+    _install(monkeypatch, legs)
+    signals: list[int] = []
+    monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(codex_cli.os, "killpg", lambda pgid, sig: signals.append(sig))
+    with pytest.raises(HarnessError, match="timed out"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert signals == [codex_cli.signal.SIGTERM]  # no SIGKILL once the group is gone
+
+
+def test_interrupt_during_leg_kills_group_closes_pipes_and_reraises(monkeypatch, tmp_path, isolated_env):
+    """Ctrl-C: the child is in its own process group, so the terminal's SIGINT
+    never reaches it — the adapter must kill the group itself, then re-raise
+    the interrupt unwrapped (never as a HarnessError)."""
+    legs = _Legs([(NON_DEAD_START, "", 1)], raise_first=KeyboardInterrupt(), dies_on_sigterm=True)
+    _install(monkeypatch, legs)
+    signals: list[int] = []
+    monkeypatch.setattr(codex_cli.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(codex_cli.os, "killpg", lambda pgid, sig: signals.append(sig))
+    with pytest.raises(KeyboardInterrupt):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert signals == [codex_cli.signal.SIGTERM]
+    assert legs.procs[0].pipes_closed
+    assert len(legs.procs[0].communicate_calls) == 1  # no drain attempt on interrupt
+
+
+# --------------------------------------------------------------------------
+# 11: parser + rule 8
+
+
+def test_parse_jsonl_keeps_chatter_bounded():
+    chatter = "\n".join(f"noise line {i}" for i in range(30))
+    stdout = chatter + "\n" + START_FIXTURE
+    events, unparsed, total = _parse_jsonl(stdout)
+    assert len(events) == len(START_FIXTURE.splitlines())
+    assert total == 30 and len(unparsed) == codex_cli.RAW_LIST_LIMIT
+    assert unparsed[0] == "noise line 0"
+
+
+def test_exit_zero_with_turn_failed_is_still_a_failure(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 0)])  # exit codes are advisory; the stream is the truth
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert "harness_error" in r.raw and r.raw["exit_code"] == 0
+
+
+def test_turn_completed_without_usage_raises_never_zero_token_success(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(_synthetic_completed_no_usage(START_FIXTURE), "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="never recorded with zero tokens"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(legs.calls) == 1  # a completed turn is never "dead" — no retry
+
+
+def test_errors_list_is_bounded_and_counted(monkeypatch, tmp_path, isolated_env):
+    many = "\n".join(json.dumps({"type": "error", "message": f"e{i}"}) for i in range(50))
+    lines = NON_DEAD_START.splitlines()
+    idx = next(i for i, ln in enumerate(lines) if '"turn.started"' in ln)
+    stream = "\n".join(lines[: idx + 1] + [many] + lines[idx + 1 :]) + "\n"
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(r.raw["errors"]) == codex_cli.RAW_LIST_LIMIT
+    baseline = len(codex_cli._error_messages(_parse_jsonl(NON_DEAD_START)[0]))
+    assert baseline >= 1
+    assert r.raw["errors_total"] == 50 + baseline
+
+
+def test_stderr_tail_is_bounded(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "x" * 5000, 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    assert len(r.raw["stderr_tail"]) == codex_cli.STDERR_TAIL_CHARS
+
+
+# --------------------------------------------------------------------------
+# 13: registry
+
+
+def test_registry_has_both_harnesses():
+    assert isinstance(get_harness("codex-cli"), CodexCliHarness)
+    assert sorted(HARNESSES) == ["claude-code", "codex-cli"]
+    with pytest.raises(ValueError, match="codex-cli"):
+        get_harness("nope")
+
+
+# --------------------------------------------------------------------------
+# 14: continue_build guards
+
+
+def test_continue_before_start_raises():
+    with pytest.raises(HarnessError, match="before start_build"):
+        CodexCliHarness().continue_build("sess", "p")
+
+
+def test_continue_with_empty_handle_raises(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "high"})
+    with pytest.raises(HarnessError, match="empty session handle"):
+        h.continue_build("", "p2")
+    assert len(legs.calls) == 1
+
+
+# --------------------------------------------------------------------------
+# 6 / 8 / 12: token usage — calibrated against the REAL recorded success
+# streams (codex-cli 0.154.0, gpt-6-astra, 2026-09-11) and the REAL rollout
+# of that same thread (message bodies removed, usage lines verbatim).
+
+OK_START = (FIXTURES / "codex_exec_ok.jsonl").read_text()
+OK_RESUME = (FIXTURES / "codex_exec_resume_ok.jsonl").read_text()
+OK_ROLLOUT = (FIXTURES / "codex_rollout_ok.jsonl").read_text()
+OK_THREAD_ID = _thread_id_of(OK_START)
+
+
+def _usage_line(stream: str) -> dict[str, int]:
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "turn.completed":
+            return obj["usage"]
+    raise AssertionError("no turn.completed in fixture")
+
+
+def _rollout_turn_usages() -> list[dict[str, int]]:
+    out = []
+    for line in OK_ROLLOUT.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "token_usage_record":
+            out.append(obj["payload"]["turn_token_usage"])
+    return out
+
+
+def _install_rollout(tmp_path: Path) -> Path:
+    """Place the recorded rollout where the adapter's glob finds it under
+    the test's CODEX_HOME (isolated_env points CODEX_HOME at tmp_path/codex-home)."""
+    d = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "11"
+    d.mkdir(parents=True)
+    path = d / f"rollout-2026-09-11T10-08-21-{OK_THREAD_ID}.jsonl"
+    path.write_text(OK_ROLLOUT)
+    return path
+
+
+def test_fixture_facts_hold():
+    """Pin the facts the mapping rests on, straight from the fixtures."""
+    start, resume = _usage_line(OK_START), _usage_line(OK_RESUME)
+    turns = _rollout_turn_usages()
+    assert len(turns) == 2
+    # the stream's usage on a fresh thread == that turn's usage
+    assert {k: start[k] for k in turns[0] if k != "total_tokens"} == {k: turns[0][k] for k in turns[0] if k != "total_tokens"}
+    # the stream's usage on a RESUMED thread == the thread total (start + resume turn)
+    for k in ("input_tokens", "cached_input_tokens", "output_tokens"):
+        assert resume[k] == turns[0][k] + turns[1][k]
+    # input_tokens includes the cached slice (total_tokens == input + output)
+    for t in turns:
+        assert t["total_tokens"] == t["input_tokens"] + t["output_tokens"]
+        assert t["cached_input_tokens"] <= t["input_tokens"]
+    assert _thread_id_of(OK_RESUME) == OK_THREAD_ID
+
+
+def test_usage_start_leg_from_stream(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    u = _usage_line(OK_START)
+    assert r.session_handle == OK_THREAD_ID
+    assert r.input_tokens == u["input_tokens"] - u["cached_input_tokens"] - u["cache_write_input_tokens"] == 3199
+    assert r.cache_read_tokens == u["cached_input_tokens"] == 12160
+    assert r.cache_creation_tokens == u["cache_write_input_tokens"] == 0
+    assert r.output_tokens == u["output_tokens"] == 5
+    assert r.cache_tokens == 12160
+    assert r.raw["usage"] == u  # verbatim
+    assert r.raw["usage_source"] == "stream"
+    assert r.raw["cache_tokens_reported"] is True
+    assert r.raw["usage_delta"] == {**u}
+    assert r.raw["reasoning_output_tokens"] == 0
+    assert r.raw["rate_limits"] is None  # no rollout under this CODEX_HOME
+    assert "harness_error" not in r.raw
+    json.dumps(r.raw)
+
+
+def test_usage_resume_leg_is_delta_of_thread_total(monkeypatch, tmp_path, isolated_env):
+    """The resume stream reports the THREAD total; the attempt must record
+    only its own turn — cross-checked against the rollout's turn_token_usage."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    turn2 = _rollout_turn_usages()[1]
+    assert r2.input_tokens == turn2["input_tokens"] - turn2["cached_input_tokens"] == 3959
+    assert r2.cache_read_tokens == turn2["cached_input_tokens"] == 12160
+    assert r2.output_tokens == turn2["output_tokens"] == 5
+    assert r2.raw["usage"] == _usage_line(OK_RESUME)  # verbatim cumulative object
+    assert r2.raw["usage_delta"] == {k: turn2[k] for k in r2.raw["usage_delta"]}
+    assert r2.raw["usage_source"] == "stream"
+
+
+def test_usage_thread_total_going_backwards_raises(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC ordering: a resume that reports LESS than the start leg did.
+    legs = _Legs([(OK_RESUME, "", 0), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="went backwards"):
+        h.continue_build(r1.session_handle, "again")
+
+
+def test_usage_cached_exceeding_input_raises(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC: cached > input breaks the subset partition — refuse, don't mis-price.
+    bad = OK_START.replace('"cached_input_tokens":12160', '"cached_input_tokens":99999')
+    legs = _Legs([(bad, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="subset assumption"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+
+
+def test_rate_limits_recorded_from_rollout_on_success(monkeypatch, tmp_path, isolated_env):
+    rollout = _install_rollout(tmp_path)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    # Published relative to $CODEX_HOME — never the operator's absolute path.
+    assert r.raw["rollout_path"] == str(rollout.relative_to(tmp_path / "codex-home"))
+    rl = r.raw["rate_limits"]
+    assert rl["plan_type"] == "plus"
+    assert rl["primary"]["window_minutes"] == 300 and rl["primary"]["used_percent"] == 0.0
+    assert rl["secondary"]["window_minutes"] == 10080
+    assert r.raw["usage_source"] == "stream"  # the rollout is NOT the usage source on success
+
+
+
+def test_non_dead_failure_records_no_usage_and_says_so(monkeypatch, tmp_path, isolated_env):
+    """SYNTHETIC stream: the real success envelope with turn.completed swapped
+    for the real turn.failed line (model produced an item, then the turn
+    failed — a failed turn carries no usage on the stream). The rollout holds
+    that turn's figures, but since review round 9 it is never a leg's usage
+    source: the leg records zeros and MARKS them, rather than a figure the
+    harness cannot prove belongs to this turn. The leg is still captured (not
+    retried) and the rollout is still read for rate limits."""
+    _install_rollout(tmp_path)
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1  # non-dead: not retried
+    assert r.raw["usage_source"] == "none"
+    assert r.raw["usage"] is None
+    assert r.raw["usage_delta"] == {k: 0 for k in r.raw["usage_delta"]}
+    assert r.raw["usage_missing"] is True
+    assert r.raw["usage_caveats"] == ["missing"]
+    assert (r.input_tokens, r.output_tokens, r.cache_read_tokens) == (0, 0, 0)
+    # No counted object, so no cache split was reported (round 4, M12).
+    assert r.raw["cache_tokens_reported"] is False
+    assert "401 Unauthorized" in r.raw["harness_error"]
+    assert r.raw["rate_limits"]["plan_type"] == "plus"
+
+
+def test_attempt_chain_through_runner_records_per_turn_usage(monkeypatch, tmp_path, isolated_env):
+    """Attempt 1 (start fixture) → grader fails → attempt 2 (resume fixture)
+    → grader passes, through execute_benchmark_run with real pricing."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo. Get the tests passing — that is all.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 3,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    pricing = load_pricing()
+    rec = execute_benchmark_run(
+        spec=spec,
+        harness_spec=spec.harnesses[0],
+        harness=CodexCliHarness(),
+        grader=FakeGrader([gr(False, ["thing broke"]), gr(True)]),
+        worktree_dir=tmp_path / "wt",
+        pricing=pricing,
+        fixture_fetcher=FakeFixtureFetcher(),
+        built_sha="deadbeef",
+    )
+    assert rec.passed is True and rec.attempts == 2
+    # attempt 2 resumed attempt 1's thread with the failing-eval follow-up
+    assert legs.calls[1]["cmd"][2:4] == ["resume", OK_THREAD_ID]
+    assert "thing broke" in legs.procs[1].communicate_calls[0]["input"]
+    a1, a2 = rec.per_attempt
+    assert (a1.input_tokens, a1.output_tokens, a1.cache_tokens) == (3199, 5, 12160)
+    assert (a2.input_tokens, a2.output_tokens, a2.cache_tokens) == (3959, 5, 12160)
+    assert rec.total_input_tokens == 7158 and rec.total_output_tokens == 10 and rec.total_cache_tokens == 24320
+    p = pricing["gpt-6-astra"]
+    assert rec.cost_usd == pytest.approx((7158 * p.input + 10 * p.output + 24320 * p.cache_read) / 1_000_000)
+    assert rec.per_attempt[0].raw["auth_mode"] == CHATGPT_LINE and "auth_mode" not in rec.per_attempt[1].raw
+    # the record round-trips to disk as plain JSON
+    out = rec.write(tmp_path / "results")
+    back = json.loads(out.read_text())
+    assert back["per_attempt"][1]["raw"]["usage_source"] == "stream"
+    assert back["per_attempt"][1]["raw"]["usage"] == _usage_line(OK_RESUME)
+    # The honesty flags reach the published file, not just the AttemptResult:
+    # a consumer reads them there, without any harness internals.
+    assert back["per_attempt"][1]["raw"]["usage_faithful"] is True
+    assert back["per_attempt"][1]["raw"]["usage_caveats"] == []
+
+
+# --------------------------------------------------------------------------
+# pre-flight guard: operator-level instructions are refused
+
+
+def test_preflight_refuses_global_agents_md(monkeypatch, tmp_path, isolated_env):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "AGENTS.md").write_text("Begin every reply with PINEAPPLE.\n")
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="AGENTS.md"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
+@pytest.mark.parametrize("name", ["AGENTS.override.md", "instructions.md"])
+def test_preflight_refuses_other_global_instruction_files(monkeypatch, tmp_path, isolated_env, name):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / name).write_text("x\n")
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match=name.replace(".", r"\.")):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
+def test_preflight_refuses_user_skills_but_allows_bundled_system_skills(monkeypatch, tmp_path, isolated_env):
+    home = tmp_path / "codex-home"
+    (home / "skills" / ".system" / "bundled").mkdir(parents=True)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})  # .system only: fine
+    (home / "skills" / "zzmarker").mkdir()
+    with pytest.raises(HarnessError, match="zzmarker"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1
+
+
+def test_dry_run_validates_the_two_row_matrix(monkeypatch, tmp_path):
+    """The task's dry-run command: the committed eval-chess-backend matrix now
+    carries both harnesses and both models must price."""
+    from pagehub_benchmarks.config import load_benchmark
+    from pagehub_benchmarks.runner.run import dry_run_report
+
+    evals_repo = tmp_path / "pagehub-evals"  # stub bundle: runs in CI, which has no checkout
+    (evals_repo / "fixtures").mkdir(parents=True)
+    (evals_repo / "fixtures" / "eval-chess-backend.json").write_text(
+        json.dumps({"version": 1, "collections": [{"name": "eval-chess-backend", "items": []}]})
+    )
+    monkeypatch.setenv("PAGEHUB_EVALS_REPO", str(evals_repo))
+    text = "\n".join(dry_run_report(load_benchmark("eval-chess-backend")))
+    assert "harness=claude-code" in text and "harness=codex-cli model=gpt-6-astra" in text
+
+
+def test_gpt_6_astra_prices_are_pinned():
+    """Standard tier, short context — developers.openai.com/api/docs/pricing, 2026-09-10."""
+    from pagehub_benchmarks.config import load_pricing
+
+    p = load_pricing()["gpt-6-astra"]
+    assert (p.input, p.output, p.cache_write, p.cache_read) == (10.0, 50.0, 12.5, 1.0)
+
+
+
+# --------------------------------------------------------------------------
+# Parser rules that a mutation of _read_rollout / _thread_total would break
+# (review round 3). All built from the REAL rollout lines.
+
+
+def _rollout_lines() -> list[str]:
+    return OK_ROLLOUT.splitlines()
+
+
+def _write_rollout(tmp_path: Path, lines: list[str]) -> Path:
+    d = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "11"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"rollout-2026-09-11T10-08-21-{OK_THREAD_ID}.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _with_thread_id(stream: str, thread_id: str) -> str:
+    out = []
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "thread.started":
+            obj["thread_id"] = thread_id
+        out.append(json.dumps(obj, separators=(",", ":")))
+    return "\n".join(out) + "\n"
+
+
+def _last_turn_context_line() -> str:
+    return [ln for ln in _rollout_lines() if json.loads(ln).get("type") == "turn_context"][-1]
+
+
+def _rollout_through_turn1() -> list[str]:
+    """The REAL rollout as it stands after the START leg: every line before
+    turn 2's ``turn_context``.
+
+    Codex appends to the rollout as the run goes, so a test that writes BOTH
+    turns before leg 1 describes a file that cannot exist at that moment —
+    and one leg's record then looks like the next leg's. Tests that care which
+    turn a leg reads stage the file the way codex fills it."""
+    lines = _rollout_lines()
+    second_ctx = [
+        i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "turn_context"
+    ][1]
+    return lines[:second_ctx]
+
+
+def _stage_rollout(legs: _Legs, tmp_path: Path, after_leg: dict[int, list[str]]):
+    """A ``Popen`` stand-in that rewrites the rollout before the Nth leg runs,
+    so each leg reads the file as codex would have left it."""
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        lines = after_leg.get(len(legs.calls))
+        if lines is not None:
+            _write_rollout(tmp_path, lines)
+        return scripted(cmd, **kwargs)
+
+    return popen
+
+
+
+def test_read_rollout_ignores_the_thread_total_of_an_earlier_turn(tmp_path):
+    """A resumed turn that 401s gets a turn_context line appended to the
+    rollout but no usage record. The watermark must read as NONE — not as the
+    previous turn's cumulative — or an earlier turn's record would look like
+    evidence that THIS ATTEMPT did work, and a dead resume would be captured
+    instead of retried."""
+    lines = _rollout_lines() + [_last_turn_context_line()]  # SYNTHETIC tail: the dead turn's context line
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    thread_total, rate_limits = codex_cli._read_rollout(str(path))
+    assert thread_total is None
+    assert rate_limits is not None and rate_limits["plan_type"] == "plus"
+
+
+def test_dead_resume_with_real_rollout_is_retried_then_raises(monkeypatch, tmp_path, isolated_env):
+    """End to end: start leg OK; the resume 401s (real dead envelope, thread id
+    rewritten to the thread under test) while the rollout on disk holds turn
+    1–2 usage plus the dead turn's turn_context. Must be dead → retried →
+    HarnessError, never a captured attempt carrying turn 2's tokens."""
+    _write_rollout(tmp_path, _rollout_lines() + [_last_turn_context_line()])
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+
+def test_thread_total_advances_after_a_failed_leg_the_rollout_covers(monkeypatch, tmp_path, isolated_env):
+    """Leg 2 fails after model activity. Its own share is unmeasurable (the
+    stream reports nothing and the rollout is not a usage source since review
+    round 9), so it records zeros — but codex's own post-turn
+    ``thread_token_usage`` beside turn 2's record repairs the cumulative
+    baseline, so leg 3's delta is exactly turn 3 and the failed turn is not
+    billed to it."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC: the real success envelope of the resume with turn.completed
+    # swapped for the real turn.failed line.
+    failed_resume = "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    total_after_turn2 = _usage_line(OK_RESUME)
+    turn3 = {"input_tokens": 1000, "cached_input_tokens": 800, "cache_write_input_tokens": 0,
+             "output_tokens": 7, "reasoning_output_tokens": 3}  # SYNTHETIC turn-3 increment
+    total_after_turn3 = {k: total_after_turn2[k] + turn3[k] for k in turn3}
+    ok_turn3 = _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")),
+        json.dumps(total_after_turn3, separators=(",", ":")),
+    )
+    assert json.dumps(total_after_turn3, separators=(",", ":")) in ok_turn3
+    legs = _Legs([(OK_START, "", 0), (failed_resume, "", 1), (ok_turn3, "", 0)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "fix it again")
+    turn2 = _rollout_turn_usages()[1]
+    assert r2.raw["usage_source"] == "none" and r2.raw["usage_missing"] is True
+    assert (r2.input_tokens, r2.cache_read_tokens) == (0, 0)
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"] == turn3
+    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (200, 800, 7)
+    assert r3.raw["reasoning_output_tokens"] == 3  # the leg's share, not the thread total
+    # Turn 2's tokens are counted on NO attempt: they sit between the last
+    # measured baseline and the repaired one. usage_missing on leg 2 is what
+    # declares the run total short by exactly that turn.
+    assert r1.input_tokens + r1.cache_read_tokens + r2.input_tokens + r2.cache_read_tokens \
+        + r3.input_tokens + r3.cache_read_tokens == total_after_turn3["input_tokens"] \
+        - turn2["input_tokens"]
+    assert turn2["input_tokens"] == 16119
+
+
+
+def test_read_rollout_takes_the_last_usage_record_of_the_turn(tmp_path):
+    """A build turn makes many model requests; each token_usage_record carries
+    the thread's running cumulative, so the last one is the watermark. An
+    earlier, smaller one would under-repair the baseline."""
+    lines = _rollout_lines()
+    idx = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    real = json.loads(lines[idx])
+    earlier = json.loads(lines[idx])  # SYNTHETIC: an earlier, smaller running total in the same turn
+    for key in ("turn_token_usage", "thread_token_usage"):
+        earlier["payload"][key] = {
+            k: (v // 2 if isinstance(v, int) else v) for k, v in real["payload"][key].items()
+        }
+    lines.insert(idx, json.dumps(earlier, separators=(",", ":")))
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    thread_total, _rl = codex_cli._read_rollout(str(path))
+    assert thread_total == real["payload"]["thread_token_usage"]
+
+
+# --------------------------------------------------------------------------
+# misc (review round 3 nits)
+
+
+def test_resume_reporting_a_different_thread_raises(monkeypatch, tmp_path, isolated_env):
+    other = _with_thread_id(OK_RESUME, "00000000-0000-0000-0000-000000000000")
+    legs = _Legs([(OK_START, "", 0), (other, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="expected " + OK_THREAD_ID):
+        h.continue_build(r1.session_handle, "again")
+
+
+def test_cache_tokens_reported_false_when_codex_omits_the_cached_field(monkeypatch, tmp_path, isolated_env):
+    # SYNTHETIC: a usage object without cached_input_tokens.
+    no_cache = OK_START.replace('"cached_input_tokens":12160,', "")
+    assert '"cached_input_tokens"' not in no_cache
+    legs = _Legs([(no_cache, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["cache_tokens_reported"] is False
+    assert r.cache_read_tokens == 0 and r.input_tokens == 15359
+
+
+def test_rate_limits_are_trimmed_to_budget_fields(monkeypatch, tmp_path, isolated_env):
+    _write_rollout(tmp_path, _rollout_lines())
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    rl = r.raw["rate_limits"]
+    assert set(rl) == {"plan_type", "primary", "secondary"}
+    assert set(rl["primary"]) == {"used_percent", "window_minutes", "resets_at"}
+    assert "credits" not in json.dumps(rl) and "balance" not in json.dumps(rl)
+
+
+
+def test_home_profile_keeps_the_incoming_path_after_the_runners(monkeypatch, tmp_path):
+    """codex prepends its arg0 helper dir (apply_patch, codex-linux-sandbox) to
+    the agent's PATH; the profile must keep it, after the runner's PATH.
+    Sourced directly so the check doesn't depend on this box's /etc/profile."""
+    if not Path("/bin/bash").exists():
+        pytest.skip("no bash")
+    monkeypatch.setenv("PATH", "/runner/bin:/usr/bin")
+    monkeypatch.delenv("LC_ALL", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
+    codex_cli._prepare_home(str(tmp_path))
+    out = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-c", f'. "{tmp_path}/.bash_profile"; echo "$PATH"'],
+        env={"PATH": "/codex/arg0:/usr/bin:/bin", "HOME": str(tmp_path)},
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert out == "/runner/bin:/usr/bin:/codex/arg0:/usr/bin:/bin"
+
+
+def test_profile_sourcing_env_vars_are_stripped(monkeypatch, tmp_path):
+    """BASH_ENV / ENV / ZDOTDIR would make the agent's shells source an
+    operator file regardless of the throwaway HOME."""
+    for var in codex_cli.PROFILE_ENV_VARS:
+        monkeypatch.setenv(var, str(tmp_path / f"{var}.sh"))
+    env = codex_cli._subprocess_env("/x")
+    assert not set(codex_cli.PROFILE_ENV_VARS) & set(env)
+    assert codex_cli.PROFILE_ENV_VARS == ("BASH_ENV", "ENV", "ZDOTDIR")
+
+
+def test_throwaway_home_base_resolves_dotdot_and_ignores_relative_xdg(monkeypatch):
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    monkeypatch.setenv("XDG_CACHE_HOME", "/home/someone/../../tmp/cache")  # lexically not under /tmp
+    with pytest.raises(HarnessError, match="writable to the agent"):
+        codex_cli._throwaway_home_base()
+    monkeypatch.setenv("XDG_CACHE_HOME", "relative/cache")  # invalid per the XDG spec → ignored
+    assert codex_cli._throwaway_home_base() == Path("/home/someone/.cache/pagehub-benchmarks/codex-homes").resolve()
+
+
+def test_rate_limit_print_never_fails_a_completed_leg(monkeypatch, tmp_path, isolated_env, capsys):
+    """The rollout is an unstable format: a type drift in used_percent must
+    not turn a completed, token-spending leg into a crash.
+
+    The two windows carry DIFFERENT figures here (review round 16), which is
+    what makes the labels mean anything: with both at the fixture's 0.0 the
+    print was pinned only on its label TEXT, and swapping
+    ``rate_limits.get("primary")`` / ``.get("secondary")`` — so the 5-hour
+    window is published as the weekly one and vice versa, the worse bug,
+    since the 5-hour window is the one an operator watches on a Plus plan —
+    left the whole suite green. `secondary` keeps a real float so the mapping
+    is observable; `primary` takes the drifted string, so the type guard this
+    test exists for is still exercised."""
+    lines = [
+        ln.replace('"secondary":{"used_percent":0.0', '"secondary":{"used_percent":42.5')
+          .replace('"used_percent":0.0', '"used_percent":"0.0"')
+        for ln in _rollout_lines()
+    ]
+    _write_rollout(tmp_path, lines)
+    written = (tmp_path / "codex-home").rglob("*.jsonl").__next__().read_text().splitlines()
+    assert any('"used_percent":"0.0"' in ln for ln in written)
+    assert any('"used_percent":42.5' in ln for ln in written)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "stream"
+    # The drifted 5-hour figure still prints, AND each figure is under its own
+    # label: this is the pin on the window mapping, not just on the text.
+    assert "5h=0.0% weekly=42.5%" in capsys.readouterr().out
+
+
+def test_dead_legs_do_not_print_stale_rate_limits(monkeypatch, tmp_path, isolated_env, capsys):
+    _write_rollout(tmp_path, _rollout_lines() + [_last_turn_context_line()])
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    capsys.readouterr()
+    with pytest.raises(HarnessError):
+        h.continue_build(OK_THREAD_ID, "fix it")
+    assert "subscription usage" not in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# Mutants that survived round 4's run (M12, M20, M21, M22)
+
+
+def test_interrupt_during_preflight_removes_home_and_reraises(monkeypatch, tmp_path, isolated_env):
+    """M20: the cleanup must also run for KeyboardInterrupt (BaseException)."""
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, _Preflight(raise_with=KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert list((tmp_path / "codex-homes").iterdir()) == []
+    assert legs.calls == []
+
+
+
+def test_turn_with_rollout_evidence_but_no_items_is_not_dead(monkeypatch, tmp_path, isolated_env):
+    """M21: rule 2 is 'no non-error item AND no usage'. A turn that spent
+    tokens (e.g. reasoning only) and then failed is captured, never retried.
+
+    The stream shows neither an item nor a usage object, so the only evidence
+    the ATTEMPT worked is codex's rollout — a turn recorded beyond everything this
+    harness has billed. The implemented gate is a baseline with no RECORDED
+    gap, which the fresh thread here satisfies in the strongest way there is
+    (nothing billed yet, so gapless *and* whole); against a baseline with a
+    recorded gap the same record proves nothing, which is what
+    ``test_a_dead_resume_after_an_unreadable_start_leg_is_retried`` pins.
+    Why a gapless-but-not-whole baseline is still enough is ``_advances``'s
+    attempt-granularity argument (review round 10), not wholeness."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC: the real success envelope minus its agent_message item and
+    # with turn.completed swapped for the real turn.failed line.
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln and '"item.' not in ln]
+        + [failed_line]
+    ) + "\n"
+    assert '"item.' not in stream
+    legs = _Legs([(stream, "", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1
+    assert r.raw["dead_turn_retries"] == 0
+    # Its share is still unmeasurable — "it worked" is not "how much".
+    assert r.raw["usage_source"] == "none" and r.raw["usage_missing"] is True
+    assert r.raw["usage_caveats"] == ["missing"]
+    assert "harness_error" in r.raw
+
+
+def test_thread_total_resets_on_every_start_build(monkeypatch, tmp_path, isolated_env):
+    """M22: a second start_build on the same instance is a new thread; its
+    usage must not be diffed against the previous thread's total."""
+    legs = _Legs([(OK_RESUME, "", 0), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.input_tokens == 15359 - 12160
+
+
+
+# --------------------------------------------------------------------------
+# Cache writes (review round 5, I-1). Every recorded usage object so far has
+# cache_write_input_tokens == 0, so these streams are SYNTHETIC: the real
+# success envelope with cache_write_input_tokens set to 1000. They pin the
+# partition rule — writes are a slice of input_tokens, recorded as
+# cache_creation_tokens and priced at the write rate, never also as input.
+
+
+def _with_cache_write(stream: str, writes: int) -> str:
+    return stream.replace('"cache_write_input_tokens":0', f'"cache_write_input_tokens":{writes}')
+
+
+def test_cache_writes_partitioned_out_of_input_on_the_start_leg(monkeypatch, tmp_path, isolated_env):
+    stream = _with_cache_write(OK_START, 1000)
+    assert '"cache_write_input_tokens":1000' in stream
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    u = _usage_line(OK_START)
+    assert r.input_tokens == u["input_tokens"] - u["cached_input_tokens"] - 1000 == 2199
+    assert r.cache_creation_tokens == 1000
+    assert r.cache_read_tokens == 12160
+    assert r.output_tokens == 5
+
+
+def test_cache_writes_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, isolated_env):
+    """The start leg writes 300, the resume stream reports a thread total of
+    1300 → the resume leg's share is 1000 (not the 1300 total). (Review
+    round 6: with a 0-write start leg, share and total coincide.)"""
+    legs = _Legs([(_with_cache_write(OK_START, 300), "", 0), (_with_cache_write(OK_RESUME, 1300), "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    start, resume = _usage_line(OK_START), _usage_line(OK_RESUME)
+    assert r1.cache_creation_tokens == 300
+    assert r1.input_tokens == start["input_tokens"] - start["cached_input_tokens"] - 300
+    assert r2.cache_creation_tokens == 1000
+    # Fixture-derived, so the trailing literal pins the fixture rather than
+    # restating an all-literal identity (round 18, N-3c).
+    delta_in = resume["input_tokens"] - start["input_tokens"]
+    delta_cached = resume["cached_input_tokens"] - start["cached_input_tokens"]
+    assert r2.input_tokens == delta_in - delta_cached - 1000 == 2959
+    assert r2.cache_read_tokens == 12160
+
+
+
+def test_cache_writes_in_the_repaired_baseline_leave_the_next_leg_its_own_share(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Failure path: the failed turn wrote 400 to the cache. Its own share is
+    unmeasurable, but the baseline codex records beside it moves by those 400
+    — so the next leg's delta holds only its own 100 writes. A baseline that
+    dropped the write component would hand leg 3 500. (Contributed by the
+    round-6 reviewer; SYNTHETIC write counts on real lines.)"""
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    o = json.loads(lines[last])
+    # Turn 2 wrote 400 to the cache. thread_token_usage moves with it: it is
+    # codex's own post-turn total and is what the harness adopts as the next
+    # leg's baseline, so leaving it at 0 would describe a thread that cannot
+    # exist (turn 1's stream reported 0 writes).
+    o["payload"]["turn_token_usage"]["cache_write_input_tokens"] = 400
+    o["payload"]["thread_token_usage"]["cache_write_input_tokens"] = 400
+    lines[last] = json.dumps(o, separators=(",", ":"))
+    _write_rollout(tmp_path, _rollout_through_turn1())  # turn 2 lands when leg 2 runs
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    failed_resume = "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+    tot2 = dict(_usage_line(OK_RESUME), cache_write_input_tokens=400)
+    tot3 = dict(tot2, input_tokens=tot2["input_tokens"] + 1000,
+                cached_input_tokens=tot2["cached_input_tokens"] + 800,
+                cache_write_input_tokens=tot2["cache_write_input_tokens"] + 100,
+                output_tokens=tot2["output_tokens"] + 7)
+    ok3 = _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")), json.dumps(tot3, separators=(",", ":")))
+    assert json.dumps(tot3, separators=(",", ":")) in ok3
+    legs = _Legs([(OK_START, "", 0), (failed_resume, "", 1), (ok3, "", 0)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: lines}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "x")
+    r3 = h.continue_build(r1.session_handle, "y")
+    assert r2.raw["usage_source"] == "none"
+    assert (r2.input_tokens, r2.cache_creation_tokens, r2.cache_read_tokens) == (0, 0, 0)
+    # Plan §4.8 item 18 credits this test with the marking too, so assert it
+    # here rather than lean on a sibling's assertion (review round 11, N-4).
+    assert r2.raw["usage_caveats"] == ["missing"]
+    assert (r3.input_tokens, r3.cache_creation_tokens, r3.cache_read_tokens) == (100, 100, 800)
+
+
+def test_cache_writes_priced_once_at_the_write_rate_through_the_runner(monkeypatch, tmp_path, isolated_env):
+    """cost_usd = 2199 in × $10 + 5 out × $50 + 1000 writes × $12.50 + 12160
+    reads × $1 per 1M = $0.0469. Billing writes also as input (or dropping
+    them) would give $0.0569 (or $0.0344)."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo. Get the tests passing — that is all.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 1,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    legs = _Legs([(_with_cache_write(OK_START, 1000), "", 0)])
+    _install(monkeypatch, legs)
+    rec = execute_benchmark_run(
+        spec=spec, harness_spec=spec.harnesses[0], harness=CodexCliHarness(),
+        grader=FakeGrader([gr(True)]), worktree_dir=tmp_path / "wt", pricing=load_pricing(),
+        fixture_fetcher=FakeFixtureFetcher(), built_sha="deadbeef",
+    )
+    assert (rec.total_input_tokens, rec.total_output_tokens, rec.total_cache_tokens) == (2199, 5, 13160)
+    assert rec.cost_usd == pytest.approx(0.0469)
+
+
+# --------------------------------------------------------------------------
+# More rules a mutation survived in round 5 (N-2)
+
+
+def test_preflight_requires_exit_zero_even_with_the_chatgpt_line(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, _Preflight(stdout="", stderr=CHATGPT_LINE + "\n", returncode=1))
+    with pytest.raises(HarnessError, match="exited 1"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls == []
+
+
+def test_harness_error_is_the_last_error_when_no_turn_failed(monkeypatch, tmp_path, isolated_env):
+    """Rule 5: the turn.failed message, else the LAST error event's message."""
+    # SYNTHETIC: the non-dead failure envelope with its turn.failed line removed
+    # (rule 7: no terminal event is still a failure).
+    stream = "\n".join(ln for ln in NON_DEAD_START.splitlines() if '"turn.failed"' not in ln) + "\n"
+    errors = codex_cli._error_messages(_parse_jsonl(stream)[0])
+    assert len(set(errors)) > 1
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["harness_error"] == errors[-1] != errors[0]
+
+
+def test_rate_limits_come_from_the_last_token_count(tmp_path):
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if '"token_count"' in ln)
+    # SYNTHETIC: the last token_count reports a different figure than the first.
+    lines[last] = lines[last].replace('"used_percent":0.0', '"used_percent":7.0', 1)
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    _thread_total, rate_limits = codex_cli._read_rollout(str(path))
+    assert rate_limits["primary"]["used_percent"] == 7.0
+
+
+def test_stderr_tail_keeps_the_end(monkeypatch, tmp_path, isolated_env):
+    legs = _Legs([(NON_DEAD_START, "HEAD-MARKER " + "x" * 3000 + " TAIL-MARKER", 1)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["stderr_tail"].endswith("TAIL-MARKER") and "HEAD-MARKER" not in r.raw["stderr_tail"]
+
+
+def test_reasoning_tokens_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, isolated_env):
+    """SYNTHETIC reasoning counts on the real envelopes: start reasons 4, the
+    resume stream reports a thread total of 7 → the resume leg's share is 3."""
+    start = OK_START.replace('"reasoning_output_tokens":0', '"reasoning_output_tokens":4')
+    resume = OK_RESUME.replace('"reasoning_output_tokens":0', '"reasoning_output_tokens":7')
+    assert '"reasoning_output_tokens":4' in start and '"reasoning_output_tokens":7' in resume
+    legs = _Legs([(start, "", 0), (resume, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    assert r1.raw["reasoning_output_tokens"] == 4
+    assert r2.raw["reasoning_output_tokens"] == 3
+
+
+
+def test_a_failing_rate_limit_display_never_fails_the_leg(monkeypatch, tmp_path, isolated_env):
+    """The print is display-only: even if it raises, the completed leg's
+    AttemptResult is returned and its rate_limits recorded."""
+    _write_rollout(tmp_path, _rollout_lines())
+
+    def boom(*_a, **_k):
+        raise OverflowError("display failed")
+
+    monkeypatch.setattr(codex_cli, "_print_rate_limits", boom)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "stream" and r.raw["rate_limits"]["plan_type"] == "plus"
+
+
+# --------------------------------------------------------------------------
+# Review round 7, I-1: a leg whose usage cannot be found must not silently
+# donate its tokens to the NEXT leg's delta. All built from the REAL rollout
+# lines and the REAL recorded streams.
+
+
+def _turn3_figures() -> tuple[dict[str, int], dict[str, int]]:
+    """(SYNTHETIC turn-3 increment, thread total after turn 3) on top of the
+    real thread total the recorded resume stream reports."""
+    total_after_turn2 = {k: v for k, v in _usage_line(OK_RESUME).items()}
+    turn3 = {"input_tokens": 1000, "cached_input_tokens": 800, "cache_write_input_tokens": 0,
+             "output_tokens": 7, "reasoning_output_tokens": 3}
+    return turn3, {k: total_after_turn2[k] + turn3[k] for k in turn3}
+
+
+def _stream_reporting(total: dict[str, int]) -> str:
+    """The real resume stream with its turn.completed usage swapped for ``total``."""
+    return _with_thread_id(OK_RESUME, OK_THREAD_ID).replace(
+        json.dumps(_usage_line(OK_RESUME), separators=(",", ":")),
+        json.dumps(total, separators=(",", ":")),
+    )
+
+
+def _failed_resume_stream() -> str:
+    """SYNTHETIC: the real resume success envelope with turn.completed swapped
+    for the real turn.failed line — the model was active, then the turn failed."""
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    return "\n".join(
+        [ln for ln in OK_RESUME.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+
+
+def _rollout_plus_turn3(turn: dict[str, int], thread: dict[str, int]) -> list[str]:
+    """SYNTHETIC third turn appended to the REAL rollout: the real
+    ``turn_context`` and ``token_usage_record`` lines with turn-3 figures."""
+    def _with_total(u: dict[str, int]) -> dict[str, int]:
+        return {**u, "total_tokens": u["input_tokens"] + u["output_tokens"]}
+
+    # No `turn_id` and no `payload["usage"]`: both were staging for the
+    # rollout turn-adoption mechanism round 9 deleted, and `_read_rollout`
+    # reads neither at HEAD (round 18, N-5). `turn_token_usage` stays — it is
+    # still consulted, as an isinstance pairing check — and
+    # `thread_token_usage` is the one load-bearing field.
+    ctx = json.loads(_last_turn_context_line())
+    record = json.loads(
+        [ln for ln in _rollout_lines() if json.loads(ln).get("type") == "token_usage_record"][-1]
+    )
+    record["payload"]["turn_token_usage"] = _with_total(turn)
+    record["payload"]["thread_token_usage"] = _with_total(thread)
+    return _rollout_lines() + [
+        json.dumps(ctx, separators=(",", ":")),
+        json.dumps(record, separators=(",", ":")),
+    ]
+
+
+
+@pytest.mark.parametrize("rollout", ["fresh_turn_3", "stale_turn_1"])
+def test_no_rollout_record_is_ever_adopted_as_a_legs_share(
+    monkeypatch, tmp_path, isolated_env, rollout
+):
+    """Leg 2 fails after model activity while its rollout is unreadable (not
+    on disk yet): its usage is genuinely unknown, so it records zeros plus
+    ``usage_missing``. The file then becomes readable before leg 3 — and
+    whatever it holds, leg 3 records the stream delta (its own turn PLUS
+    leg 2's) and is MARKED.
+
+    This is review round 9's deletion, pinned. The harness used to take leg
+    3's share from the rollout when a turn record looked fresh — by turn id,
+    then by codex's post-turn cumulative having advanced past the recorded
+    baseline. Neither test proves a record BELONGS to this leg: when the
+    baseline is short (exactly the ``usage_missing`` state this machinery
+    existed for) an earlier, never-billed turn advances past it too, and was
+    adopted with ``usage_faithful: true``. Whatever the rollout holds, leg 3
+    records the stream delta, so the two cases below are the two that are
+    still DISTINGUISHABLE to the code under test:
+
+    * ``fresh_turn_3`` — leg 3's own record, cumulative advanced: used to be
+      recovered as ``usage_source: "stream+rollout_turn"``;
+    * ``stale_turn_1`` — codex appended nothing, so the file still ends on
+      turn 1's record, and the cumulative has not moved.
+
+    Two more ran here until round 18 — ``unpartitionable_turn_3`` (cache slice
+    exceeds the prompt, round 8 N-8) and ``oversized_turn_3`` (bigger than the
+    stream delta) — and both were retired because the fields they perturbed
+    are no longer read. Executed: the three ``_rollout_plus_turn3`` variants
+    produce byte-different files (9940, 9940, 9946 bytes) and ``_read_rollout``
+    returns the IDENTICAL ``(thread_total, rate_limits)`` for all three, so the
+    four parametrize cases bought two. Re-add a case here only with a field
+    ``_read_rollout`` actually reads.
+    """
+    turn3, total_after_turn3 = _turn3_figures()
+    files = {
+        "fresh_turn_3": lambda: _rollout_plus_turn3(turn3, total_after_turn3),
+        "stale_turn_1": _rollout_through_turn1,
+    }
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        # The rollout only becomes readable in time for leg 3 — leg 2's usage
+        # is lost for good, which is the case under test.
+        if len(legs.calls) == 2:
+            _write_rollout(tmp_path, files[rollout]())
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "fix it again")  # must not raise
+
+    # Leg 1 measured itself.
+    assert r1.raw["usage_caveats"] == []
+    # Leg 2: zero tokens, but marked — not indistinguishable from a free turn.
+    assert r2.raw["usage_source"] == "none"
+    assert r2.raw["usage_missing"] is True
+    assert r2.raw["usage_delta"] == {k: 0 for k in r2.raw["usage_delta"]}  # a dict, never None
+    assert (r2.input_tokens, r2.output_tokens, r2.cache_tokens) == (0, 0, 0)
+    assert r2.raw["usage_caveats"] == ["missing"]
+    # Leg 3: the stream delta, which spans leg 2 — never a rollout figure.
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
+    assert r3.raw["usage_missing"] is False
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+    json.dumps(r2.raw), json.dumps(r3.raw)
+
+
+
+def test_an_unmeasurable_legs_rollout_repairs_the_cumulative_baseline(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The rollout payload carries codex's own ``thread_token_usage``. That
+    cumulative is one of the three jobs the rollout still has after review
+    round 9 (the others are dead-leg evidence and rate limits): a leg the
+    stream could not
+    measure adopts it as the next leg's baseline, so long as it has advanced
+    past the one already recorded.
+
+    Adopting a CUMULATIVE is not adopting a turn: it never says which turn
+    ran, only that the thread is at least this far along, so it can only move
+    the baseline toward the truth. Without it the baseline stays short by
+    every unmeasured turn and each later delta inherits the error — leg 4
+    would record turn 3 + turn 4 instead of its own turn 4 (review round 7,
+    I-1)."""
+    turn3, total_after_turn3 = _turn3_figures()
+    turn4 = {"input_tokens": 500, "cached_input_tokens": 400, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn4 = {k: total_after_turn3[k] + turn4[k] for k in turn4}
+    rollout3 = _rollout_plus_turn3(turn3, total_after_turn3)
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        if len(legs.calls) == 2:  # readable from leg 3 on; leg 2's usage is lost
+            _write_rollout(tmp_path, rollout3)
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h.continue_build(r1.session_handle, "fix it")          # leg 2: usage missing
+    r3 = h.continue_build(r1.session_handle, "fix it")     # leg 3: usage missing too
+    r4 = h.continue_build(r1.session_handle, "fix it")     # leg 4: back on the stream
+
+    # Leg 3's own share is unmeasurable: the rollout is not a usage source.
+    assert r3.raw["usage_source"] == "none" and r3.raw["usage_missing"] is True
+    assert r3.raw["usage_caveats"] == ["missing"]
+    # ...but the cumulative beside that record repaired the baseline, so leg 4
+    # keeps only turn 4. With the baseline left short it would record
+    # turn 3 + turn 4.
+    assert r4.raw["usage_source"] == "stream"
+    assert r4.raw["usage_delta"] == turn4
+    # Leg 4 still cannot PROVE the repaired baseline was whole — only that it
+    # moved forward — so it stays marked. The harness never claims more than
+    # it can show, and over-marking is the honest direction.
+    assert r4.raw["usage_faithful"] is False
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+# --------------------------------------------------------------------------
+# Review round 7 nits: throwaway-HOME reaping, env parsing, published paths,
+# abandoned thread ids.
+
+
+def test_rollout_path_published_without_the_operator_home(monkeypatch, tmp_path, isolated_env):
+    """raw is published to the results site; the absolute rollout path names
+    the operator's home directory, which _trim_rate_limits-grade hygiene says
+    must not ship (review round 7)."""
+    rollout = _install_rollout(tmp_path)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    published = r.raw["rollout_path"]
+    assert published == f"sessions/2026/09/11/{rollout.name}"
+    assert not published.startswith("/") and str(tmp_path) not in published
+
+
+def test_rollout_path_outside_codex_home_falls_back_to_the_basename(tmp_path):
+    outside = tmp_path / "elsewhere" / "rollout-2026-09-11T10-08-21-abc.jsonl"
+    assert codex_cli._publishable_rollout_path(str(outside)) == outside.name
+    assert codex_cli._publishable_rollout_path(None) is None
+
+
+def test_dead_start_legs_record_the_threads_they_abandoned(monkeypatch, tmp_path, isolated_env):
+    """Each dead start leg opens a NEW codex thread and walks away from it.
+    Without the ids an orphaned thread cannot be traced back to its run."""
+    dead_then_ok = _with_thread_id(START_FIXTURE, "abandoned-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.session_handle == OK_THREAD_ID
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_thread_ids"] == ["abandoned-thread-1"]
+    assert r.raw["dead_turn_thread_ids"][0] != r.raw["thread_id"]
+
+
+def test_an_unusable_build_timeout_falls_back_to_the_default_and_says_so(monkeypatch, capsys):
+    # 0 is the common "no limit" idiom. Round 7's clamp turned it into a
+    # 1-second timeout that kills every leg instantly — worse than either
+    # reading of the value, and silent about it (review round 8, N-2).
+    monkeypatch.setattr(codex_cli, "_WARNED", set())
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "0")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out  # not silent
+    # ...once per value, not once per leg: _build_timeout runs on every leg.
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert capsys.readouterr().out == ""
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "-30")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out
+    monkeypatch.setenv("CODEX_BUILD_TIMEOUT_SECONDS", "60m")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+    assert "CODEX_BUILD_TIMEOUT_SECONDS" in capsys.readouterr().out  # not silent
+    monkeypatch.delenv("CODEX_BUILD_TIMEOUT_SECONDS")
+    assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
+
+
+def test_a_negative_dead_turn_retry_count_is_clamped_to_zero(monkeypatch):
+    """``_dead_turn_retries`` clamps, and the clamp is what keeps an
+    operator-settable env var from reaching a line coverage is told is
+    unreachable.
+
+    ``_int_env`` parses ``-1`` happily — it only falls back on a value it
+    cannot parse — so without the ``max(0, …)`` the leg loop's
+    ``range(retries + 1)`` becomes ``range(0)``, no leg ever runs, and
+    ``_attempt`` falls through to ``raise AssertionError("unreachable")``,
+    the line marked ``# pragma: no cover``. Executed in round 17: the mutant
+    ``return _int_env(...)`` survived all 291 tests. Unlike
+    CODEX_BUILD_TIMEOUT_SECONDS there is no warning here on purpose — "retry
+    dead legs a negative number of times" has exactly one sane reading, zero,
+    and nothing is silently substituted for a different intent."""
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "-1")
+    assert codex_cli._dead_turn_retries() == 0
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "-99")
+    assert codex_cli._dead_turn_retries() == 0
+    # …and the clamp is a floor, not a constant: real values pass through.
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "3")
+    assert codex_cli._dead_turn_retries() == 3
+    monkeypatch.delenv("CODEX_DEAD_TURN_RETRIES")
+    assert codex_cli._dead_turn_retries() == codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_stale_throwaway_homes_are_reaped_on_the_next_start(monkeypatch, tmp_path, isolated_env):
+    """Nothing tears a throwaway HOME down when a run succeeds, so they are
+    reaped on the next start_build — by age, and only the run-* ones."""
+    base = tmp_path / "cache" / "pagehub-benchmarks" / "codex-homes"
+    base.mkdir(parents=True)
+    stale = base / "run-stale"
+    stale.mkdir()
+    (stale / ".bash_profile").write_text("x")  # non-empty: rmtree, not rmdir
+    fresh = base / "run-fresh"
+    fresh.mkdir()
+    keeper = base / "not-a-run"
+    keeper.mkdir()
+    old = time.time() - codex_cli.THROWAWAY_HOME_TTL_SECONDS - 60
+    os.utime(stale, (old, old))
+    os.utime(keeper, (old, old))
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert not stale.exists()
+    assert fresh.exists() and keeper.exists()
+    assert len(list(base.glob("run-*"))) == 2  # run-fresh + this run's own
+
+
+def test_reaping_never_fails_a_run(monkeypatch, tmp_path, isolated_env):
+    base = tmp_path / "cache" / "codex-homes"
+    base.mkdir(parents=True)
+    stale = base / "run-stale"
+    stale.mkdir()
+    old = time.time() - codex_cli.THROWAWAY_HOME_TTL_SECONDS - 60
+    os.utime(stale, (old, old))
+
+    def refuse(*_a, **_k):
+        raise PermissionError("read-only cache")
+
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
+    # The module's OWN `shutil`, not the stdlib one: `codex_cli.shutil is
+    # shutil`, so patching `codex_cli.shutil.rmtree` replaced rmtree
+    # PROCESS-WIDE and reached past the code under test — start_build's own
+    # failure path calls `shutil.rmtree(home, ignore_errors=True)`, which
+    # under a raising global raises instead of ignoring. The sibling below
+    # names that coupling from round 8 (N-3/N-4); this is the same fix round
+    # 16 applied to `time` (round 18, N-6).
+    monkeypatch.setattr(codex_cli, "shutil", types.SimpleNamespace(rmtree=refuse))
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.session_handle == OK_THREAD_ID and stale.exists()
+
+
+# --------------------------------------------------------------------------
+# Review round 8, I-1 and the CLASS behind it: a per-attempt figure that is
+# not a faithful measure of that attempt must say so — whether it is short
+# (nothing readable) or long (it absorbed an earlier unreadable leg). Rounds 7
+# and 8 each landed on one slice of this; these pin every path. All built from
+# the REAL rollout lines and the REAL recorded streams.
+
+
+def test_persistently_unreadable_rollout_marks_the_attempt_that_absorbs_it(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 7 fixed the case where the rollout becomes readable on the NEXT
+    leg. When it stays unreadable — the file absent, a codex upgrade moving
+    ``sessions/``, a format the code itself calls unstable — the next leg
+    still absorbs the missing turn. The reviewer executed it: leg 3 records
+    ``input_tokens`` 17119 where its own turn was 1000, carrying leg 2's
+    16119, and was recorded as plain ``stream`` with ``usage_missing`` false.
+    The figure cannot be recovered here, so it must be MARKED: an over-billed
+    attempt is exactly as unfaithful as the zero-billed one (round 8, I-1)."""
+    turn3, total_after_turn3 = _turn3_figures()
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0)])
+    _install(monkeypatch, legs)  # no rollout is EVER written: unreadable for good
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "fix it again")
+
+    # Leg 1 measured itself.
+    assert r1.raw["usage_caveats"] == []
+    # Leg 2 spent tokens nobody could read: short, and already marked (round 7).
+    assert r2.raw["usage_source"] == "none" and r2.raw["usage_missing"] is True
+    assert r2.raw["usage_caveats"] == ["missing"]
+    # Leg 3 absorbed leg 2 — the reviewer's executed numbers, reproduced.
+    assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
+    assert r3.raw["usage_source"] == "stream" and r3.raw["usage_missing"] is False
+    # ...and now says so, which is the fix. A consumer reads one boolean.
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+    json.dumps(r2.raw), json.dumps(r3.raw)
+
+
+def test_the_absorbed_marker_clears_once_the_baseline_is_whole_again(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The damage is confined to the ONE leg that absorbed: the stream's
+    thread total is authoritative, so the baseline is whole again afterwards
+    and leg 4 must be faithful. An always-on marker would be as useless as
+    none at all."""
+    turn3, total_after_turn3 = _turn3_figures()
+    turn4 = {"input_tokens": 500, "cached_input_tokens": 400, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn4 = {k: total_after_turn3[k] + turn4[k] for k in turn4}
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    r4 = h.continue_build(r1.session_handle, "again")
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+    assert r4.raw["usage_delta"] == turn4
+    assert r4.raw["usage_caveats"] == []
+
+
+def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``absorbed_missing_leg`` is the one value in
+    ``RUN_TOTAL_NEUTRAL_CAVEATS`` — the set the run-level filter actually
+    reads — because it only moves spend between attempt rows of the SAME run. That holds only because ``start_build``
+    clears the baseline gap: without the reset, run B's very first attempt
+    would be marked for a leg run A never measured, and the site would read
+    run B's total as whole when spend really had left it.
+
+    Both the plan (§4.5, "it never appears alone") and ``build_site.py``'s
+    rule comment state the reset normatively; round 13 asked which test pins
+    each such statement and this one had none — deleting the reset from
+    ``start_build`` survived the entire suite. It no longer does."""
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    a2 = h.continue_build(a1.session_handle, "fix it")
+    # Run A ends with an unmeasured leg, so it leaves the gap set.
+    assert a2.raw["usage_caveats"] == [codex_cli.USAGE_CAVEAT_MISSING]
+    # Run B is a new thread; its first attempt owns its whole delta.
+    b1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert b1.raw["usage_source"] == "stream"
+    assert b1.raw["usage_caveats"] == []
+
+
+# --------------------------------------------------------------------------
+# Review round 14: the premise that lets the site treat
+# ``absorbed_missing_leg`` as run-total-NEUTRAL has two conjuncts —
+# (a) the baseline gap that produces it is set only on the path that
+# publishes ``"missing"``, and (b) ``start_build`` resets it per run. The test
+# above pins (b); these two pin (a), at the source and end to end.
+
+
+def test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing(tmp_path):
+    """Conjunct (a), pinned structurally: over every branch ``_usage_from``
+    has, ``baseline_gap`` and :data:`USAGE_CAVEAT_MISSING` are set together or
+    not at all.
+
+    Round 14 executed the counterfactual: one line letting the STREAM return
+    set the gap too (``baseline_gap=delta["output_tokens"] > 60``) left the
+    whole suite green, and three clean legs then published
+    ``absorbed_missing_leg`` with no ``"missing"`` anywhere in the run — the
+    exact state its membership of ``RUN_TOTAL_NEUTRAL_CAVEATS``
+    assumes cannot happen. Asserting the invariant beats re-deriving it: the
+    gap is what makes the NEXT leg absorb, so a gap no attempt reports as
+    missing is spend that left the record with nothing published saying so."""
+    prev = _usage_line(OK_START)  # the thread total after turn 1
+    after_turn2 = _usage_line(OK_RESUME)
+    # A stream leg whose delta is large enough to trip a size-keyed mutation
+    # of the gap, which is the shape round 14's counterfactual took.
+    big = {**after_turn2, "output_tokens": after_turn2["output_tokens"] + 500}
+    rollout = str(_install_rollout(tmp_path))
+    streams = {
+        "stream, small delta": _with_thread_id(OK_RESUME, OK_THREAD_ID),
+        "stream, large delta": _stream_reporting(big),
+        "no usage, model was active": _failed_resume_stream(),
+        "no usage, dead envelope": _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID),
+    }
+    seen: list[Any] = []
+    for name, stream in streams.items():
+        events, _, _ = _parse_jsonl(stream)
+        for gap in (False, True):
+            for rollout_path in (None, rollout):
+                u = codex_cli._usage_from(
+                    events, rollout_path, previous_thread_total=prev, baseline_has_gap=gap
+                )
+                assert u.baseline_gap == (codex_cli.USAGE_CAVEAT_MISSING in u.caveats), (
+                    f"{name} (baseline_has_gap={gap}, rollout={rollout_path is not None}): "
+                    f"baseline_gap={u.baseline_gap} caveats={u.caveats}"
+                )
+                seen.append(u)
+    # ...and not vacuously: both sides of the biconditional occur, and the
+    # large-delta stream leg the counterfactual keyed on is really in here.
+    assert any(u.baseline_gap for u in seen) and any(not u.baseline_gap for u in seen)
+    assert any(u.source == "stream" and u.delta["output_tokens"] > 60 for u in seen)
+
+
+# One attempt's legs, as scripted subprocess output. A dead leg is retried
+# rather than captured, so the shapes that start with one still end in a
+# captured leg; every leg of a run shares one thread id except the dead START
+# leg, whose whole point is that its thread is abandoned.
+_ABSORBED_SHAPES = ("clean", "missing", "dead_then_clean", "dead_then_failure")
+_MISSING_LEG = _with_thread_id(_synthetic_non_dead_failure(START_FIXTURE), OK_THREAD_ID)
+_PREMISE_TURN = {"input_tokens": 3000, "cached_input_tokens": 2000,
+                 "cache_write_input_tokens": 0, "output_tokens": 500,
+                 "reasoning_output_tokens": 100}
+
+
+def _premise_script(pattern: tuple[str, ...]) -> list[tuple[str, str, int]]:
+    """The scripted legs for a run whose attempts have the shapes ``pattern``."""
+    total = {k: 0 for k in _usage_line(OK_RESUME)}
+    legs: list[tuple[str, str, int]] = []
+    for i, shape in enumerate(pattern):
+        if shape.startswith("dead_then"):
+            legs.append(
+                (_with_thread_id(START_FIXTURE, f"orphan-thread-{i}") if i == 0
+                 else _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)
+            )
+        if shape in ("clean", "dead_then_clean"):
+            total = {**total, **{k: total[k] + v for k, v in _PREMISE_TURN.items()}}
+            legs.append((_stream_reporting(total), "", 0))
+        else:
+            legs.append((_MISSING_LEG, "", 1))
+    return legs
+
+
+def test_usage_faithful_is_exactly_the_absence_of_caveats(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``_result`` sets ``usage_faithful = not caveats``, so the two fields are
+    one fact published twice — and pinning ``usage_caveats`` on a record fully
+    determines ``usage_faithful`` on it.
+
+    Rounds 16, 17 and 18 each removed a few of the assertions that re-stated
+    the entailed half beside the pinning half (``assert X.raw["usage_faithful"]
+    is False and X.raw["usage_caveats"] == ["missing"]`` — the second conjunct
+    strictly entails the first, so the first can never fail). Round 18's N-3b
+    asked for the negation to be pinned ONCE instead, which is this: the
+    property worth asserting is that the two fields cannot diverge, and it is
+    worth asserting exactly here.
+
+    Driven over all 16 two-attempt runs built from the four leg shapes, so
+    both directions are exercised on real ``AttemptResult``s rather than
+    asserted about the source line."""
+    faithful = unfaithful = 0
+    for pattern in itertools.product(_ABSORBED_SHAPES, repeat=2):
+        legs = _Legs(_premise_script(pattern))
+        _install(monkeypatch, legs)
+        monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+        h = CodexCliHarness()
+        results = [h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})]
+        results.append(h.continue_build(results[0].session_handle, "again"))
+        for r in results:
+            raw = r.raw
+            assert raw["usage_faithful"] == (not raw["usage_caveats"]), (pattern, raw)
+            faithful += bool(raw["usage_faithful"])
+            unfaithful += not raw["usage_faithful"]
+    # Non-vacuity: an all-faithful or all-unfaithful sweep would pass the
+    # identity above without ever testing it in both directions.
+    assert faithful and unfaithful, (faithful, unfaithful)
+
+
+def test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Conjunct (a), pinned end to end through the real ``start_build`` /
+    ``continue_build``: over all 64 three-attempt runs built from the four leg
+    shapes, an attempt marked ``absorbed_missing_leg`` always has an EARLIER
+    attempt of the same run marked ``"missing"``.
+
+    That is the whole premise ``build_site.RUN_TOTAL_NEUTRAL_CAVEATS``
+    rests on when it clears ``absorbed_missing_leg`` — the only caveat the
+    deny-by-default filter lets through — as leaving a run's total whole: the spend it may have swallowed is spend some attempt of this
+    run already reports as unmeasured, so the run is already marked short. If
+    absorbed could stand alone, a run would publish a total that is short with
+    nothing saying so. Round 13 established this by driving the 64 runs by
+    hand; a hand enumeration protects nothing, so it runs here. The
+    structural sibling above pins the same premise at ``_usage_from``; this
+    one also covers the only place the gap is stored (``_result``, which a
+    dead leg never reaches)."""
+    absorbed_seen = 0
+    for pattern in itertools.product(_ABSORBED_SHAPES, repeat=3):
+        script = _premise_script(pattern)
+        legs = _Legs(script)
+        _install(monkeypatch, legs)
+        h = CodexCliHarness()
+        first = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+        rest = [h.continue_build(first.session_handle, "fix it") for _ in pattern[1:]]
+        caveats = [set(r.raw["usage_caveats"]) for r in (first, *rest)]
+        # Every scripted leg ran and no leg ran twice, so the run really has
+        # the shape the pattern describes (_Legs repeats its last entry).
+        assert len(legs.calls) == len(script), (pattern, len(legs.calls))
+        for i, attempt in enumerate(caveats):
+            if codex_cli.USAGE_CAVEAT_ABSORBED in attempt:
+                absorbed_seen += 1
+                assert any(
+                    codex_cli.USAGE_CAVEAT_MISSING in earlier for earlier in caveats[:i]
+                ), f"{pattern} published {caveats} — absorbed with no earlier missing"
+    # Not vacuous: the marker really is reached by these shapes.
+    assert absorbed_seen >= 16, absorbed_seen
+
+
+def test_a_new_run_refreshes_the_auth_mode_it_publishes(monkeypatch, tmp_path, isolated_env):
+    """``_auth_mode`` is the last per-run attribute on the harness instance
+    with no pin (round 14): unlike ``_thread_total`` and ``_thread_total_gap``
+    it feeds no arithmetic and cannot shorten a total, but it IS published as
+    ``raw["auth_mode"]``, so a stale one is a wrong published fact about which
+    account paid for the run. Making ``start_build`` keep a previous run's
+    mode survived the whole suite; it no longer does."""
+    modes = _PreflightSequence([f"{CHATGPT_LINE} (account-a)\n", f"{CHATGPT_LINE} (account-b)\n"])
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs, modes)
+    h = CodexCliHarness()
+    a = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    home_a = h._home_override
+    b = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert a.raw["auth_mode"] == f"{CHATGPT_LINE} (account-a)"
+    assert b.raw["auth_mode"] == f"{CHATGPT_LINE} (account-b)"
+    # ...and the throwaway HOME the mode was read under is this run's own.
+    assert h._home_override != home_a
+
+
+
+# --------------------------------------------------------------------------
+# Review round 15: a start_build that RAISES must not leave the instance half
+# in the previous run. The throwaway HOME is the half that matters — it is
+# the layer that stops codex's ``bash -lc`` re-sourcing the operator's
+# ~/.bashrc into the agent's shell (37 secret-named variables on this runner
+# box, verified 2026-09-11) — and it was the one attribute the failure path
+# cleared while leaving worktree/model/effort set, so continue_build's guard
+# waved the instance through onto the operator's real HOME.
+
+
+def test_a_failed_start_never_leaves_a_resume_on_the_operators_home(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Executed sequence: a good run, then a start_build whose pre-flight
+    fails, then a resume. Before round 15 the resume spawned codex with
+    ``env["HOME"] == os.environ["HOME"]`` — the configuration
+    ``_subprocess_env``'s docstring records as re-exporting every secret in
+    the operator's profile into the agent's shell."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(
+        monkeypatch,
+        legs,
+        _PreflightSequence([f"{CHATGPT_LINE}\n", "Not logged in\n"], returncodes=[0, 1]),
+    )
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert legs.calls[0]["env"]["HOME"] != os.environ["HOME"]
+
+    with pytest.raises(HarnessError, match="not logged in"):
+        h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+
+    # One leg total — the good run's — and its HOME was checked above, so a
+    # further `all(...)` over the same single call could not fail (round 16).
+    assert len(legs.calls) == 1, "a codex leg was spawned after a failed start_build"
+
+
+# Every raise site in ``start_build``, enumerated from the source and each one
+# EXECUTED (review round 16). The ones before the ``try:`` are the point: the
+# ``try``'s own ``except`` calls ``_reset_run_state`` on the way out, so the
+# only thing standing between a pre-``try`` raise and round 15's leak is that
+# the reset happens on ENTRY. That is a property of the reset's POSITION, and
+# a test that only exercises the two sites inside the ``try`` cannot see it.
+#
+# Addressed by SYMBOL, not by line: round 17 found every line number this
+# enumeration originally carried had rotted (off by 8 for the pre-``try``
+# group, 16 for _attempt), and test_every_test_named_in_the_docs_exists can
+# check names but never line numbers.
+#
+#   self._reset_run_state()      plain assignments — cannot raise
+#   _map_effort(config)          HarnessError   -> "effort"
+#   _throwaway_home_base()       HarnessError   -> "home_base"
+#   base.mkdir(parents=True, …)  OSError        -> "base_mkdir"
+#   _reap_throwaway_homes(base)  NOT a raise site: every OSError is swallowed
+#                                by construction. Executed against an
+#                                unremovable child (root-owned/read-only), a
+#                                base that does not exist and a base that is a
+#                                regular file — all three returned 0 rather
+#                                than raising.
+#   tempfile.mkdtemp(dir=base)   OSError        -> "mkdtemp"
+#   ---- try: ----
+#   _prepare_home / _preflight   HarnessError   -> "preflight"
+#   self._attempt(…)             HarnessError   -> "start_leg"
+#
+# Four reachable sites before the ``try``, all four covered below. The mutant
+# this kills, executed in round 16: move ``self._reset_run_state()`` from the
+# top of start_build down to immediately before the ``try:``. With only the
+# old "preflight"/"start_leg" cases the whole suite stays green (283 passed),
+# while a good run followed by ``--config effort=bogus`` — reachable from the
+# shipped CLI — leaves _worktree_dir, _model, _effort, _auth_mode,
+# _thread_total AND _home_override at the PREVIOUS run's values: round 15's
+# configuration exactly.
+
+
+@pytest.mark.parametrize(
+    "fails_at",
+    ["effort", "home_base", "base_mkdir", "mkdtemp", "preflight", "start_leg"],
+)
+def test_a_failed_start_clears_every_per_run_attribute(
+    monkeypatch, tmp_path, isolated_env, request, fails_at
+):
+    """The class, not the one attribute (round 15) — at every raise site
+    ``start_build`` has (round 16).
+
+    ``continue_build``'s guard named three of the harness's seven per-run
+    attributes at the time of the bug; the HOME leak was in a fourth. Rather
+    than grow the guard once per attribute, a ``start_build`` that raises — at
+    ANY of the points it can: before the throwaway HOME exists, in the
+    pre-flight, or in the start leg — leaves the instance exactly as
+    constructed. Comparing against a pristine instance's ``vars()`` means an
+    attribute added later is covered without anyone remembering to extend a
+    list here, and covering the pre-``try`` sites means the reset cannot be
+    moved off the entry without a test failing.
+
+    ``start_leg`` is the second instance of the shape, found by enumerating
+    rather than by another review round: the pre-flight passes, the start leg
+    raises, and every attribute is then THIS run's while no thread exists.
+    Executed before the fix — a resume with an earlier run's handle passed the
+    guard, ran in this run's worktree with this run's model, and billed the
+    whole thread cumulative (7158 tokens) to one attempt as ``usage_faithful``
+    where its own share was 3199."""
+    pre_try = fails_at in {"effort", "home_base", "base_mkdir", "mkdtemp"}
+    pristine = dict(vars(CodexCliHarness()))
+    if fails_at == "preflight":
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+        preflight = _PreflightSequence(
+            [f"{CHATGPT_LINE}\n", "Not logged in\n"], returncodes=[0, 1]
+        )
+    elif fails_at == "start_leg":
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1), ("", "", 1)])
+        preflight = _Preflight()
+    else:
+        # A pre-``try`` failure spawns nothing at all, so the good run's two
+        # legs are the whole script.
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+        preflight = _Preflight()
+    _install(monkeypatch, legs, preflight)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    # A run that also leaves the baseline gap set, so every attribute differs.
+    h.continue_build(a1.session_handle, "fix it")
+    assert dict(vars(h)) != pristine
+    spawned, checked = len(legs.calls), len(preflight.calls)
+
+    # Break the NEXT start_build at exactly one site. The sabotage happens
+    # here, not in the setup, so the good run above is untouched by it.
+    config: dict[str, Any] = {"effort": "high"}
+    exc: type[BaseException] = HarnessError
+    if fails_at == "effort":
+        config, expected = {"effort": "bogus"}, "config.effort"
+    elif fails_at == "home_base":
+        # The REAL helper, refusing a cache base the codex sandbox would make
+        # writable to the agent.
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", _REAL_THROWAWAY_HOME_BASE)
+        monkeypatch.delenv("TMPDIR", raising=False)
+        monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache")
+        expected = "writable to the agent"
+    elif fails_at == "base_mkdir":
+        # A regular file where the cache directory belongs: mkdir(exist_ok=True)
+        # re-raises, because the path exists and is not a directory.
+        blocked = tmp_path / "blocked-homes"
+        blocked.write_text("a file where the cache directory belongs\n")
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: blocked)
+        exc, expected = OSError, "blocked-homes"
+    elif fails_at == "mkdtemp":
+        if os.geteuid() == 0:
+            pytest.skip("root ignores the read-only bit this case is built on")
+        readonly = tmp_path / "readonly-homes"
+        readonly.mkdir()
+        readonly.chmod(0o500)
+        request.addfinalizer(lambda: readonly.chmod(0o700))
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: readonly)
+        exc, expected = OSError, "readonly-homes"
+    elif fails_at == "preflight":
+        expected = "not logged in"
+    else:
+        expected = "no thread.started"
+
+    with pytest.raises(exc, match=expected):
+        h.start_build(str(tmp_path / "other"), "p", "gpt-6-other", config)
+    assert dict(vars(h)) == pristine, "a failed start_build left per-run state behind"
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+    if pre_try:
+        # …and it really did fail before the ``try``: nothing was spawned and
+        # no pre-flight ran, so the ``except`` that also resets was never
+        # reached. Without this the case could pass for the wrong reason.
+        assert len(legs.calls) == spawned, "a pre-`try` case reached a codex leg"
+        assert len(preflight.calls) == checked, "a pre-`try` case reached the pre-flight"
+
+
+def test_a_codex_subprocess_is_refused_without_the_runs_throwaway_home():
+    """The boundary itself (round 15). ``_subprocess_env``'s ``home_override``
+    used to default to ``None`` and silently leave the operator's HOME in
+    place, so every defence above it was the only thing standing between a
+    coding bug and the agent's ``bash -lc`` re-sourcing ~/.bashrc."""
+    with pytest.raises(HarnessError, match="operator's HOME"):
+        codex_cli._subprocess_env("")
+
+
+def test_a_resume_is_refused_when_the_throwaway_home_is_missing(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The guard clause, pinned on its own: whatever future path clears the
+    throwaway HOME without clearing the rest, ``continue_build`` refuses
+    rather than spawning codex on the operator's home. Removing
+    ``_home_override`` from the guard fails here — the resume gets as far as
+    ``_subprocess_env`` and raises the wrong error."""
+    legs = _Legs([(OK_START, "", 0), (OK_RESUME, "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h._home_override = None
+    with pytest.raises(HarnessError, match="continue_build called before start_build"):
+        h.continue_build(a1.session_handle, "again")
+    assert len(legs.calls) == 1
+
+
+# Files that cite tests by name. Plan §4.5 carries the statement-to-test table
+# the round-13 review asked for; README.md's run-total rule and the caveat
+# comments in codex_cli.py and tools/build_site.py name their own pins inline.
+# (Round 14: README cited NONE, so every README claim was covered only
+# transitively by a plan row restating the same rule.)
+# (Round 15: templates/ joined the contract's scope — run.html carries the
+# largest block of normative caveat prose in the repo, and three independent
+# inversions of it left the whole suite green.)
+# (Round 16: run.html is not the ONLY statement a reader of a published
+# result sees, which is what round 15 recorded here. It renders on the run
+# page alone; _marks.html's lb_title states the run-total rule on the index,
+# the benchmark page and the theory comparison. That sibling was the one
+# still unpinned — inverting its trailing clause left 283 green.)
+_DOCS_CITING_TESTS = (
+    "plans/codex-cli-harness.md",
+    "README.md",
+    "pagehub_benchmarks/harnesses/codex_cli.py",
+    "tools/build_site.py",
+    "templates/run.html",
+    "templates/_marks.html",
+    # The marking's visual layer: the `lb` class is emitted by _marks.html and
+    # only means something because the stylesheet gives it a cue (round 17).
+    "static/style.css",
+)
+
+# The §4.5 table's row floor. Bump it when the table grows; everything else
+# is derived from the rows themselves, so this is the only hand-maintained
+# number left.
+_MIN_TABLE_ROWS = 33
+
+
+def test_every_test_named_in_the_docs_exists():
+    """The anti-drift pin for the anti-drift table (review round 13).
+
+    The leg-vs-attempt wording drifted for four rounds because prose has no
+    build that fails. Plan §4.5 now answers "which test pins this statement?"
+    for every normative claim about ``usage_faithful`` and the caveats — but a
+    table of test names is only load-bearing while the names resolve. This
+    fails the build when a cited test is renamed or deleted, so the citation
+    has to be updated with it rather than quietly becoming decoration.
+
+    **What this does NOT certify** (stated here and in §4.5 because round 15
+    found the guarantee reads stronger than it is): it checks the table's
+    shape and that every cited name RESOLVES to a test that exists. It does
+    not check that a cited test pins the statement beside it — repointing a
+    row at an unrelated real test passes. That property is established by
+    mutation, per review round, recorded in the commit messages. A green build
+    means the citations resolve; it is not a certificate that the table is
+    honest."""
+    root = Path(__file__).resolve().parent.parent
+    defined: set[str] = set()
+    for path in sorted((root / "tests").glob("test_*.py")):
+        defined.add(path.stem)  # a citation may name the module
+        defined.update(re.findall(r"^def (test_[A-Za-z0-9_]+)", path.read_text(), re.M))
+
+    cited: dict[str, str] = {}
+    cited_by: dict[str, set[str]] = {}
+    for rel in _DOCS_CITING_TESTS:
+        names = set(re.findall(r"\btest_[a-z0-9_]+", (root / rel).read_text()))
+        cited_by[rel] = names
+        for name in sorted(names):
+            cited.setdefault(name, rel)
+
+    missing = {n: where for n, where in cited.items() if n not in defined}
+    assert not missing, f"docs name tests that do not exist: {missing}"
+
+    # The names resolving is half of it. What the table promises is that EVERY
+    # normative statement carries a pin, so the rows are checked as rows: a
+    # cell emptied of its citation, or a row deleted, fails here rather than
+    # leaving a statement quietly unpinned again (round 14 — the old floor of
+    # 15 against 23 citations left eight rows of slack).
+    plan = (root / "plans" / "codex-cli-harness.md").read_text().splitlines()
+    header = next(
+        (i for i, ln in enumerate(plan)
+         if ln.strip().startswith("| Statement") and "Pinned by" in ln),
+        None,
+    )
+    assert header is not None, "§4.5's statement-to-test table header was not found"
+    rows = list(itertools.takewhile(lambda ln: ln.strip().startswith("|"), plan[header + 2:]))
+    assert len(rows) >= _MIN_TABLE_ROWS, (
+        f"§4.5's statement-to-test table has shrunk to {len(rows)} rows"
+    )
+    statements, row_cites = [], set()
+    for row in rows:
+        cells = row.rstrip().rstrip("|").rsplit("|", 1)
+        pinned_by = set(re.findall(r"\btest_[a-z0-9_]+", cells[-1]))
+        assert pinned_by, f"a table row names no test: {row}"
+        # No per-row `pinned_by <= defined` here: it could not fail (round 18,
+        # N-3a). `pinned_by` is the same regex over a substring of a plan line,
+        # the plan is _DOCS_CITING_TESTS[0] over which `cited` is built with
+        # that regex, and the `missing` assertion above has already checked
+        # `cited <= defined` — so it held by construction. Executed: repointing
+        # a row at a non-existent test fires `missing` first and this loop is
+        # never reached.
+        statements.append(cells[0].strip())
+        row_cites |= pinned_by
+    # Derived floors, so nobody has to remember to bump them. Repointing the
+    # whole table at one real test — which every check above still passes —
+    # collapses row_cites to a single name and fails here.
+    assert len(statements) == len(set(statements)), "two §4.5 rows state the same thing"
+    assert len(row_cites) >= len(rows), (
+        f"{len(rows)} rows cite only {len(row_cites)} distinct tests between them"
+    )
+    # A silent regex change that stops matching would make all of it vacuous.
+    assert "test_a_dead_resume_leg_leaves_the_attempt_faithful" in cited
+    # Every contract file must still carry citations of its OWN. The two
+    # assertions this replaces could not fail (round 16, N-1): `row_cites <=
+    # set(cited)` held by construction — row_cites is the same regex over a
+    # substring of a plan line, and the plan is itself in _DOCS_CITING_TESTS —
+    # and `len(cited) >= len(row_cites)` was then entailed by it. Between them
+    # they had replaced the only bound on citations OUTSIDE the plan's table.
+    # Executed with them in place: stripping every test_* citation from
+    # README.md, codex_cli.py, tools/build_site.py, run.html and _marks.html
+    # — 16 citations, i.e. every inline pin the contract requires in its
+    # declared file set — left the whole suite green.
+    uncited = sorted(rel for rel, names in cited_by.items() if not names)
+    assert not uncited, f"contract files that cite no test at all: {uncited}"
+
+
+def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``_read_rollout`` takes the last ``token_usage_record`` after the last
+    ``turn_context``, and the reset on ``turn_context`` is what keeps a dead
+    leg dead. WITHOUT it, a resume leg that dies BEFORE codex appends a
+    ``turn_context`` would leave the file ending on the PREVIOUS turn's
+    record, and the dead leg WOULD HAVE BEEN handed turn 1's tokens, read as
+    ``usage_source: "rollout"`` and captured as an attempt failure instead of
+    retried — billing turn 1 to two attempts. Round 8 reasoned that (N-15);
+    this executes it. Both halves of the counterfactual are now historical:
+    round 9 deleted rollout-sourced usage entirely, so ``usage_source`` can
+    only be ``"stream"`` or ``"none"``. The reset still earns its keep — it is
+    what stops the stale record standing as dead-leg EVIDENCE."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r1.input_tokens == 15359 - 12160
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The last leg of a run has no successor to reconcile against, so its
+    tokens are lost from the totals for good. It is the attempt's own flag
+    that has to carry that — nothing downstream can."""
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    assert r2.raw["usage_caveats"] == ["missing"]
+    assert (r2.input_tokens, r2.output_tokens) == (0, 0)
+
+
+
+def test_every_ordinary_attempt_is_recorded_as_faithful(monkeypatch, tmp_path, isolated_env):
+    """The marker is only worth reading if the ordinary paths clear it: every
+    leg the STREAM measured — a start and a resume — is faithful. The failed
+    leg beside them is marked even though its own turn is readable in the
+    rollout, because since review round 9 the rollout is never a leg's usage
+    source: a leg the stream could not measure is short, and says so."""
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "again")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r1.raw["usage_source"] == "stream"
+    assert r1.raw["usage_caveats"] == []
+    assert r2.raw["usage_source"] == "stream"
+    assert r2.raw["usage_caveats"] == []
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_caveats"] == ["missing"]
+
+
+# --------------------------------------------------------------------------
+# Review round 8 nits.
+
+
+def test_reaping_survives_a_home_that_genuinely_cannot_be_removed(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The real best-effort failure mode, not a patched ``shutil.rmtree``:
+    a stale HOME holding a directory whose contents cannot be unlinked.
+    ``rmtree(ignore_errors=True)`` could never raise, so the old test
+    exercised a guard that never fires in production — and patching the
+    global ``shutil.rmtree`` also disabled ``start_build``'s own cleanup
+    (round 8, N-3/N-4)."""
+    if os.geteuid() == 0:
+        pytest.skip("root ignores directory permissions")
+    base = tmp_path / "cache" / "codex-homes"
+    stale = base / "run-stale" / "locked"
+    stale.mkdir(parents=True)
+    (stale / "file").write_text("x")
+    old = time.time() - codex_cli.THROWAWAY_HOME_TTL_SECONDS - 60
+    os.utime(stale.parent, (old, old))
+    stale.chmod(0o500)  # contents cannot be unlinked
+    monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
+    legs = _Legs([(OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    try:
+        r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+        assert r.session_handle == OK_THREAD_ID
+        assert stale.parent.exists()  # left behind rather than failing the run
+    finally:
+        stale.chmod(0o700)
+
+
+def test_dead_resume_legs_do_not_duplicate_the_thread_id(monkeypatch, tmp_path, isolated_env):
+    """A resume leg's thread id is validated equal to the handle's, so
+    recording one per dead leg just repeats ``raw["thread_id"]``. The field
+    exists to name threads nothing else in the record references — which a
+    dead START leg creates and a dead resume never does (round 8, N-5)."""
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1),
+                  (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0)])
+    _install(monkeypatch, legs)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    assert r2.raw["dead_turn_retries"] == 1
+    assert r2.raw["dead_turn_thread_ids"] == []
+    assert r2.raw["thread_id"] == OK_THREAD_ID
+
+
+# --------------------------------------------------------------------------
+# Review rounds 8-9: a rollout turn record must never be attributed to a leg.
+# Two gates were tried — the turn id last seen, then codex's post-turn
+# cumulative — and both prove only STALENESS ("already covered"), never
+# freshness ("belongs to this leg"). Against a SHORT baseline, which is
+# exactly the usage_missing state the machinery existed for, an earlier
+# never-billed turn advances past the baseline and was adopted as this leg's
+# share with usage_faithful true. Round 9 deleted the recovery; these pin
+# what replaced it. The two below still hold with no adoption at all.
+
+
+def test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never_read_the_rollout(
+    monkeypatch, tmp_path, isolated_env
+):
+    """C1 repro A. Leg 1 runs before its rollout is on disk, so nothing is
+    remembered; the file then appears and leg 2 — a genuinely DEAD resume —
+    reads turn 1's record. With only the id gate, turn 1's 15359 tokens are
+    billed a second time, the leg reads as ``usage_source: "rollout"``, and
+    the dead-turn retry never runs because the leg no longer looks dead."""
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1)])
+    # The rollout lands only AFTER leg 1 has been read: leg 1 credits no id.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r1.raw["usage_source"] == "stream" and r1.input_tokens == 15359 - 12160
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+
+def test_a_failed_leg_is_not_billed_the_previous_turn_when_the_gate_lagged(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Leg 1 reads turn 1. Leg 2 completes while the rollout is unreadable.
+    Leg 3 then fails and finds the file ending on TURN 2's record — already
+    billed to leg 2. It must not be recorded a second time as leg 3's own.
+    Round 9 removed the question entirely: no rollout record is a leg's
+    share, so leg 3 records zeros and says its usage is missing."""
+    _write_rollout(tmp_path, _rollout_through_turn1())
+    rollout_file = next((tmp_path / "codex-home" / "sessions").rglob("rollout-*.jsonl"))
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1)])
+    scripted = legs.__call__
+
+    def popen(cmd, **kwargs):  # noqa: ANN001
+        if len(legs.calls) == 1:
+            rollout_file.unlink()                      # unreadable for leg 2
+        elif len(legs.calls) == 2:
+            _write_rollout(tmp_path, _rollout_lines())  # turns 1-2 back, for leg 3
+        return scripted(cmd, **kwargs)
+
+    _install(monkeypatch, popen)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r2.input_tokens == 16119 - 12160  # leg 2 already billed turn 2
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["missing"]
+    assert (r3.input_tokens, r3.cache_read_tokens) == (0, 0)
+
+
+
+def test_an_unpartitionable_rollout_does_not_kill_a_failed_leg_either(
+    monkeypatch, tmp_path, isolated_env
+):
+    """A codex-internal inconsistency in the rollout must never abort a paid
+    run — round 8 fixed the recovery path, then the failure path. Round 9
+    removed the last place a rollout figure was partitioned at all, so this
+    now guards against re-introducing one: with a rollout whose cache slice
+    exceeds its prompt on disk, the failed leg is still recorded (zeros,
+    marked) and the run stays alive."""
+    lines = _rollout_lines()
+    last = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
+    o = json.loads(lines[last])
+    u = o["payload"]["turn_token_usage"]
+    u["cached_input_tokens"] = u["input_tokens"] + 1  # cache slice exceeds the prompt
+    lines[last] = json.dumps(o, separators=(",", ":"))
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path,
+                                         {0: _rollout_through_turn1(), 1: lines}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")  # must not raise
+    assert r2.raw["usage_source"] == "none"
+    assert r2.raw["usage_caveats"] == ["missing"]
+    assert (r2.input_tokens, r2.output_tokens) == (0, 0)
+
+
+# --------------------------------------------------------------------------
+# Review round 9, C-1. The watermark proves staleness soundly and freshness
+# not at all, and the code acted on the freshness branch. Three scenarios the
+# reviewer executed against the adapter, each reproduced here first as a
+# failing test: a genuinely dead resume CAPTURED with turn 1's tokens instead
+# of retried (the one that corrupts attempts-to-green, not just cost), an
+# intermediate turn billed to a later failed leg, and the same on the winning
+# attempt. All built from the REAL recorded streams and rollout.
+
+
+def _failed_start_stream() -> str:
+    """SYNTHETIC: the real START success envelope with turn.completed swapped
+    for the real turn.failed line — the model was active, then the turn
+    failed, so the leg is captured rather than retried."""
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    return "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln] + [failed_line]
+    ) + "\n"
+
+
+def test_a_dead_resume_after_an_unreadable_start_leg_is_retried(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario E — the dead-leg critical, and the one consequence
+    that corrupts a benchmark OUTCOME rather than a cost figure.
+
+    The start leg fails after model activity before its rollout is on disk,
+    so nothing measured it and the baseline is short. The file then appears,
+    and leg 2 is a genuinely dead resume (the real 401 envelope: no model
+    activity, no usage). Turn 1's record advances past the short baseline, so
+    the watermark called it fresh: the dead leg was handed turn 1's 15359
+    tokens, read as ``usage_source: "rollout"`` and ``usage_faithful: true``,
+    and — because a leg with usage does not look dead — was CAPTURED as the
+    attempt's result. Two legs ran where four should have.
+
+    The control is ``test_a_dead_resume_is_not_handed_turn_1_when_leg_1_never
+    _read_the_rollout``: leg 1 COMPLETING there leaves a whole baseline, turn
+    1's record does not advance past it, and the retry always worked. The bug
+    was specific to the short-baseline path."""
+    legs = _Legs([(_failed_start_stream(), "", 1),
+                  (_with_thread_id(RESUME_FIXTURE, OK_THREAD_ID), "", 1)])
+    # The rollout lands only AFTER leg 1: leg 1's own turn is never measured.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {1: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r1.raw["usage_source"] == "none" and r1.raw["usage_missing"] is True
+    assert r1.raw["usage_caveats"] == ["missing"]
+    with pytest.raises(HarnessError, match="no model activity"):
+        h.continue_build(r1.session_handle, "fix it")
+    assert len(legs.calls) == 1 + 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+def test_a_failed_leg_on_a_short_baseline_is_not_billed_an_earlier_turn(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario A. Leg 1 completes; leg 2 spends and fails while its
+    rollout is unreadable, leaving the baseline short; leg 3 fails and finds
+    the file ending on TURN 2's record. Turn 2's cumulative advances past the
+    short baseline, so leg 3 was billed turn 2's 16119 with
+    ``usage_faithful: true`` — leg 2's tokens on leg 3's attempt, and leg 3's
+    own counted nowhere. Leg 3 must record zeros and say so; turn 2's
+    cumulative may still repair the baseline, which is what leaves leg 4 with
+    only its own turn."""
+    turn4 = {"input_tokens": 2000, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn2 = _usage_line(OK_RESUME)
+    total_after_turn4 = {k: total_after_turn2[k] + turn4[k] for k in turn4}
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    # Turns 1-2 land in time for leg 3; leg 2 was never measured.
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    r4 = h.continue_build(r1.session_handle, "again")
+    assert r2.raw["usage_caveats"] == ["missing"]
+    # Not turn 2's 16119, on any field.
+    assert r3.raw["usage_source"] == "none"
+    assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
+    assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (0, 0, 0)
+    assert r3.raw["usage_caveats"] == ["missing"]
+    # The cumulative beside turn 2's record still repaired the baseline.
+    assert r4.raw["usage_delta"] == turn4
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_the_winning_attempt_is_never_handed_an_earlier_turns_figure(
+    monkeypatch, tmp_path, isolated_env
+):
+    """Round 9 scenario D — the same adoption on the recovery path, on the
+    attempt that PASSES, whose figure is the run's headline cost. Leg 2 spends
+    and fails unreadably; leg 3 completes and the rollout still ends on turn
+    2's record. Recovery adopted it: 16119 recorded for a turn of 1000, marked
+    faithful — strictly worse than not recovering. The honest figure is the
+    stream delta that spans both legs, marked as absorbing one of them."""
+    turn3, total_after_turn3 = _turn3_figures()
+    legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn3), "", 0)])
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_lines()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r3.raw["usage_source"] == "stream"
+    assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
+    assert r3.raw["usage_faithful"] is False
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_a_rollout_cumulative_behind_the_baseline_never_moves_it_backwards(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The baseline repair is guarded by ``_advances`` in the direction that
+    IS sound: a cumulative that has not moved past the baseline describes
+    turns already billed. Adopting it anyway would walk the baseline
+    BACKWARDS and bill those turns a second time on the next leg. Here leg 3
+    fails while the file on disk has gone back to ending on turn 1's record
+    (a rotation, a truncation, a codex upgrade moving ``sessions/``); leg 4
+    must still record only its own turn, not turn 2 all over again."""
+    turn4 = {"input_tokens": 2000, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+             "output_tokens": 2, "reasoning_output_tokens": 0}
+    total_after_turn2 = _usage_line(OK_RESUME)
+    total_after_turn4 = {k: total_after_turn2[k] + turn4[k] for k in turn4}
+    legs = _Legs([(OK_START, "", 0), (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0),
+                  (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(total_after_turn4), "", 0)])
+    # Turns 1-2 are billed from the stream; the file leg 3 reads ends on
+    # turn 1's record, whose cumulative (15359) is BEHIND the baseline (31478).
+    _install(monkeypatch, _stage_rollout(legs, tmp_path, {2: _rollout_through_turn1()}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    r4 = h.continue_build(r1.session_handle, "again")
+    assert r2.input_tokens == 16119 - 12160
+    assert r3.raw["usage_source"] == "none" and r3.raw["usage_caveats"] == ["missing"]
+    # turn4, not turn2 + turn4: the stale cumulative was refused.
+    assert r4.raw["usage_delta"] == turn4
+    assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+def test_a_rollout_cumulative_that_is_not_comparable_is_refused(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``_advances`` demands EVERY component be at least the baseline's, not
+    just one of them. A record that reports 0 where the baseline already has
+    a figure — codex's usage objects are not obliged to carry
+    ``cache_write_input_tokens``, and a missing field normalises to 0 — is not
+    describing the same history. Adopting it would drop that component of the
+    baseline and bill it a second time on the next leg: here the file's
+    cumulative has moved on in input tokens while reporting no cache writes,
+    and the 300 already billed would come back as part of leg 3's share."""
+    leg1_total = {"input_tokens": 15359, "cached_input_tokens": 12160,
+                  "cache_write_input_tokens": 300, "output_tokens": 5,
+                  "reasoning_output_tokens": 0}
+    # SYNTHETIC: advanced in input, but 0 writes where 300 are already billed.
+    incomparable = {"input_tokens": 31478, "cached_input_tokens": 24320,
+                    "cache_write_input_tokens": 0, "output_tokens": 10,
+                    "reasoning_output_tokens": 0}
+    leg3_total = {"input_tokens": 32478, "cached_input_tokens": 25120,
+                  "cache_write_input_tokens": 400, "output_tokens": 17,
+                  "reasoning_output_tokens": 0}
+    legs = _Legs([(_with_cache_write(OK_START, 300), "", 0), (_failed_resume_stream(), "", 1),
+                  (_stream_reporting(leg3_total), "", 0)])
+    _install(monkeypatch, _stage_rollout(
+        legs, tmp_path, {1: _rollout_plus_turn3(incomparable, incomparable)}))
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    r3 = h.continue_build(r1.session_handle, "again")
+    assert r1.cache_creation_tokens == 300
+    assert r2.raw["usage_source"] == "none"
+    # The baseline stayed at leg 1's measured total, so leg 3's delta is taken
+    # against it: 100 new writes, not the 400 the whole thread has.
+    assert r3.raw["usage_delta"] == {k: leg3_total[k] - leg1_total[k] for k in leg1_total}
+    assert (r3.cache_creation_tokens, r3.input_tokens) == (100, 17119 - 12960 - 100)
+    assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
+
+
+# --------------------------------------------------------------------------
+# Review round 10, N-3/N-4: two guards that survived as mutants — relaxing
+# either left all 255 tests passing (the suite as it stood BEFORE the two
+# tests below; they are what kills those mutants now). Same shape as round
+# 9's N-1/N-2.
+
+
+def _drop_usage_key(stream: str, key: str) -> str:
+    """The real success envelope with one key deleted from ``turn.completed``'s
+    usage object — a renamed/dropped field, as a CLI format change would give."""
+    out, dropped = [], False
+    for line in stream.splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == "turn.completed":
+            del obj["usage"][key]
+            dropped = True
+        out.append(json.dumps(obj, separators=(",", ":")))
+    assert dropped, "fixture has no turn.completed"
+    return "\n".join(out) + "\n"
+
+
+def test_a_completed_turn_whose_usage_lost_output_tokens_aborts_the_run(
+    monkeypatch, tmp_path, isolated_env
+):
+    """N-3. ``_as_usage``'s presence check on ``input_tokens`` /
+    ``output_tokens`` IS the calibration tripwire: it is what turns a renamed
+    or dropped field into the never-a-zero-token-success ``HarnessError``
+    rather than a silently recorded zero. Relaxing it to
+    ``if not isinstance(obj, dict)`` left the whole suite green, because
+    ``obj.get(key) or 0`` then normalises the missing field to 0 and a real
+    paid turn records as a free success.
+
+    Driven end to end through ``start_build`` on the REAL success envelope
+    with the key deleted, so it pins the abort and not merely the helper."""
+    assert codex_cli._as_usage({"input_tokens": 1}) is None
+    stream = _drop_usage_key(OK_START, "output_tokens")
+    legs = _Legs([(stream, "", 0)])
+    _install(monkeypatch, legs)
+    with pytest.raises(HarnessError, match="A success is never recorded"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    # No retry: a miscalibrated parser is not a transport blip.
+    assert len(legs.calls) == 1
+
+
+def _unpair_turn_token_usage(lines: list[str]) -> list[str]:
+    """Every ``token_usage_record`` with its ``turn_token_usage`` removed and
+    its ``thread_token_usage`` left in place — a record "shaped some other
+    way", which is exactly what the pairing guard exists to ignore."""
+    out, seen = [], 0
+    for line in lines:
+        obj = json.loads(line)
+        if obj.get("type") == "token_usage_record":
+            assert obj["payload"].pop("turn_token_usage", None) is not None
+            assert isinstance(obj["payload"].get("thread_token_usage"), dict)
+            seen += 1
+        out.append(json.dumps(obj, separators=(",", ":")))
+    assert seen, "no token_usage_record in the staged rollout"
+    return out
+
+
+def test_a_thread_total_with_no_turn_figure_beside_it_is_not_dead_leg_evidence(
+    monkeypatch, tmp_path, isolated_env
+):
+    """N-4. ``_read_rollout`` only adopts a ``thread_token_usage`` that is
+    PAIRED with a ``turn_token_usage`` — the guard the comment justifies as
+    "so a record shaped some other way is ignored rather than guessed at".
+    Replacing that condition with ``True`` left all 255 tests passing — the
+    suite as it stood before this test.
+
+    This is ``test_turn_with_rollout_evidence_but_no_items_is_not_dead`` (M21)
+    with one thing changed: the staged rollout's records carry a cumulative but
+    no turn figure. M21's leg is CAPTURED because the rollout is evidence the
+    ATTEMPT worked;
+    with the pairing broken the rollout says nothing, so the identical leg is
+    dead and must be RETRIED. Un-guarded, the unpaired cumulative would be
+    read as evidence and the leg captured — the mutant this kills."""
+    _write_rollout(tmp_path, _unpair_turn_token_usage(_rollout_through_turn1()))
+    failed_line = next(ln for ln in START_FIXTURE.splitlines() if '"turn.failed"' in ln)
+    # SYNTHETIC, identical to M21's: the real success envelope minus its
+    # agent_message item, with turn.completed swapped for the real turn.failed.
+    stream = "\n".join(
+        [ln for ln in OK_START.splitlines() if '"turn.completed"' not in ln and '"item.' not in ln]
+        + [failed_line]
+    ) + "\n"
+    legs = _Legs([(stream, "", 1)] * (1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES))
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    with pytest.raises(HarnessError, match="no model activity"):
+        CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert len(legs.calls) == 1 + codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
+# --------------------------------------------------------------------------
+# Review round 11, I-2: an attempt whose figure is short by a whole ABANDONED
+# THREAD must say so. A dead START leg spends on thread A, is retried onto a
+# NEW thread B, and A's spend is then recorded on no attempt at all. Before
+# this the record read usage_faithful: true with no caveats — and because the
+# results site gates its warning marker solely on usage_caveats, a paid,
+# published benchmark page showed an understated cost with nothing to say so.
+
+
+def test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short(
+    monkeypatch, tmp_path, isolated_env
+):
+    """The abandoned thread's spend lands on no attempt, so this attempt's
+    delta is not a measure of the attempt: it is short by a whole turn.
+    ``usage_caveats`` says which, ``usage_faithful`` is false, and the number
+    itself is untouched — marking, not guessing (review round 11, I-2)."""
+    dead_then_ok = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["dead_turn_retries"] == 1
+    assert r.raw["dead_turn_thread_ids"] == ["orphan-thread-1"]
+    assert r.raw["usage_caveats"] == [codex_cli.USAGE_CAVEAT_DEAD_LEG]
+    # The measured leg's own figure is still recorded verbatim: the caveat
+    # says the total is short, it does not discard what WAS measured.
+    assert r.raw["usage_source"] == "stream"
+    assert r.raw["usage_missing"] is False
+    assert (r.input_tokens, r.output_tokens) == (3199, 5)
+
+
+def test_a_dead_resume_leg_leaves_the_attempt_faithful(monkeypatch, tmp_path, isolated_env):
+    """The mirror image, and the reason the caveat is gated on an ABANDONED
+    THREAD rather than on ``dead_turn_retries``: a dead RESUME leg is retried
+    on the SAME thread, so whatever it spent is inside the next leg's stream
+    delta — and both legs are the same attempt, which is the granularity the
+    figure is published at. Nothing is lost, so nothing is marked."""
+    dead_resume = _with_thread_id(RESUME_FIXTURE, OK_THREAD_ID)
+    legs = _Legs([(OK_START, "", 0), (dead_resume, "", 1),
+                  (_with_thread_id(OK_RESUME, OK_THREAD_ID), "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    h = CodexCliHarness()
+    r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    r2 = h.continue_build(r1.session_handle, "fix it")
+    assert r2.raw["dead_turn_retries"] == 1
+    assert r2.raw["dead_turn_thread_ids"] == []  # nothing abandoned
+    assert r2.raw["usage_caveats"] == []
+
+
+def test_the_dead_leg_caveat_composes_with_the_leg_level_one(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``usage_caveats`` is a list, not an enum: an attempt can be short for
+    more than one reason at once. Leg 1 is dead (thread abandoned), leg 2 is a
+    non-dead failure (model activity, then ``turn.failed``), so the attempt is
+    both unmeasured in its own right and short by the abandoned thread. Plan
+    §4.6 rule 5 says so; this executes it."""
+    dead = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    failed = _with_thread_id(_synthetic_non_dead_failure(START_FIXTURE), "thread-b")
+    legs = _Legs([(dead, "", 1), (failed, "", 1)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
+    assert r.raw["usage_source"] == "none" and r.raw["usage_missing"] is True
+    assert r.raw["usage_caveats"] == [
+        codex_cli.USAGE_CAVEAT_MISSING,
+        codex_cli.USAGE_CAVEAT_DEAD_LEG,
+    ]
+
+
+def test_an_abandoned_thread_is_flagged_on_the_published_page(
+    monkeypatch, tmp_path, isolated_env
+):
+    """END TO END, because the unit assertion above is not what failed. The
+    defect round 11 found was invisible at the harness boundary and only
+    appeared once the record was RENDERED: ``build_site`` gates its warning
+    triangle solely on ``usage_caveats``, so an unmarked-but-short attempt
+    published a cost figure with no marker at all. This runs the abandoned-
+    thread scenario through the runner, writes the real results JSON, builds
+    the real site from it, and asserts the reader is warned."""
+    from pagehub_benchmarks.config import load_pricing, parse_benchmark
+    from pagehub_benchmarks.runner.run import execute_benchmark_run
+    from tests.fakes import FakeFixtureFetcher, FakeGrader, gr
+    from tools.build_site import build
+
+    prompt = tmp_path / "demo.md"
+    prompt.write_text("Build the demo.\n")
+    spec = parse_benchmark(
+        {
+            "name": "demo",
+            "target_repo": "git@github.com:example/demo.git",
+            "build_prompt_file": str(prompt),
+            "grader": {"fixture_bundle": "fixtures/demo.json", "collection": "demo-rules",
+                       "env": {"demo_url": "http://localhost:9999"}},
+            "max_attempts": 1,
+            "harnesses": [{"harness": "codex-cli", "model": "gpt-6-astra", "config": {"effort": "high"}}],
+        },
+        tmp_path / "demo.yaml",
+    )
+    dead_then_ok = _with_thread_id(START_FIXTURE, "orphan-thread-1")
+    legs = _Legs([(dead_then_ok, "", 1), (OK_START, "", 0)])
+    _install(monkeypatch, legs)
+    monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+    rec = execute_benchmark_run(
+        spec=spec,
+        harness_spec=spec.harnesses[0],
+        harness=CodexCliHarness(),
+        grader=FakeGrader([gr(True)]),
+        worktree_dir=tmp_path / "wt",
+        pricing=load_pricing(),
+        fixture_fetcher=FakeFixtureFetcher(),
+        built_sha="deadbeef",
+    )
+    assert rec.passed is True and rec.attempts == 1
+    out = rec.write(tmp_path / "results")
+    assert json.loads(out.read_text())["per_attempt"][0]["raw"]["usage_faithful"] is False
+
+    docs = tmp_path / "docs"
+    build(results_dir=tmp_path / "results", docs_dir=docs,
+          benchmarks_dir=tmp_path / "benchmarks", theories_dir=tmp_path / "theories")
+    run_html = next((docs / "runs").glob("*.html")).read_text()
+    # Five warning triangles: the per-attempt row and its legend (round 11),
+    # then the run headline, the Tokens card and the lower-bound note that
+    # round 12 found missing — the abandoned thread's spend is in NO attempt,
+    # so the run's own totals are short too, not merely redistributed.
+    assert run_html.count("&#9888;") == 5
+    assert codex_cli.USAGE_CAVEAT_DEAD_LEG in run_html
+    # And the page EXPLAINS the third caveat rather than only naming it: the
+    # marker's legend must cover this reason too. (The thread id above is
+    # deliberately not the word "abandoned", so this can only match the copy.)
+    assert "short by an abandoned thread" in run_html
+    # The run total is presented as a lower bound, not as a measurement.
+    cost = f"{rec.cost_usd:.4f}"
+    assert run_html.count(f"&#8805;${cost}") == 2  # headline + Tokens card
+    assert "lower bound" in run_html
+
+    # THE SURFACE ROUND 12 FOUND UNMARKED: the head-to-head cost table on the
+    # index, which is what a reader actually compares harnesses on. A run page
+    # that flags the attempt is worth nothing if the index publishes the same
+    # understated figure clean.
+    index = (docs / "index.html").read_text()
+    assert f"&#8805;${cost}" in index
+    assert index.count("&#9888;") >= 1
+    assert "lower bound" in index
+
+    bench_html = next((docs / "benchmarks").glob("*.html")).read_text()
+    assert f"&#8805;${cost}" in bench_html

@@ -46,6 +46,7 @@ docs/                           generated static site (committed; published to G
 pagehub_benchmarks/
   harnesses/base.py             Harness ABC + AttemptResult
   harnesses/claude_code.py      Claude Code adapter (`claude -p ... --output-format json`)
+  harnesses/codex_cli.py        Codex CLI adapter (`codex exec ... --json`, OpenAI)
   grader/client.py              pagehub-evals client (import bundle → run → verdict)
   runner/run.py                 the build→grade→retry loop + the CLI-facing wrapper
   runner/pricing.py             token counts → USD
@@ -55,7 +56,10 @@ pagehub_benchmarks/
   __main__.py                   `python -m pagehub_benchmarks ...`  (list / run / site)
 tools/build_site.py             results/**/*.json → docs/ (Jinja2; `make site`)
 templates/, static/             site templates + plain CSS
-tests/                          unit tests (FakeHarness + FakeGrader — no real claude / evals)
+tests/                          unit tests (FakeHarness + FakeGrader — no real claude / codex / evals)
+tests/fixtures/                 recorded `codex exec --json` streams + one session rollout file (the
+                                cumulative-baseline, dead-leg-evidence and rate-limit source) the codex
+                                adapter is tested against
 ```
 
 ## Usage
@@ -72,15 +76,24 @@ make site                          # regenerate docs/ from results/**/*.json
 make run BENCHMARK=eval-chess-backend DRY_RUN=1
 #   == python -m pagehub_benchmarks run eval-chess-backend --dry-run
 
-# Real run (builds the target repo for real — costs tokens):
+# Real run (builds the target repo for real — costs tokens). With no filter it
+# runs EVERY row of the benchmark's matrix in order — for eval-chess-backend that
+# is Claude Code and then Codex CLI (up to max_attempts high-effort gpt-6-astra
+# attempts on your ChatGPT plan). Use --harness / --model to pick one row.
 make run BENCHMARK=eval-chess-backend
 #   == python -m pagehub_benchmarks run eval-chess-backend
 python -m pagehub_benchmarks run eval-chess-backend --harness claude-code --model claude-opus-4-7 \
     --config effort=xhigh --max-attempts 5 --results-dir results
+python -m pagehub_benchmarks run eval-chess-backend --harness codex-cli --model gpt-6-astra \
+    --max-attempts 3
 ```
 
-A real run needs:
+A real run needs (per matrix row: a row whose harness can't start — CLI missing,
+not logged in — fails the run at that row; records of earlier rows are already
+written and pushed, but the site rebuild is skipped, so run `make site`):
 
+- **`codex` on PATH**, logged in with a ChatGPT subscription, for `codex-cli`
+  rows — see [Codex CLI harness](#codex-cli-harness-codex-cli) below.
 - **`claude` on PATH**, already logged in. Runs execute under the CLI's
   *existing subscription auth* (flat-rate) — the adapter explicitly **unsets
   `ANTHROPIC_API_KEY`** in the subprocess so a stray env key can't divert the
@@ -102,6 +115,188 @@ A real run needs:
   built worktree has a `make up` target (or a `docker-compose.yml`), the runner
   brings it up before grading and tears it down after; pass `--no-serve` to
   manage it yourself.
+
+### Codex CLI harness (`codex-cli`)
+
+The same loop can drive OpenAI's Codex CLI (`codex exec`) so a benchmark runs
+head-to-head against Claude Code with the identical prompt, grader and run
+record. The adapter is `pagehub_benchmarks/harnesses/codex_cli.py`; the design
+and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
+
+- **Version:** requires `codex` **>= 0.153.0**; developed and tested against
+  0.154.0 (`npm i -g @openai/codex`). Nothing checks the version at run time — an older CLI
+  whose `--json` stream layout differs fails the usage parse rather than
+  being refused up front. A differing *rollout* layout does not: that read is
+  best-effort and yields nothing on any problem, which costs the baseline
+  repair, the dead-leg evidence and the rate-limit display, but never fails a
+  leg.
+  `benchmarks/eval-chess-backend.yaml` carries a `codex-cli` / `gpt-6-astra`
+  row.
+- **Login:** `codex login` (or `codex login --device-auth` on a headless box).
+  Runs require the **ChatGPT-subscription** login: before the first attempt the
+  adapter runs `codex login status` and refuses unless it reports `Logged in
+  using ChatGPT`. `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` and `OPENAI_API_KEY`
+  are unset in the subprocess — an API key would silently move the run onto
+  metered billing. As for Claude, **`cost_usd` is a computed figure** (tokens ×
+  `pricing.yaml`), not a bill. The pre-flight also refuses to run while a
+  global `$CODEX_HOME/AGENTS.md`, `AGENTS.override.md` or legacy
+  `instructions.md`, or user skills under `$CODEX_HOME/skills/`, exist:
+  `--ignore-user-config` does not suppress them (verified), and they would
+  change what every run measures. Codex's own bundled skills under
+  `skills/.system/` are part of the product and are exempt.
+- **Effort is required and explicit.** `config.effort` (`low|medium|high|xhigh|max`)
+  is passed as `-c model_reasoning_effort=…` on **every** attempt. Without it a
+  run takes the model default — and a bare `codex exec resume` was observed to
+  reset the effort to that default mid-run — silently changing results between
+  runs. (`$CODEX_HOME/config.toml` is a separate matter: it is excluded outright by
+  `--ignore-user-config` on both legs.) Codex accepts any string here without
+  validating it,
+  so the adapter's explicit allowlist is the only guard. `ultra` (automatic sub-agent
+  delegation) is deliberately not mapped. `--ignore-user-config` is passed on
+  both legs so the operator's config never leaks in; codex still appends a
+  `[projects."<worktree>"] trust_level` entry to `$CODEX_HOME/config.toml` per run
+  (harmless; prune occasionally).
+- **Sandbox:** `--sandbox workspace-write` (never `danger-full-access`) with
+  network enabled inside the sandbox. Compared with Claude Code (which runs
+  unsandboxed with `--dangerously-skip-permissions`), the codex agent can
+  write only the worktree, `/tmp` and `$TMPDIR`, sees the worktree's `.git` read-only,
+  and can only `pip install` into a venv under the worktree or `/tmp` (prefer
+  `/tmp` — a venv left in the worktree is committed and pushed with the build).
+  It can read the whole filesystem and reach the network — the same exposure
+  as Claude. **Secrets in your shell profile reach an agent's login shell**:
+  codex runs commands with `bash -lc`, which sources the profile of whatever
+  `HOME` is. The adapter therefore gives every codex subprocess a **throwaway
+  `HOME`** under `~/.cache/pagehub-benchmarks/codex-homes/` (`XDG_CACHE_HOME`
+  moves it; a base resolving under `/tmp` or `$TMPDIR` is refused) — outside the
+  sandbox's writable roots, so the agent cannot plant skills or edit it for
+  its later turns — with `CODEX_HOME` pinned to your real login directory,
+  disables codex's login-shell snapshot (otherwise written to
+  `$CODEX_HOME/shell_snapshots/` in plaintext, values included) and filters
+  inherited variables named `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` — a probe
+  agent then saw no secret-named variables where it previously listed 37 from
+  `~/.bashrc`. (That throwaway HOME holds only a `.bash_profile` restoring
+  your `PATH` — a stock `/etc/profile` resets it for login shells — and your
+  locale: codex forces `C.UTF-8`, which some boxes' bash cannot load, and the
+  resulting `setlocale` warnings would flood every command's output. The
+  per-run directories are tiny, and each run reaps the ones older than seven
+  days before creating its own. This assumes codex
+  runs the agent's commands with bash, as it does here — `/bin/bash -lc` by
+  default, or `/bin/bash -c` with no profile at all when the model asks for a
+  non-login shell, in which case codex's own PATH and `C.UTF-8` apply.
+  `BASH_ENV`, `ENV` and `ZDOTDIR` are stripped so no other file is sourced.)
+  Claude Code has no equivalent and sees everything, so keeping
+  secrets out of `~/.bashrc` on the runner box (or benchmarking under a
+  dedicated user) is still the right hygiene. Codex also prepends its
+  own instructions (bundled skills, permissions, a collaboration mode and a
+  multi-agent role — the blocks observed in the recorded turn-1 preamble;
+  proactive sub-agent delegation is off at the default effort levels) to every
+  thread and re-injects its skills instructions on
+  every resumed turn, as Claude Code does its system prompt. After each attempt the **runner** executes the
+  built `Makefile` (`make up`) on the host, outside any sandbox, for both
+  harnesses.
+- **What is recorded:** `session_handle` is the codex `thread_id`; attempt 2+
+  runs `codex exec resume <thread_id>` with the failing-eval output. Token
+  counts come from the `--json` stream's `turn.completed.usage`, which on a
+  resumed thread is the **thread total** — the adapter records each attempt's
+  delta (`raw.usage` is the verbatim usage object codex reported —
+  thread-cumulative on the stream path — and `raw.usage_delta` the attempt's
+  share). `input_tokens` in the record is the non-cached slice;
+  `cached_input_tokens` → cache reads, `cache_write_input_tokens` → cache
+  writes (priced at OpenAI's write rate); `output_tokens` includes reasoning
+  (`raw.reasoning_output_tokens` is recorded separately).
+  **An attempt's own figure comes from that stream delta and from nothing
+  else.** A failed turn carries no usage on the stream and nothing stands in
+  for it: the attempt records zeros, `raw.usage_source: "none"` and
+  `raw.usage_missing: true` (unknown, not free). Codex's rollout is still
+  read, for three jobs and no others — cumulative baseline repair, dead-leg
+  evidence, rate limits: the cumulative `thread_token_usage`, which
+  re-anchors the baseline the *next* delta is taken against (a cumulative says
+  how far the thread has got, never which turn ran, so adopting one can only
+  move the baseline toward the truth); the evidence that an attempt did work
+  after all when a leg's stream reported nothing, which is what separates an
+  attempt to record from a dead turn to retry; and `raw.rate_limits` (the
+  5-hour and weekly `used_percent`), the only place codex reports the
+  subscription budget.
+  **`raw.usage_faithful` is the field to read before trusting an attempt's
+  token counts.** It is `false` when `raw.usage_delta` is not a measure of
+  that attempt alone, and `raw.usage_caveats` lists which of the three reasons
+  apply — more than one can apply to the same attempt: `"missing"` — the turn was spent but nothing measured it, so the
+  attempt records zeros; `"absorbed_missing_leg"` — this attempt's delta
+  was taken against a baseline that is not known to be whole, because an
+  earlier turn went unmeasured, so it may span that turn as well as this one;
+  or `"dead_leg_unmeasured"` — a leg of this attempt was classified dead and
+  retried onto a *new* thread, so whatever the abandoned thread spent is
+  billed to no attempt anywhere in the run and this figure is short by a whole
+  turn (`raw.dead_turn_thread_ids` names the threads; review round 11). Only a
+  dead **start** leg can do this: a dead resume leg is retried on the same
+  thread, so its spend is inside the next leg's delta, which is the same
+  attempt's figure either way.
+  **Two of the three also make the RUN's totals a lower bound**, and the site
+  marks those as such (`≥`, review round 12): `"missing"` and
+  `"dead_leg_unmeasured"` are spend that left the record altogether, so every
+  total derived from it is short. `"absorbed_missing_leg"` is not — it moves
+  spend between attempts of one run and leaves the total alone. Determined by
+  execution: two runs whose attempt records are identical (`["missing"]`, then
+  `["absorbed_missing_leg"]`) totalled 3,959 and 7,158 input tokens against a
+  true spend of 7,158, because whether a later leg's delta reabsorbs the
+  unmeasured turn depends on whether codex's rollout re-anchored the baseline
+  in between — which the record does not publish. A lower bound is the only
+  honest reading.
+  The adapter used to try to avoid the second case by taking the attempt's
+  share from the rollout's own turn record. It cannot: nothing about a rollout
+  record proves *which turn it belongs to*, and against the short baseline
+  that makes recovery necessary in the first place, an earlier never-billed
+  turn passes every test that was tried (its turn id is one this harness never
+  saw, and codex's cumulative for it is beyond a baseline that is short).
+  Executed, that handed a **dead** attempt an earlier turn's tokens and
+  captured it instead of retrying it, and gave a winning attempt a figure that
+  was not its own — all marked faithful. The inference was removed (review
+  round 9), so marking is the whole answer, and it errs toward marking: a
+  delta taken against a re-anchored baseline is often exactly right and is
+  still flagged, because the harness cannot show that it is. An over-reported
+  attempt is no more honest than a zero-reported one, so both carry the flag.
+  **Run totals:** an unmeasured turn's tokens are counted once across the run,
+  on the following attempt (which is flagged), when its baseline could not be
+  re-anchored — and zero times when it could, because the attempt that spent
+  them records zeros and its successor starts from the newer baseline. Either
+  way no attempt is silently wrong — but a run carrying a caveat that is not
+  run-total-neutral should be read as an estimate, not a bill. The run-level
+  rule is **deny-by-default**, and it is not "any unfaithful attempt": a run
+  total is short unless every caveat on it is run-total-neutral. Today
+  `"absorbed_missing_leg"` is the only neutral value — it moves spend between
+  the attempt rows and leaves the run total whole — so a run carrying only
+  that one is not short. An unreadable *final* attempt likewise has no
+  successor, and its tokens are simply absent from the totals — as is an
+  abandoned thread's spend, on any attempt carrying `"dead_leg_unmeasured"`.
+  `raw.rate_limits` carries
+  codex's 5-hour and weekly `used_percent` for the subscription — watch it on
+  a Plus plan (it is printed for attempts that return a result; a dead,
+  retried leg never prints one). If codex ever reports no cache split, the
+  cache columns show `0` and `raw.cache_tokens_reported` is `false`.
+  `raw.rollout_path` is relative to `$CODEX_HOME` (the record is published).
+  The diagnostic text fields — `raw.stderr_tail`, `raw.harness_error`,
+  `raw.errors`, `raw.final_event` — are codex's own output, published to the
+  results site verbatim and not scrubbed; they can contain absolute paths
+  from the machine the run happened on.
+- **When a run crashes vs. records:** a turn in which the model never ran
+  (not logged in, usage limit hit, provider outage, a rejected prompt — see
+  openai/codex#43237) is retried `CODEX_DEAD_TURN_RETRIES` times (default 2)
+  and then fails the run loudly with no record and no push — the same as the
+  Claude adapter on a non-zero exit. When such a leg is retried and the
+  attempt does eventually record, the threads the dead legs abandoned are
+  listed in `raw.dead_turn_thread_ids` (a dead start leg opens a fresh thread
+  each time) with their errors in `raw.dead_turn_errors` — and, because
+  whatever those threads spent is billed to no attempt, that attempt is marked
+  `usage_faithful: false` / `["dead_leg_unmeasured"]` (above). A turn in which the model did work and
+  then failed is recorded as a failed attempt with the error text under
+  `raw.harness_error`, graded as-is, and the thread is resumed.
+  `CODEX_BUILD_TIMEOUT_SECONDS` (default 3600) bounds each `codex exec` leg
+  (a retried attempt is several legs). Ctrl-C during a leg kills the whole
+  codex process group (it runs in its own session, so the terminal's SIGINT
+  would not reach it otherwise).
+- **Matrix note:** the `eval-chess-backend` row runs codex at
+  `effort: high` while the existing Claude row is `xhigh`; both models accept
+  `xhigh` — add a matching row on either side for a like-for-like comparison.
 
 See `.env.example` for every knob.
 
@@ -127,6 +322,29 @@ append-only, one per run:
 }
 ```
 
+The run-level totals (`cost_usd`, `total_*_tokens`) are a plain sum and carry
+no marker of their own. Whether they are a **measurement or a lower bound** is
+derived from the attempts, **deny-by-default**: a run total is short unless
+every caveat in every `per_attempt[].raw.usage_caveats` is run-total-neutral.
+Implement it that way round. Today `"absorbed_missing_leg"` is the only
+neutral value — spend that merely moved between attempt rows — so today the
+values that shorten a total are `"missing"` and `"dead_leg_unmeasured"`
+(spend that left the record); but a caveat this README does not list is a
+caveat a newer harness added, and it shortens the total rather than clearing
+it. An allowlist of the two shortening names is the same predicate today and
+fails open the day a fourth value ships.
+
+That is the rule the site renders as `≥` (`RUN_TOTAL_NEUTRAL_CAVEATS` in
+`tools/build_site.py` is the set the filter reads, pinned by
+`test_missing_makes_the_run_total_a_lower_bound` and
+`test_an_abandoned_thread_is_flagged_on_the_published_page` for the two
+values that shorten a total today, by
+`test_absorbed_missing_leg_alone_does_not_shorten_the_run_total` for the one
+that does not, and by `test_an_unclassified_caveat_makes_the_run_total_a_lower_bound`
+for the deny-by-default direction itself).
+A consumer reading the JSON directly has to apply it, and reading `cost_usd`
+without it will sometimes understate a run.
+
 ## The first benchmark — `eval-chess-backend`
 
 Builds [`pagehub-io/eval-chess-backend`](https://github.com/pagehub-io/eval-chess-backend)
@@ -136,6 +354,12 @@ Graded by the pagehub-evals `eval-chess-backend` collection (fixture bundle:
 `pagehub-evals/fixtures/eval-chess-backend.json`) — a rule-conformance battery
 (castling, en passant, promotion, pins, check evasion, checkmate, stalemate,
 the draw rules).
+
+**The two shipped rows are not effort-matched:** Claude Code runs at `xhigh`,
+Codex CLI at `high`, so an unfiltered `make run` is a head-to-head between two
+different reasoning budgets and the site's index table shows that in the config
+column. Both models accept `xhigh` — add a matching row on either side (or use
+`--harness` / `--model` to run one at a time) for a like-for-like pair.
 
 ## Results site
 
@@ -158,7 +382,11 @@ the draw rules).
 
 Regenerate it locally with `make site` (or `python -m tools.build_site`, or
 `python -m pagehub_benchmarks site`). A real `run` regenerates it automatically
-afterward unless you pass `--no-build-site`. `docs/` is committed and published
+afterward unless you pass `--no-build-site`. A branch that changes
+`templates/` or `static/` without re-running `make site` leaves the committed
+`docs/` stale until merge — deliberately, to keep template diffs reviewable;
+`pages.yml` rebuilds the whole site from source on push to `main`, so what
+ships is never the stale copy. `docs/` is committed and published
 to **GitHub Pages** by `.github/workflows/pages.yml` on every push to `main`
 (set repo *Settings → Pages → Source* to "GitHub Actions"). Generation is
 static — Jinja2 templates in `templates/` + `static/style.css` + a few lines of
@@ -169,6 +397,8 @@ in the Links sections default to the `pagehub-io` org repos; override via
 ## CI
 
 `.github/workflows/ci.yml` runs **ruff + pytest only**. CI never runs a real
-benchmark — that would call `claude` and pagehub-evals and cost tokens. The
-runner is tested with `FakeHarness` / `FakeGrader`. (`.github/workflows/pages.yml`
+benchmark — that would call `claude` / `codex` and pagehub-evals and cost
+tokens. The runner is tested with `FakeHarness` / `FakeGrader`; the codex
+adapter against recorded `codex exec --json` streams (plus one session
+rollout file) in `tests/fixtures/`. (`.github/workflows/pages.yml`
 is separate — it regenerates and publishes the results site on push to `main`.)

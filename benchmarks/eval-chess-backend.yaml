@@ -33,3 +33,10 @@ harnesses:
     model: claude-opus-4-7
     config:
       effort: xhigh
+  # Codex CLI (OpenAI) on the ChatGPT-subscription login; effort is required and
+  # explicit for this harness. Note the Claude row above runs at xhigh — add a
+  # matching row on either side for a like-for-like pair.
+  - harness: codex-cli
+    model: gpt-6-astra
+    config:
+      effort: high

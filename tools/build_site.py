@@ -55,6 +55,63 @@ _SLUG = re.compile(r"[^A-Za-z0-9._-]+")
 # GitHub Pages (Jekyll bypass marker, custom-domain config, empty-dir marker).
 _PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
 
+# Which per-attempt caveats make the RUN's own totals a LOWER BOUND rather
+# than a measurement (review round 12). The test is not "is some attempt
+# imprecise" — it is "did spend leave the record entirely, or only move
+# between attempt rows inside it". Determined by execution, 2026-09-12:
+#
+#   "dead_leg_unmeasured"  SHORTENS the run total. A dead start leg is retried
+#       onto a NEW thread; the abandoned one is never resumed and never read,
+#       so its spend enters no leg's delta anywhere in the run.
+#   "missing"              SHORTENS the run total. The turn was spent and
+#       nothing measured it. A later leg's delta recovers it only when codex's
+#       rollout did NOT re-anchor the baseline in between. Measured: two runs
+#       whose published CAVEATS and usage_faithful are identical (["missing"],
+#       then ["absorbed_missing_leg"]) totalled 3,959 and 7,158 input tokens
+#       against a true spend of 7,158 — the records differ in precisely the
+#       token figures, and nothing published alongside them says which of the
+#       two happened. So the figure is a lower bound: sometimes exact, never
+#       provably so.
+#   "absorbed_missing_leg" does NOT shorten it. It says this attempt's delta
+#       may span an EARLIER unmeasured leg of the same run: spend moves
+#       between attempt rows and the total is unaffected. It also never
+#       appears alone — the baseline gap that produces it is set only on the
+#       path that publishes "missing" (codex_cli._usage_from's source ==
+#       "none" -> _result), and start_build resets it per run. Both halves of
+#       that premise are pinned, because the classification above is worth
+#       nothing without it (round 14): the first by
+#       test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing
+#       and test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run,
+#       the second by test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap.
+#
+# Blanket-marking every caveated run would make the aggregate marker
+# meaningless, so the two sets are kept apart and
+# ``test_every_harness_caveat_is_classified_for_run_totals`` fails if the
+# harness grows a fourth value nobody has classified.
+#
+# Which of the two is the FILTER matters: only the NEUTRAL set is (round 17).
+# A value in neither set shortens the total, so an unclassified caveat from a
+# harness version this module does not import marks rather than clears — see
+# the deny-by-default note in ``load_runs``. The lower-bound set below is
+# therefore the classification of the values known TODAY, not the predicate:
+# it is what the vocabulary guard partitions against and what
+# ``test_the_run_page_explainer_states_the_run_total_rule`` requires the run
+# page to define in words. Adding a fourth SHORTENING value here changes no
+# behaviour (it already shortens); adding a fourth NEUTRAL value to the set
+# below is the edit that does.
+RUN_TOTAL_LOWER_BOUND_CAVEATS = frozenset({"missing", "dead_leg_unmeasured"})
+RUN_TOTAL_NEUTRAL_CAVEATS = frozenset({"absorbed_missing_leg"})
+
+# Aggregates the lower bound applies to: everything derived from token
+# counts. Wall time, attempts and pass/fail are measured elsewhere and are
+# not short — marking them would devalue the marker on the figures it is
+# right about, which is what
+# test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds
+# fails on.
+LOWER_BOUND_METRICS = frozenset(
+    {"cost_usd", "total_input_tokens", "total_output_tokens", "total_cache_tokens"}
+)
+
 
 def _slug(s: str) -> str:
     return _SLUG.sub("-", s).strip("-") or "x"
@@ -263,7 +320,8 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         rec["template_var_rows"] = _template_var_rows(rec.get("template_vars") or {})
         # Per-attempt rendered_prompt is also opt-in; default to empty string
         # so the template can `{% if a.rendered_prompt %}` it. Same for
-        # ``raw`` (the full claude -p JSON object): legacy records lack it.
+        # ``raw`` (claude-code: the full claude -p JSON object; codex-cli: a bounded
+        # summary of the codex exec --json stream): legacy records lack it.
         for a in rec.get("per_attempt") or []:
             a.setdefault("rendered_prompt", "")
             a.setdefault("raw", None)
@@ -271,6 +329,56 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
             a["raw_pretty"] = (
                 json.dumps(raw, indent=2, sort_keys=True) if raw else ""
             )
+            # The harness marks any attempt whose token figures are not a
+            # measure of that attempt alone (codex-cli). Surface it beside the
+            # numbers: the raw JSON is collapsed by default, so a reader would
+            # otherwise see an over- or under-reported figure with nothing to
+            # say so. Absent on claude-code and on legacy records, which
+            # therefore get no marker rather than a false warning
+            # (test_build_marks_no_attempt_when_the_harness_reports_none).
+            a["usage_caveats"] = (
+                [str(c) for c in raw.get("usage_caveats") or []]
+                if isinstance(raw, dict)
+                else []
+            )
+        # …and the run-level consequence. Marking only the attempt row leaves
+        # every aggregate the site publishes — this run's headline, the
+        # index's head-to-head cost table, the benchmark page, the theory
+        # comparison — rendering an understated figure with nothing to say so
+        # (review round 12, I-2). WHICH caveats shorten a total is stated
+        # once — in the deny-by-default note below — and this comment
+        # deliberately does not restate it. It used to, naming the lower-bound
+        # set as the predicate and calling every other caveat total-neutral;
+        # both halves were false against the filter three lines down.
+        caveats_any = sorted(
+            {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
+        )
+        # Only the shortening caveats reach the templates on purpose: the
+        # unfiltered set is exactly what must NOT drive aggregate marking.
+        #
+        # The filter is deny-by-default — the NEUTRAL set is the allowlist, so
+        # a value in neither set marks the total (review round 17). It used to
+        # be the other way round, an intersection with the lower-bound set,
+        # which failed OPEN: executed on a record whose attempt carried
+        # `compaction_unmeasured`, the run page rendered the attempt's ⚠ and
+        # named the caveat while the index published a clean $12.3456 — the
+        # page saying that attempt's tokens are unmeasurable and then
+        # presenting the run total as a measurement. Two reasons this
+        # direction is right. (1) The attempt-level marker already fails
+        # closed (it is gated on `usage_caveats` being non-empty at all), so
+        # allow-by-default here is what let the two halves of one page
+        # contradict each other. (2) This module reads records written by
+        # harness versions it does not import — the one case
+        # `test_every_harness_caveat_is_classified_for_run_totals` cannot see,
+        # because it compares the harness and the renderer in the SAME
+        # checkout. Over-marking is the honest direction (plan §4.5); silence
+        # is not. The cost is that a future NEUTRAL caveat over-marks until it
+        # is added to RUN_TOTAL_NEUTRAL_CAVEATS, which is a visible, correctable
+        # error rather than a silent understatement.
+        rec["totals_lower_bound_caveats"] = [
+            c for c in caveats_any if c not in RUN_TOTAL_NEUTRAL_CAVEATS
+        ]
+        rec["totals_are_lower_bound"] = bool(rec["totals_lower_bound_caveats"])
         runs.append(rec)
     # newest first
     runs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
@@ -351,7 +459,16 @@ def build(
         shutil.copy2(STATIC_DIR / "style.css", dst)
         written.add(dst)
 
-    common = {"repo_url": BENCHMARKS_REPO_URL}
+    # ``explained_caveats`` is the set of caveat names run.html DEFINES in
+    # words. It is RUN_TOTAL_LOWER_BOUND_CAVEATS because
+    # test_the_run_page_explainer_states_the_run_total_rule requires the page
+    # to gloss every member of that constant — so the page can tell a reader
+    # when a reason it named is one it cannot explain, without the template
+    # hard-coding a second copy of the vocabulary (round 18, N-8).
+    common = {
+        "repo_url": BENCHMARKS_REPO_URL,
+        "explained_caveats": sorted(RUN_TOTAL_LOWER_BOUND_CAVEATS),
+    }
 
     # Load theories early so the home-page link counter ("theories (N)")
     # can render before _render_theories writes the per-theory files.
@@ -489,6 +606,9 @@ def _theory_cells(metrics: list[str], baseline_runs: list[dict], treatment_runs:
     for m in metrics:
         bv = b_latest.get(m) if b_latest else None
         tv = t_latest.get(m) if t_latest else None
+        # A side-by-side comparison is exactly where a silently short figure
+        # reads as a win, so the lower-bound marking has to reach these cells
+        # too — on the token-derived metrics only (review round 12).
         out.append(
             {
                 "metric": m,
@@ -496,9 +616,22 @@ def _theory_cells(metrics: list[str], baseline_runs: list[dict], treatment_runs:
                 "treatment_display": _format_metric(m, tv) if t_latest is not None else "no runs yet",
                 "baseline_value": bv,
                 "treatment_value": tv,
+                "baseline_lower_bound": _is_lower_bound(b_latest, m),
+                "treatment_lower_bound": _is_lower_bound(t_latest, m),
+                "baseline_caveats": (b_latest or {}).get("totals_lower_bound_caveats") or [],
+                "treatment_caveats": (t_latest or {}).get("totals_lower_bound_caveats") or [],
             }
         )
     return out
+
+
+def _is_lower_bound(run: dict | None, metric: str) -> bool:
+    """Is ``run``'s figure for ``metric`` short by spend nothing measured?"""
+    return bool(
+        run
+        and metric in LOWER_BOUND_METRICS
+        and run.get("totals_are_lower_bound")
+    )
 
 
 def _md_to_html(markdown: str) -> str:
