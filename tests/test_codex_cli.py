@@ -30,7 +30,7 @@ import pytest
 
 from pagehub_benchmarks.harnesses import HARNESSES, codex_cli, get_harness
 from pagehub_benchmarks.harnesses.codex_cli import (
-    EFFORT_MAP,
+    EFFORTS,
     STRIPPED_ENV_VARS,
     CodexCliHarness,
     HarnessError,
@@ -291,7 +291,7 @@ def test_resume_argv_byte_exact(monkeypatch, tmp_path, isolated_env):
 # 3: effort mapping
 
 
-@pytest.mark.parametrize("effort", sorted(EFFORT_MAP))
+@pytest.mark.parametrize("effort", sorted(EFFORTS))
 def test_effort_maps_one_to_one(monkeypatch, tmp_path, isolated_env, effort):
     legs = _Legs([(NON_DEAD_START, "", 1)])
     _install(monkeypatch, legs)
@@ -1787,6 +1787,31 @@ def test_an_unusable_build_timeout_falls_back_to_the_default_and_says_so(monkeyp
     assert codex_cli._build_timeout() == codex_cli.DEFAULT_BUILD_TIMEOUT_SECONDS
 
 
+def test_a_negative_dead_turn_retry_count_is_clamped_to_zero(monkeypatch):
+    """``_dead_turn_retries`` clamps, and the clamp is what keeps an
+    operator-settable env var from reaching a line coverage is told is
+    unreachable.
+
+    ``_int_env`` parses ``-1`` happily — it only falls back on a value it
+    cannot parse — so without the ``max(0, …)`` the leg loop's
+    ``range(retries + 1)`` becomes ``range(0)``, no leg ever runs, and
+    ``_attempt`` falls through to ``raise AssertionError("unreachable")``,
+    the line marked ``# pragma: no cover``. Executed in round 17: the mutant
+    ``return _int_env(...)`` survived all 291 tests. Unlike
+    CODEX_BUILD_TIMEOUT_SECONDS there is no warning here on purpose — "retry
+    dead legs a negative number of times" has exactly one sane reading, zero,
+    and nothing is silently substituted for a different intent."""
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "-1")
+    assert codex_cli._dead_turn_retries() == 0
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "-99")
+    assert codex_cli._dead_turn_retries() == 0
+    # …and the clamp is a floor, not a constant: real values pass through.
+    monkeypatch.setenv("CODEX_DEAD_TURN_RETRIES", "3")
+    assert codex_cli._dead_turn_retries() == 3
+    monkeypatch.delenv("CODEX_DEAD_TURN_RETRIES")
+    assert codex_cli._dead_turn_retries() == codex_cli.DEFAULT_DEAD_TURN_RETRIES
+
+
 def test_stale_throwaway_homes_are_reaped_on_the_next_start(monkeypatch, tmp_path, isolated_env):
     """Nothing tears a throwaway HOME down when a run succeeds, so they are
     reaped on the next start_build — by age, and only the run-* ones."""
@@ -2112,19 +2137,25 @@ def test_a_failed_start_never_leaves_a_resume_on_the_operators_home(
 # the reset happens on ENTRY. That is a property of the reset's POSITION, and
 # a test that only exercises the two sites inside the ``try`` cannot see it.
 #
-#   codex_cli.py :1421  self._reset_run_state()      plain assignments — cannot raise
-#   codex_cli.py :1422  _map_effort(config)          HarnessError   -> "effort"
-#   codex_cli.py :1423  _throwaway_home_base()       HarnessError   -> "home_base"
-#   codex_cli.py :1424  base.mkdir(parents=True, …)  OSError        -> "base_mkdir"
-#   codex_cli.py :1428  _reap_throwaway_homes(base)  NOT a raise site: every
-#                       OSError is swallowed by construction. Executed against
-#                       an unremovable child (root-owned/read-only), a base
-#                       that does not exist and a base that is a regular file
-#                       — all three returned 0 rather than raising.
-#   codex_cli.py :1429  tempfile.mkdtemp(dir=base)   OSError        -> "mkdtemp"
+# Addressed by SYMBOL, not by line: round 17 found every line number this
+# enumeration originally carried had rotted (off by 8 for the pre-``try``
+# group, 16 for _attempt), and test_every_test_named_in_the_docs_exists can
+# check names but never line numbers.
+#
+#   self._reset_run_state()      plain assignments — cannot raise
+#   _map_effort(config)          HarnessError   -> "effort"
+#   _throwaway_home_base()       HarnessError   -> "home_base"
+#   base.mkdir(parents=True, …)  OSError        -> "base_mkdir"
+#   _reap_throwaway_homes(base)  NOT a raise site: every OSError is swallowed
+#                                by construction. Executed against an
+#                                unremovable child (root-owned/read-only), a
+#                                base that does not exist and a base that is a
+#                                regular file — all three returned 0 rather
+#                                than raising.
+#   tempfile.mkdtemp(dir=base)   OSError        -> "mkdtemp"
 #   ---- try: ----
-#   codex_cli.py :1432  _prepare_home / _preflight   HarnessError   -> "preflight"
-#   codex_cli.py :1452  self._attempt(…)             HarnessError   -> "start_leg"
+#   _prepare_home / _preflight   HarnessError   -> "preflight"
+#   self._attempt(…)             HarnessError   -> "start_leg"
 #
 # Four reachable sites before the ``try``, all four covered below. The mutant
 # this kills, executed in round 16: move ``self._reset_run_state()`` from the
@@ -2280,12 +2311,15 @@ _DOCS_CITING_TESTS = (
     "tools/build_site.py",
     "templates/run.html",
     "templates/_marks.html",
+    # The marking's visual layer: the `lb` class is emitted by _marks.html and
+    # only means something because the stylesheet gives it a cue (round 17).
+    "static/style.css",
 )
 
 # The §4.5 table's row floor. Bump it when the table grows; everything else
 # is derived from the rows themselves, so this is the only hand-maintained
 # number left.
-_MIN_TABLE_ROWS = 27
+_MIN_TABLE_ROWS = 31
 
 
 def test_every_test_named_in_the_docs_exists():

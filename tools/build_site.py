@@ -88,6 +88,17 @@ _PRESERVED_BASENAMES = frozenset({".nojekyll", ".gitkeep", "CNAME"})
 # meaningless, so the two sets are kept apart and
 # ``test_every_harness_caveat_is_classified_for_run_totals`` fails if the
 # harness grows a fourth value nobody has classified.
+#
+# Which of the two is the FILTER matters: only the NEUTRAL set is (round 17).
+# A value in neither set shortens the total, so an unclassified caveat from a
+# harness version this module does not import marks rather than clears — see
+# the deny-by-default note in ``load_runs``. The lower-bound set below is
+# therefore the classification of the values known TODAY, not the predicate:
+# it is what the vocabulary guard partitions against and what
+# ``test_the_run_page_explainer_states_the_run_total_rule`` requires the run
+# page to define in words. Adding a fourth SHORTENING value here changes no
+# behaviour (it already shortens); adding a fourth NEUTRAL value to the set
+# below is the edit that does.
 RUN_TOTAL_LOWER_BOUND_CAVEATS = frozenset({"missing", "dead_leg_unmeasured"})
 RUN_TOTAL_NEUTRAL_CAVEATS = frozenset({"absorbed_missing_leg"})
 
@@ -340,10 +351,30 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         caveats_any = sorted(
             {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
         )
-        # Only the lower-bound subset reaches the templates on purpose: the
+        # Only the shortening caveats reach the templates on purpose: the
         # unfiltered set is exactly what must NOT drive aggregate marking.
+        #
+        # The filter is deny-by-default — the NEUTRAL set is the allowlist, so
+        # a value in neither set marks the total (review round 17). It used to
+        # be the other way round, an intersection with the lower-bound set,
+        # which failed OPEN: executed on a record whose attempt carried
+        # `compaction_unmeasured`, the run page rendered the attempt's ⚠ and
+        # named the caveat while the index published a clean $12.3456 — the
+        # page saying that attempt's tokens are unmeasurable and then
+        # presenting the run total as a measurement. Two reasons this
+        # direction is right. (1) The attempt-level marker already fails
+        # closed (it is gated on `usage_caveats` being non-empty at all), so
+        # allow-by-default here is what let the two halves of one page
+        # contradict each other. (2) This module reads records written by
+        # harness versions it does not import — the one case
+        # `test_every_harness_caveat_is_classified_for_run_totals` cannot see,
+        # because it compares the harness and the renderer in the SAME
+        # checkout. Over-marking is the honest direction (plan §4.5); silence
+        # is not. The cost is that a future NEUTRAL caveat over-marks until it
+        # is added to RUN_TOTAL_NEUTRAL_CAVEATS, which is a visible, correctable
+        # error rather than a silent understatement.
         rec["totals_lower_bound_caveats"] = [
-            c for c in caveats_any if c in RUN_TOTAL_LOWER_BOUND_CAVEATS
+            c for c in caveats_any if c not in RUN_TOTAL_NEUTRAL_CAVEATS
         ]
         rec["totals_are_lower_bound"] = bool(rec["totals_lower_bound_caveats"])
         runs.append(rec)

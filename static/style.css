@@ -31,7 +31,11 @@ tr:hover td { background: #f7f8fa; }
 .fail { color: #c92a2a; font-weight: 600; }
 .warn { color: #e8590c; font-weight: 600; }
 /* Anything carrying a hover-only explanation says so with the cursor: the
-   marked figures in the token columns have a title but no triangle. */
+   marked figures in the token columns have a title but no triangle. Dropping
+   `.lb` here leaves the figure carrying an explanation with nothing to say so.
+   Pinned against the BUILT stylesheet by
+   test_index_presents_a_short_total_as_a_lower_bound — the class being
+   emitted is not the same rule as the class doing something (round 17). */
 .warn, .lb { cursor: help; }
 .cards { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 2rem; }
 .card { border: 1px solid #e3e3e3; border-radius: 8px; padding: .85rem 1rem; min-width: 230px; flex: 1; }

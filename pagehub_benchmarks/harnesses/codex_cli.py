@@ -92,9 +92,15 @@ mapped onto token counts, calibrated against recorded fixtures
 (``tests/fixtures/codex_exec_ok.jsonl``, ``codex_exec_resume_ok.jsonl``,
 ``codex_rollout_ok.jsonl``), not against docs. ``turn.completed.usage`` is the
 **thread total** (verified: the resume fixture reports start + resume), so
-each *returning* leg records the delta against the previous total (a retried
-dead leg records none, so that delta covers every leg of the attempt); ``input_tokens``
-includes the cached and cache-write slices (partitioned out for pricing);
+each *returning* leg records the delta against the previous total. A retried
+dead leg records none, and what that leaves behind depends on WHICH leg died: a
+dead *resume* leg is retried on the SAME thread, so the next delta covers both
+legs of the attempt and nothing is lost; a dead *start* leg is retried onto a
+NEW thread, so whatever the abandoned thread spent is covered by no delta
+anywhere and the attempt is marked ``dead_leg_unmeasured`` (see
+``usage_caveats`` below — this asymmetry is the whole reason that caveat
+exists). ``input_tokens`` includes the cached and cache-write slices
+(partitioned out for pricing);
 ``output_tokens`` includes reasoning. **A leg's own figure comes from that
 stream delta and from nothing else** (review round 9): a failed turn carries
 no usage on the stream, and the leg then records zeros marked
@@ -158,10 +164,16 @@ STRIPPED_ENV_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 # Any of them would undo the throwaway HOME (review finding, executed with a
 # synthetic BASH_ENV file; all three are unset on the development box).
 PROFILE_ENV_VARS = ("BASH_ENV", "ENV", "ZDOTDIR")
-# config.effort -> codex model_reasoning_effort. Explicit, not a pass-through:
-# codex accepts any string silently. ``ultra`` (automatic sub-agent delegation)
-# is intentionally absent.
-EFFORT_MAP: dict[str, str] = {e: e for e in ("low", "medium", "high", "xhigh", "max")}
+# The config.effort values accepted for codex's model_reasoning_effort. This
+# is an ALLOWLIST, not a translation table: the names are codex's own, so the
+# value passes through unchanged and the membership check is the whole point —
+# codex accepts any string silently, so an unlisted effort would otherwise run
+# at the model default and be published as if it had been honoured. Round 17:
+# it used to be spelled ``EFFORT_MAP``, an identity dict whose comment claimed
+# it was "not a pass-through", so a reader had to check the dict for a rename
+# that was never there. ``ultra`` (automatic sub-agent delegation) is
+# intentionally absent.
+EFFORTS: frozenset[str] = frozenset({"low", "medium", "high", "xhigh", "max"})
 # Env-name patterns codex must not expose to the agent's shell. Verified
 # 2026-09-11 (gpt-5.6-sol probes): together with ``--disable shell_snapshot``
 # and ``experimental_use_profile=false`` this hides every matching variable
@@ -186,7 +198,7 @@ _ENV_POLICY_ARGS = [
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _TERMINAL_TYPES = ("turn.completed", "turn.failed")
 
-__all__ = ["CodexCliHarness", "HarnessError", "EFFORT_MAP", "STRIPPED_ENV_VARS"]
+__all__ = ["CodexCliHarness", "HarnessError", "EFFORTS", "STRIPPED_ENV_VARS"]
 
 
 # -- environment / config helpers -------------------------------------------
@@ -284,13 +296,13 @@ def _dead_turn_retries() -> int:
 
 def _map_effort(config: dict[str, Any] | None) -> str:
     effort = (config or {}).get("effort")
-    if not isinstance(effort, str) or effort not in EFFORT_MAP:
+    if not isinstance(effort, str) or effort not in EFFORTS:
         raise HarnessError(
-            f"codex-cli requires config.effort to be one of {sorted(EFFORT_MAP)}; "
+            f"codex-cli requires config.effort to be one of {sorted(EFFORTS)}; "
             f"got {effort!r}. Effort is never inherited from ~/.codex/config.toml or "
             "the model default — it must be explicit so runs are comparable."
         )
-    return EFFORT_MAP[effort]
+    return effort
 
 
 def _codex_home() -> Path:

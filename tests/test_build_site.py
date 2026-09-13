@@ -7,11 +7,29 @@ import re
 from pathlib import Path
 
 from tools.build_site import (
+    LOWER_BOUND_METRICS,
     RUN_TOTAL_LOWER_BOUND_CAVEATS,
     RUN_TOTAL_NEUTRAL_CAVEATS,
     build,
     github_repo_url,
 )
+
+# The metrics the theory fixture declares, split by whether the run-total
+# lower bound applies to them. Written out BY NAME and deliberately not
+# derived from ``LOWER_BOUND_METRICS``: a list read out of the set under test
+# cannot notice the set changing. Every member below is checked in the
+# direction its tuple names, so dropping a member (a short figure publishes
+# clean) and promoting a non-member (a marker on an exact figure) both fail —
+# see test_the_lower_bound_metric_set_is_pinned_by_name for why the set is
+# ALSO pinned as a whole.
+MARKED_METRICS = (
+    "cost_usd",
+    "total_input_tokens",
+    "total_output_tokens",
+    "total_cache_tokens",
+)
+UNMARKED_METRICS = ("attempts", "total_wall_time_seconds", "passed", "max_attempts")
+THEORY_METRICS = MARKED_METRICS + UNMARKED_METRICS
 
 SAMPLE_RUN = {
     "benchmark": "eval-chess-backend",
@@ -355,8 +373,11 @@ def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
     docs = tmp_path / "docs"
     build(results_dir=tmp_path / "results", docs_dir=docs)
     run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
+    # The legend paragraph is gone with it: "on an attempt means" occurs only
+    # inside templates/run.html's legend, which OPENS with that glyph, so a
+    # separate assert on the phrase could not fail independently of the count
+    # above (round 17, same class as round 16's N-11).
     assert run_html.count("&#9888;") == 0
-    assert "on an attempt means" not in run_html
 
 
 def test_a_clean_codex_run_carries_no_caveat_marking_at_all(tmp_path: Path):
@@ -376,13 +397,17 @@ def test_a_clean_codex_run_carries_no_caveat_marking_at_all(tmp_path: Path):
     # (HTML-escaped in the <pre>, so the quotes are entities).
     assert "&#34;usage_faithful&#34;: true" in run_html
     assert "&#34;usage_caveats&#34;: []" in run_html
+    # …and the legend paragraph with it (see the entailment note above).
     assert run_html.count("&#9888;") == 0
-    assert "on an attempt means" not in run_html
     for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
                  "theories/cheaper.html"):
         html = (docs / page).read_text()
+        # Every emission of the phrase "lower bound" — run.html's explainer and
+        # _marks.html's lb_title — is inside a template unit that also emits
+        # this glyph, and the glyph's spelling is pinned by the positive
+        # surface tests, so asserting the phrase separately adds nothing
+        # (round 17).
         assert "&#8805;" not in html, page
-        assert "lower bound" not in html, page
 
 
 # --------------------------------------------------------------------------
@@ -424,8 +449,7 @@ def _site(tmp_path: Path, run: dict, *, with_theory: bool = False) -> Path:
             "hypothesis: the treatment is cheaper\n"
             "baseline: eval-chess-backend\n"
             "treatment: eval-chess-frontend\n"
-            "metrics:\n  - cost_usd\n  - total_input_tokens\n  - attempts\n"
-            "  - total_wall_time_seconds\n"
+            "metrics:\n" + "".join(f"  - {m}\n" for m in THEORY_METRICS) +
             "status: pending\n"
             "---\n\n## Background\n\nnone\n"
         )
@@ -485,6 +509,12 @@ def test_index_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
     # and `lb` is what gives that title a `cursor: help` cue (round 16).
     assert '<span class="lb" title="This run\'s totals are a lower bound' in index
     assert "&#8805;1,234,567</span>" in index
+    # …and the class is not decoration: the built stylesheet really gives it
+    # the hover cue. Round 16 added `.lb` to the `cursor: help` rule; round 17
+    # reverted that edit with all 289 tests still green, because the class was
+    # pinned only where it is EMITTED and nothing read static/style.css.
+    css = (docs / "style.css").read_text()
+    assert re.search(r"(?:^|[,{}\s])\.lb\b[^{}]*\{[^}]*cursor:\s*help", css, re.M), css
     # The aggregate tooltip's sentence, verbatim, as every surface renders it.
     assert (
         "This run's totals are a lower bound, not a measurement: it spent tokens the "
@@ -503,15 +533,44 @@ def test_benchmark_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
     assert "lower bound" in bench_html
 
 
+def _theory_cell(theory_html: str, metric: str) -> str:
+    """The baseline cell the theory comparison renders for ``metric``."""
+    cell = re.search(rf'<td class="mono">{metric}</td>\s*<td>(.*?)</td>', theory_html, re.S)
+    assert cell, f"the theory comparison has no {metric} row to check"
+    return cell.group(1).strip()
+
+
 def test_theory_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
     """SURFACE 4 of 4 — the theory comparison, where a baseline and a
-    treatment are read side by side and a short figure reads as a win."""
+    treatment are read side by side and a short figure reads as a win.
+
+    This is also the INCLUSION half of the ``LOWER_BOUND_METRICS`` membership
+    rule, per metric. Until round 17 only ``cost_usd`` was pinned: dropping
+    ``total_input_tokens``, ``total_output_tokens`` or ``total_cache_tokens``
+    from the set — individually or all three at once — left all 289 tests
+    green while this very table published 1,234,567 / 89,012 / 555 bare
+    beside a cost cell reading ``≥$12.3456 ⚠``, i.e. round 12's I-2 defect on
+    the one surface built for side-by-side comparison.
+
+    Not hypothetical: the ONE theory shipped in this repo
+    (theories/eval-fixture-injection.md) declares
+    ``total_output_tokens``, ``total_cache_tokens``, ``cost_usd``,
+    ``attempts``, ``total_wall_time_seconds`` and ``passed`` — i.e. two of the
+    three droppable members and the promotable non-member, on the page a
+    reader compares a baseline against a treatment on."""
     docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"), with_theory=True)
     theory_html = (docs / "theories" / "cheaper.html").read_text()
     # The metric comparison cell AND the run row underneath it.
     assert theory_html.count("&#8805;$12.3456") == 2
     assert theory_html.count("&#9888;") >= 1
     assert "lower bound" in theory_html
+    # Every token-derived metric carries BOTH marks: the ≥ on the figure and
+    # the ⚠ that explains it. One without the other is a figure a reader
+    # cannot act on.
+    for metric in MARKED_METRICS:
+        cell = _theory_cell(theory_html, metric)
+        assert "&#8805;" in cell, (metric, cell)
+        assert "&#9888;" in cell, (metric, cell)
 
 
 def test_missing_makes_the_run_total_a_lower_bound(tmp_path: Path):
@@ -537,8 +596,9 @@ def test_absorbed_missing_leg_alone_does_not_shorten_the_run_total(tmp_path: Pat
     for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
                  "theories/cheaper.html"):
         html = (docs / page).read_text()
+        # …and no "lower bound" copy either — entailed by this glyph, since
+        # every emission of that phrase sits in a template unit that emits it.
         assert "&#8805;" not in html, page
-        assert "lower bound" not in html, page
     # …but the per-attempt marking round 11 added is untouched.
     assert (docs / RUN_HTML).read_text().count("&#9888;") == 2
 
@@ -564,26 +624,55 @@ def test_a_faithful_run_carries_no_lower_bound_marking(tmp_path: Path):
 
 def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_path: Path):
     """The lower bound applies to the token-derived figures and to nothing
-    else (``LOWER_BOUND_METRICS``): wall time, attempts and pass/fail are
-    measured elsewhere and are not short.
+    else (``LOWER_BOUND_METRICS``): wall time, attempts, the attempt cap and
+    pass/fail are measured elsewhere and are not short.
 
-    The DANGEROUS direction — dropping a token metric, so a short figure
-    publishes clean — is pinned by the four surface tests above. This pins the
-    other one, which is cheap to ship and hard to notice: round 14 added
+    This is the EXCLUSION half of the membership rule; the inclusion half is
+    in test_theory_page_presents_a_short_total_as_a_lower_bound. (Round 17
+    correction: this docstring used to claim the inclusion half was "pinned
+    by the four surface tests above". It was not — those three of the four
+    token metrics were droppable with the suite green, because the other
+    three surfaces mark their token columns from ``totals_are_lower_bound``
+    in the templates and never consult ``LOWER_BOUND_METRICS`` at all. The
+    theory comparison is the ONLY surface that keys marking on the metric.)
+
+    Over-marking is cheap to ship and hard to notice: round 14 added
     ``attempts`` and the wall time to the set, the suite as it stood (271
     tests) stayed green, and a caveated run's theory page rendered
-    ``&#8805;2 &#9888;`` on an attempt count that is complete. A lower-bound
-    marker on a figure that is exact devalues the marker everywhere it is
-    right."""
+    ``&#8805;2 &#9888;`` on an attempt count that is complete. Adding
+    ``passed`` still left 289 green in round 17 and renders ``&#8805;&#10003;
+    &#9888;`` — a lower bound on a boolean — on the one metric plan §4.5 and
+    build_site.py both name as out of scope. A lower-bound marker on a figure
+    that is exact devalues the marker everywhere it is right."""
     docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"), with_theory=True)
     theory_html = (docs / "theories" / "cheaper.html").read_text()
-    for metric, figure in (("attempts", "2"), ("total_wall_time_seconds", "1680s")):
-        cell = re.search(rf'<td class="mono">{metric}</td>\s*<td>(.*?)</td>', theory_html, re.S)
-        assert cell, f"the theory comparison has no {metric} row to check"
-        assert cell.group(1).strip() == figure, (metric, cell.group(1))
+    figures = {
+        "attempts": "2",
+        "total_wall_time_seconds": "1680s",
+        "passed": "\u2713",
+        "max_attempts": "5",
+    }
+    assert set(figures) == set(UNMARKED_METRICS)
+    for metric in UNMARKED_METRICS:
+        # Exact equality is the assertion: it excludes both marks and pins the
+        # figure that is really there, so the row cannot pass by being absent.
+        assert _theory_cell(theory_html, metric) == figures[metric], metric
     # ...and not vacuously: the token-derived cells of the SAME table ARE
     # marked, so this really is a run whose totals are a lower bound.
     assert "&#8805;$12.3456" in theory_html
+
+
+def test_the_lower_bound_metric_set_is_pinned_by_name():
+    """``LOWER_BOUND_METRICS`` as a whole, so a fifth member cannot arrive
+    unexamined.
+
+    The two rendering tests above check each metric they KNOW about, in the
+    direction its tuple names. What they cannot see is a member added that
+    the theory fixture does not declare — it would be marked on a table no
+    test reads. This closes that: any edit to the set fails here and has to
+    be classified into one of the two tuples, which is what puts it under a
+    rendering assertion."""
+    assert set(MARKED_METRICS) == LOWER_BOUND_METRICS
 
 
 def test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short(tmp_path: Path):
@@ -723,6 +812,40 @@ def test_the_raw_json_explainer_says_what_usage_faithful_means(tmp_path: Path):
         "attempt's <code>usage_delta</code> with the <code>usage_faithful</code> "
         "flag that says whether it measures that attempt alone" in para
     ), para
+
+
+def test_an_unclassified_caveat_makes_the_run_total_a_lower_bound(tmp_path: Path):
+    """The run-level filter is deny-by-default: a caveat value this checkout
+    does not classify marks the total rather than clearing it.
+
+    Unreachable from the harness in THIS checkout — the vocabulary guard below
+    forces every ``USAGE_CAVEATS`` value to be classified — but build_site.py
+    renders records written by harness versions it does not import, which is
+    the one case that guard cannot see, and is its own stated reason for
+    hard-coding the literals. Executed before the fix (round 17), with the
+    filter written as an intersection with ``RUN_TOTAL_LOWER_BOUND_CAVEATS``:
+    a record whose second attempt carried ``compaction_unmeasured`` rendered
+    the attempt's ⚠ and named the caveat on the run page, while the index
+    published a clean ``$12.3456`` — one page telling the reader that
+    attempt's tokens are unmeasurable and then presenting the run total as a
+    measurement. The attempt marker has always failed closed (it is gated on
+    ``usage_caveats`` being non-empty at all); this makes the run marker match
+    it."""
+    docs = _site(tmp_path, _run_with_caveats("compaction_unmeasured"), with_theory=True)
+    for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
+                 "theories/cheaper.html"):
+        html = (docs / page).read_text()
+        assert "&#8805;$12.3456" in html, page
+        assert "compaction_unmeasured" in html, page
+    # …and deny-by-default did not cost the neutral filter its teeth: a
+    # KNOWN-neutral caveat alongside an unknown one is still not named as a
+    # reason the total is short. (The neutral-alone case is
+    # test_absorbed_missing_leg_alone_does_not_shorten_the_run_total.)
+    docs = _site(
+        tmp_path / "mixed", _run_with_caveats("compaction_unmeasured", "absorbed_missing_leg")
+    )
+    reasons = re.search(r"Reason\(s\): <code>([^<]*)</code>", (docs / RUN_HTML).read_text())
+    assert reasons and reasons.group(1) == "compaction_unmeasured", reasons
 
 
 def test_every_harness_caveat_is_classified_for_run_totals():

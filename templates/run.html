@@ -113,8 +113,9 @@
    pages.yml rebuilds the site from source on push to main rather than
    shipping the committed docs/. That is the same "a marker on a figure that
    is exact devalues the marker everywhere it is right" rule that keeps wall
-   time and attempts unmarked (tools/build_site.py's LOWER_BOUND_METRICS,
-   plan §4.5 row 16), applied to the legend rather than to a figure.
+   time and attempts unmarked (tools/build_site.py's LOWER_BOUND_METRICS and
+   its §4.5 rows — cited by test name, since row NUMBERS rot every time a row
+   is inserted above them), applied to the legend rather than to a figure.
    Pinned empty by test_build_marks_no_attempt_when_the_harness_reports_none
    and test_a_clean_codex_run_carries_no_caveat_marking_at_all. #}
 {% if r.per_attempt|selectattr('usage_caveats')|list %}
