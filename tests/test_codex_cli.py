@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import time
+import types
 from pathlib import Path
 from typing import Any
 
@@ -180,6 +181,12 @@ class _PreflightSequence:
         return subprocess.CompletedProcess(cmd, rc, "", stderr)
 
 
+# Captured at import, BEFORE `isolated_env` patches the name out, so a test
+# can put the real function back and drive its own raise path through
+# start_build rather than through a stand-in that cannot fail the same way.
+_REAL_THROWAWAY_HOME_BASE = codex_cli._throwaway_home_base
+
+
 @pytest.fixture
 def isolated_env(monkeypatch, tmp_path):
     """No real codex home is globbed; no real sleeps; a known env to check."""
@@ -192,7 +199,24 @@ def isolated_env(monkeypatch, tmp_path):
     homes = tmp_path / "codex-homes"
     monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: homes)
     sleeps: list[float] = []
-    monkeypatch.setattr(codex_cli.time, "sleep", lambda s: sleeps.append(s))
+    # Give the module under test its OWN `time`, rather than reaching through
+    # it into the stdlib: `codex_cli.time is time`, so the old
+    # `setattr(codex_cli.time, "sleep", ...)` replaced time.sleep GLOBALLY for
+    # the duration of every test using this fixture, and
+    # test_wall_time_sums_legs_and_excludes_pauses installed a 4-value
+    # iterator as the global time.monotonic — any unrelated caller during
+    # that test raises StopIteration (round 16, N-12). The namespace carries
+    # everything codex_cli uses from `time`, so a new call site fails loudly
+    # here rather than silently reaching the real clock.
+    monkeypatch.setattr(
+        codex_cli,
+        "time",
+        types.SimpleNamespace(
+            time=time.time,
+            monotonic=time.monotonic,
+            sleep=lambda s: sleeps.append(s),
+        ),
+    )
     return sleeps
 
 
@@ -1053,19 +1077,16 @@ def _stage_rollout(legs: _Legs, tmp_path: Path, after_leg: dict[int, list[str]])
 
 
 
-def test_read_rollout_ignores_the_thread_total_of_an_earlier_turn():
+def test_read_rollout_ignores_the_thread_total_of_an_earlier_turn(tmp_path):
     """A resumed turn that 401s gets a turn_context line appended to the
     rollout but no usage record. The watermark must read as NONE — not as the
     previous turn's cumulative — or an earlier turn's record would look like
     evidence that THIS ATTEMPT did work, and a dead resume would be captured
     instead of retried."""
-    import tempfile as _tf
-
     lines = _rollout_lines() + [_last_turn_context_line()]  # SYNTHETIC tail: the dead turn's context line
-    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
-        fh.write("\n".join(lines) + "\n")
-    thread_total, rate_limits = codex_cli._read_rollout(fh.name)
-    os.unlink(fh.name)
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    thread_total, rate_limits = codex_cli._read_rollout(str(path))
     assert thread_total is None
     assert rate_limits is not None and rate_limits["plan_type"] == "plus"
 
@@ -1133,12 +1154,10 @@ def test_thread_total_advances_after_a_failed_leg_the_rollout_covers(monkeypatch
 
 
 
-def test_read_rollout_takes_the_last_usage_record_of_the_turn():
+def test_read_rollout_takes_the_last_usage_record_of_the_turn(tmp_path):
     """A build turn makes many model requests; each token_usage_record carries
     the thread's running cumulative, so the last one is the watermark. An
     earlier, smaller one would under-repair the baseline."""
-    import tempfile as _tf
-
     lines = _rollout_lines()
     idx = max(i for i, ln in enumerate(lines) if json.loads(ln).get("type") == "token_usage_record")
     real = json.loads(lines[idx])
@@ -1148,10 +1167,9 @@ def test_read_rollout_takes_the_last_usage_record_of_the_turn():
             k: (v // 2 if isinstance(v, int) else v) for k, v in real["payload"][key].items()
         }
     lines.insert(idx, json.dumps(earlier, separators=(",", ":")))
-    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
-        fh.write("\n".join(lines) + "\n")
-    thread_total, _rl = codex_cli._read_rollout(fh.name)
-    os.unlink(fh.name)
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    thread_total, _rl = codex_cli._read_rollout(str(path))
     assert thread_total == real["payload"]["thread_token_usage"]
 
 
@@ -1196,6 +1214,8 @@ def test_home_profile_keeps_the_incoming_path_after_the_runners(monkeypatch, tmp
     """codex prepends its arg0 helper dir (apply_patch, codex-linux-sandbox) to
     the agent's PATH; the profile must keep it, after the runner's PATH.
     Sourced directly so the check doesn't depend on this box's /etc/profile."""
+    if not Path("/bin/bash").exists():
+        pytest.skip("no bash")
     monkeypatch.setenv("PATH", "/runner/bin:/usr/bin")
     monkeypatch.delenv("LC_ALL", raising=False)
     monkeypatch.delenv("LANG", raising=False)
@@ -1230,14 +1250,33 @@ def test_throwaway_home_base_resolves_dotdot_and_ignores_relative_xdg(monkeypatc
 
 def test_rate_limit_print_never_fails_a_completed_leg(monkeypatch, tmp_path, isolated_env, capsys):
     """The rollout is an unstable format: a type drift in used_percent must
-    not turn a completed, token-spending leg into a crash."""
-    _write_rollout(tmp_path, [ln.replace('"used_percent":0.0', '"used_percent":"0.0"') for ln in _rollout_lines()])
-    assert any('"used_percent":"0.0"' in ln for ln in (tmp_path / "codex-home").rglob("*.jsonl").__next__().read_text().splitlines())
+    not turn a completed, token-spending leg into a crash.
+
+    The two windows carry DIFFERENT figures here (review round 16), which is
+    what makes the labels mean anything: with both at the fixture's 0.0 the
+    print was pinned only on its label TEXT, and swapping
+    ``rate_limits.get("primary")`` / ``.get("secondary")`` — so the 5-hour
+    window is published as the weekly one and vice versa, the worse bug,
+    since the 5-hour window is the one an operator watches on a Plus plan —
+    left the whole suite green. `secondary` keeps a real float so the mapping
+    is observable; `primary` takes the drifted string, so the type guard this
+    test exists for is still exercised."""
+    lines = [
+        ln.replace('"secondary":{"used_percent":0.0', '"secondary":{"used_percent":42.5')
+          .replace('"used_percent":0.0', '"used_percent":"0.0"')
+        for ln in _rollout_lines()
+    ]
+    _write_rollout(tmp_path, lines)
+    written = (tmp_path / "codex-home").rglob("*.jsonl").__next__().read_text().splitlines()
+    assert any('"used_percent":"0.0"' in ln for ln in written)
+    assert any('"used_percent":42.5' in ln for ln in written)
     legs = _Legs([(OK_START, "", 0)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert r.raw["usage_source"] == "stream"
-    assert "5h=0.0%" in capsys.readouterr().out
+    # The drifted 5-hour figure still prints, AND each figure is under its own
+    # label: this is the pin on the window mapping, not just on the text.
+    assert "5h=0.0% weekly=42.5%" in capsys.readouterr().out
 
 
 def test_dead_legs_do_not_print_stale_rate_limits(monkeypatch, tmp_path, isolated_env, capsys):
@@ -1455,16 +1494,13 @@ def test_harness_error_is_the_last_error_when_no_turn_failed(monkeypatch, tmp_pa
 
 
 def test_rate_limits_come_from_the_last_token_count(tmp_path):
-    import tempfile as _tf
-
     lines = _rollout_lines()
     last = max(i for i, ln in enumerate(lines) if '"token_count"' in ln)
     # SYNTHETIC: the last token_count reports a different figure than the first.
     lines[last] = lines[last].replace('"used_percent":0.0', '"used_percent":7.0', 1)
-    with _tf.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
-        fh.write("\n".join(lines) + "\n")
-    _thread_total, rate_limits = codex_cli._read_rollout(fh.name)
-    os.unlink(fh.name)
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    _thread_total, rate_limits = codex_cli._read_rollout(str(path))
     assert rate_limits["primary"]["used_percent"] == 7.0
 
 
@@ -2064,22 +2100,61 @@ def test_a_failed_start_never_leaves_a_resume_on_the_operators_home(
     with pytest.raises(HarnessError, match="continue_build called before start_build"):
         h.continue_build(a1.session_handle, "again")
 
+    # One leg total — the good run's — and its HOME was checked above, so a
+    # further `all(...)` over the same single call could not fail (round 16).
     assert len(legs.calls) == 1, "a codex leg was spawned after a failed start_build"
-    assert all(c["env"]["HOME"] != os.environ["HOME"] for c in legs.calls)
 
 
-@pytest.mark.parametrize("fails_at", ["preflight", "start_leg"])
+# Every raise site in ``start_build``, enumerated from the source and each one
+# EXECUTED (review round 16). The ones before the ``try:`` are the point: the
+# ``try``'s own ``except`` calls ``_reset_run_state`` on the way out, so the
+# only thing standing between a pre-``try`` raise and round 15's leak is that
+# the reset happens on ENTRY. That is a property of the reset's POSITION, and
+# a test that only exercises the two sites inside the ``try`` cannot see it.
+#
+#   codex_cli.py :1421  self._reset_run_state()      plain assignments — cannot raise
+#   codex_cli.py :1422  _map_effort(config)          HarnessError   -> "effort"
+#   codex_cli.py :1423  _throwaway_home_base()       HarnessError   -> "home_base"
+#   codex_cli.py :1424  base.mkdir(parents=True, …)  OSError        -> "base_mkdir"
+#   codex_cli.py :1428  _reap_throwaway_homes(base)  NOT a raise site: every
+#                       OSError is swallowed by construction. Executed against
+#                       an unremovable child (root-owned/read-only), a base
+#                       that does not exist and a base that is a regular file
+#                       — all three returned 0 rather than raising.
+#   codex_cli.py :1429  tempfile.mkdtemp(dir=base)   OSError        -> "mkdtemp"
+#   ---- try: ----
+#   codex_cli.py :1432  _prepare_home / _preflight   HarnessError   -> "preflight"
+#   codex_cli.py :1452  self._attempt(…)             HarnessError   -> "start_leg"
+#
+# Four reachable sites before the ``try``, all four covered below. The mutant
+# this kills, executed in round 16: move ``self._reset_run_state()`` from the
+# top of start_build down to immediately before the ``try:``. With only the
+# old "preflight"/"start_leg" cases the whole suite stays green (283 passed),
+# while a good run followed by ``--config effort=bogus`` — reachable from the
+# shipped CLI — leaves _worktree_dir, _model, _effort, _auth_mode,
+# _thread_total AND _home_override at the PREVIOUS run's values: round 15's
+# configuration exactly.
+
+
+@pytest.mark.parametrize(
+    "fails_at",
+    ["effort", "home_base", "base_mkdir", "mkdtemp", "preflight", "start_leg"],
+)
 def test_a_failed_start_clears_every_per_run_attribute(
-    monkeypatch, tmp_path, isolated_env, fails_at
+    monkeypatch, tmp_path, isolated_env, request, fails_at
 ):
-    """The class, not the one attribute (round 15).
+    """The class, not the one attribute (round 15) — at every raise site
+    ``start_build`` has (round 16).
 
-    ``continue_build``'s guard names three of the harness's SEVEN per-run
-    attributes; the HOME leak was in a fourth. Rather than grow the guard once
-    per attribute, a ``start_build`` that raises — at either of the two points
-    it can — now leaves the instance exactly as constructed. Comparing against
-    a pristine instance's ``vars()`` means an attribute added later is covered
-    without anyone remembering to extend a list here.
+    ``continue_build``'s guard named three of the harness's seven per-run
+    attributes at the time of the bug; the HOME leak was in a fourth. Rather
+    than grow the guard once per attribute, a ``start_build`` that raises — at
+    ANY of the points it can: before the throwaway HOME exists, in the
+    pre-flight, or in the start leg — leaves the instance exactly as
+    constructed. Comparing against a pristine instance's ``vars()`` means an
+    attribute added later is covered without anyone remembering to extend a
+    list here, and covering the pre-``try`` sites means the reset cannot be
+    moved off the entry without a test failing.
 
     ``start_leg`` is the second instance of the shape, found by enumerating
     rather than by another review round: the pre-flight passes, the start leg
@@ -2088,32 +2163,77 @@ def test_a_failed_start_clears_every_per_run_attribute(
     guard, ran in this run's worktree with this run's model, and billed the
     whole thread cumulative (7158 tokens) to one attempt as ``usage_faithful``
     where its own share was 3199."""
+    pre_try = fails_at in {"effort", "home_base", "base_mkdir", "mkdtemp"}
     pristine = dict(vars(CodexCliHarness()))
     if fails_at == "preflight":
         legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
         preflight = _PreflightSequence(
             [f"{CHATGPT_LINE}\n", "Not logged in\n"], returncodes=[0, 1]
         )
-        expected = "not logged in"
-    else:
+    elif fails_at == "start_leg":
         legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1), ("", "", 1)])
         preflight = _Preflight()
-        expected = "no thread.started"
+    else:
+        # A pre-``try`` failure spawns nothing at all, so the good run's two
+        # legs are the whole script.
+        legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1)])
+        preflight = _Preflight()
     _install(monkeypatch, legs, preflight)
     h = CodexCliHarness()
     a1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     # A run that also leaves the baseline gap set, so every attribute differs.
     h.continue_build(a1.session_handle, "fix it")
     assert dict(vars(h)) != pristine
+    spawned, checked = len(legs.calls), len(preflight.calls)
 
-    with pytest.raises(HarnessError, match=expected):
-        h.start_build(str(tmp_path / "other"), "p", "gpt-6-other", {"effort": "high"})
+    # Break the NEXT start_build at exactly one site. The sabotage happens
+    # here, not in the setup, so the good run above is untouched by it.
+    config: dict[str, Any] = {"effort": "high"}
+    exc: type[BaseException] = HarnessError
+    if fails_at == "effort":
+        config, expected = {"effort": "bogus"}, "config.effort"
+    elif fails_at == "home_base":
+        # The REAL helper, refusing a cache base the codex sandbox would make
+        # writable to the agent.
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", _REAL_THROWAWAY_HOME_BASE)
+        monkeypatch.delenv("TMPDIR", raising=False)
+        monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache")
+        expected = "writable to the agent"
+    elif fails_at == "base_mkdir":
+        # A regular file where the cache directory belongs: mkdir(exist_ok=True)
+        # re-raises, because the path exists and is not a directory.
+        blocked = tmp_path / "blocked-homes"
+        blocked.write_text("a file where the cache directory belongs\n")
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: blocked)
+        exc, expected = OSError, "blocked-homes"
+    elif fails_at == "mkdtemp":
+        if os.geteuid() == 0:
+            pytest.skip("root ignores the read-only bit this case is built on")
+        readonly = tmp_path / "readonly-homes"
+        readonly.mkdir()
+        readonly.chmod(0o500)
+        request.addfinalizer(lambda: readonly.chmod(0o700))
+        monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: readonly)
+        exc, expected = OSError, "readonly-homes"
+    elif fails_at == "preflight":
+        expected = "not logged in"
+    else:
+        expected = "no thread.started"
+
+    with pytest.raises(exc, match=expected):
+        h.start_build(str(tmp_path / "other"), "p", "gpt-6-other", config)
     assert dict(vars(h)) == pristine, "a failed start_build left per-run state behind"
     with pytest.raises(HarnessError, match="continue_build called before start_build"):
         h.continue_build(a1.session_handle, "again")
+    if pre_try:
+        # …and it really did fail before the ``try``: nothing was spawned and
+        # no pre-flight ran, so the ``except`` that also resets was never
+        # reached. Without this the case could pass for the wrong reason.
+        assert len(legs.calls) == spawned, "a pre-`try` case reached a codex leg"
+        assert len(preflight.calls) == checked, "a pre-`try` case reached the pre-flight"
 
 
-def test_a_codex_subprocess_is_refused_without_the_runs_throwaway_home(isolated_env):
+def test_a_codex_subprocess_is_refused_without_the_runs_throwaway_home():
     """The boundary itself (round 15). ``_subprocess_env``'s ``home_override``
     used to default to ``None`` and silently leave the operator's HOME in
     place, so every defence above it was the only thing standing between a
@@ -2146,9 +2266,13 @@ def test_a_resume_is_refused_when_the_throwaway_home_is_missing(
 # (Round 14: README cited NONE, so every README claim was covered only
 # transitively by a plan row restating the same rule.)
 # (Round 15: templates/ joined the contract's scope — run.html carries the
-# largest block of normative caveat prose in the repo and is the only
-# statement of these rules a reader of a published result ever sees, and
-# three independent inversions of it left the whole suite green.)
+# largest block of normative caveat prose in the repo, and three independent
+# inversions of it left the whole suite green.)
+# (Round 16: run.html is not the ONLY statement a reader of a published
+# result sees, which is what round 15 recorded here. It renders on the run
+# page alone; _marks.html's lb_title states the run-total rule on the index,
+# the benchmark page and the theory comparison. That sibling was the one
+# still unpinned — inverting its trailing clause left 283 green.)
 _DOCS_CITING_TESTS = (
     "plans/codex-cli-harness.md",
     "README.md",
@@ -2158,10 +2282,10 @@ _DOCS_CITING_TESTS = (
     "templates/_marks.html",
 )
 
-# The §4.5 table's shape floors. Bump BOTH when the table grows; the tests
-# below derive everything else from the rows themselves, so these two lines
-# are the only hand-maintained numbers left.
-_MIN_TABLE_ROWS = 22
+# The §4.5 table's row floor. Bump it when the table grows; everything else
+# is derived from the rows themselves, so this is the only hand-maintained
+# number left.
+_MIN_TABLE_ROWS = 27
 
 
 def test_every_test_named_in_the_docs_exists():
@@ -2189,8 +2313,11 @@ def test_every_test_named_in_the_docs_exists():
         defined.update(re.findall(r"^def (test_[A-Za-z0-9_]+)", path.read_text(), re.M))
 
     cited: dict[str, str] = {}
+    cited_by: dict[str, set[str]] = {}
     for rel in _DOCS_CITING_TESTS:
-        for name in re.findall(r"\btest_[a-z0-9_]+", (root / rel).read_text()):
+        names = set(re.findall(r"\btest_[a-z0-9_]+", (root / rel).read_text()))
+        cited_by[rel] = names
+        for name in sorted(names):
             cited.setdefault(name, rel)
 
     missing = {n: where for n, where in cited.items() if n not in defined}
@@ -2227,12 +2354,20 @@ def test_every_test_named_in_the_docs_exists():
     assert len(row_cites) >= len(rows), (
         f"{len(rows)} rows cite only {len(row_cites)} distinct tests between them"
     )
-    assert row_cites <= set(cited), "the doc scan did not read the table it is checking"
     # A silent regex change that stops matching would make all of it vacuous.
     assert "test_a_dead_resume_leg_leaves_the_attempt_faithful" in cited
-    assert len(cited) >= len(row_cites), (
-        f"expected the §4.5 table to be cited; found {sorted(cited)}"
-    )
+    # Every contract file must still carry citations of its OWN. The two
+    # assertions this replaces could not fail (round 16, N-1): `row_cites <=
+    # set(cited)` held by construction — row_cites is the same regex over a
+    # substring of a plan line, and the plan is itself in _DOCS_CITING_TESTS —
+    # and `len(cited) >= len(row_cites)` was then entailed by it. Between them
+    # they had replaced the only bound on citations OUTSIDE the plan's table.
+    # Executed with them in place: stripping every test_* citation from
+    # README.md, codex_cli.py, tools/build_site.py, run.html and _marks.html
+    # — 16 citations, i.e. every inline pin the contract requires in its
+    # declared file set — left the whole suite green.
+    uncited = sorted(rel for rel, names in cited_by.items() if not names)
+    assert not uncited, f"contract files that cite no test at all: {uncited}"
 
 
 def test_a_dead_resume_that_appended_nothing_is_not_handed_the_previous_turn(

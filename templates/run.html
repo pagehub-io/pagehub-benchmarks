@@ -38,8 +38,12 @@
 {% if r.totals_are_lower_bound %}
 {#
   Normative copy, inside the plan §4.5 contract as of review round 15: this
-  paragraph is the only statement of the run-total rule a reader of a
-  published result ever sees. Its clauses are pinned verbatim on the rendered
+  paragraph is the run page's statement of the run-total rule. It is NOT the
+  only one a reader of a published result sees — round 15's comment said so
+  and was wrong (corrected round 16): this renders on the run page alone,
+  while `_marks.html`'s `lb_title` states the same rule on the index, the
+  benchmark page and the theory comparison, and is all a reader who never
+  opens a run page ever sees. Its clauses are pinned verbatim on the rendered
   page by test_the_run_page_explainer_states_the_run_total_rule, and the
   caveat names it defines are checked against RUN_TOTAL_LOWER_BOUND_CAVEATS /
   RUN_TOTAL_NEUTRAL_CAVEATS, so a fourth caveat cannot be classified in
@@ -100,8 +104,22 @@
 
 <h2>Per-attempt breakdown</h2>
 {# Normative copy (§4.5 contract): pinned verbatim by
-   test_the_run_page_legend_states_what_a_marked_attempt_means. #}
+   test_the_run_page_legend_states_what_a_marked_attempt_means.
+
+   Gated on a marked attempt actually existing (review round 16). Ungated,
+   this legend put an orange &#9888; and a paragraph about unmeasurable codex
+   tokens on ALL 27 published claude-code run pages, none of which has a
+   caveated attempt — and it would have gone live at merge, because
+   pages.yml rebuilds the site from source on push to main rather than
+   shipping the committed docs/. That is the same "a marker on a figure that
+   is exact devalues the marker everywhere it is right" rule that keeps wall
+   time and attempts unmarked (tools/build_site.py's LOWER_BOUND_METRICS,
+   plan §4.5 row 16), applied to the legend rather than to a figure.
+   Pinned empty by test_build_marks_no_attempt_when_the_harness_reports_none
+   and test_a_clean_codex_run_carries_no_caveat_marking_at_all. #}
+{% if r.per_attempt|selectattr('usage_caveats')|list %}
 <p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (nothing measured that attempt&#8217;s turn), not provably its own (it was taken against a baseline that may be short by an earlier unmeasured turn, so it may span that turn too), or short by an abandoned thread (a dead leg was retried onto a new thread, so whatever the harness walked away from is billed to no attempt). More than one reason can apply to the same attempt. Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
+{% endif %}
 <table>
 <thead><tr>
   <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
@@ -130,6 +148,12 @@
 {% set has_raw = r.per_attempt|selectattr('raw_pretty')|list %}
 {% if has_raw %}
 <h2>Raw harness JSON (per attempt)</h2>
+{# Normative copy (§4.5 contract): this is where the reader is told what
+   `usage_faithful` MEANS, so it is the definition every raw JSON block below
+   is read against. Pinned verbatim by
+   test_the_raw_json_explainer_says_what_usage_faithful_means — round 16
+   inverted the clause to "whether the run passed" (a pass/fail flag, not a
+   measurement-quality one) and 283 tests stayed green. #}
 <p class="muted">What the harness returned for each attempt. Claude Code: the full <code>claude -p --output-format json</code> response (<code>modelUsage</code>, <code>usage</code>, <code>total_cost_usd</code>, <code>session_id</code>, …), verbatim. Codex CLI: a bounded summary of the <code>codex exec --json</code> stream (<code>thread_id</code>, the verbatim <code>usage</code> object and this attempt's <code>usage_delta</code> with the <code>usage_faithful</code> flag that says whether it measures that attempt alone, errors, subscription <code>rate_limits</code>, <code>rollout_path</code> to codex's own transcript relative to <code>$CODEX_HOME</code>). Kept so usage-parsing bugs can be back-filled without re-running. Older records (before this feature) won't have it.</p>
 {% for a in r.per_attempt %}
   {% if a.raw_pretty %}

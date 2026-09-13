@@ -123,8 +123,8 @@ head-to-head against Claude Code with the identical prompt, grader and run
 record. The adapter is `pagehub_benchmarks/harnesses/codex_cli.py`; the design
 and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
 
-- **Version:** developed and tested against `codex` 0.154.0 (`npm i -g
-  @openai/codex`). Nothing checks the version at run time — an older CLI
+- **Version:** requires `codex` **>= 0.153.0**; developed and tested against
+  0.154.0 (`npm i -g @openai/codex`). Nothing checks the version at run time — an older CLI
   whose `--json` stream layout differs fails the usage parse rather than
   being refused up front. A differing *rollout* layout does not: that read is
   best-effort and yields nothing on any problem, which costs the baseline

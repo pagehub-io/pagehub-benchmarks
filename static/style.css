@@ -29,7 +29,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr:hover td { background: #f7f8fa; }
 .pass { color: #2b8a3e; font-weight: 600; }
 .fail { color: #c92a2a; font-weight: 600; }
-.warn { color: #e8590c; font-weight: 600; cursor: help; }
+.warn { color: #e8590c; font-weight: 600; }
+/* Anything carrying a hover-only explanation says so with the cursor: the
+   marked figures in the token columns have a title but no triangle. */
+.warn, .lb { cursor: help; }
 .cards { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 2rem; }
 .card { border: 1px solid #e3e3e3; border-radius: 8px; padding: .85rem 1rem; min-width: 230px; flex: 1; }
 .card h3 { margin: 0 0 .4rem; }

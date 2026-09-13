@@ -69,9 +69,10 @@ raises. ``cost_usd`` in a run record is therefore a *computed* figure
 stream, never by matching error text:
 
 - no ``thread.started`` at all → :class:`HarnessError` (nothing to resume);
-- a *dead* turn — no non-error ``item.*`` event and no usage from any source
-  (no stream delta, and no rollout cumulative beyond a baseline with no
-  recorded gap: the third conjunct is review round 9's fix) — is retried
+- a *dead* turn — no non-error ``item.*`` event, no stream usage, and no
+  rollout EVIDENCE that the attempt worked (no cumulative beyond a baseline
+  with no recorded gap: the third conjunct is review round 9's fix; the
+  rollout is evidence of activity, never a usage source) — is retried
   ``CODEX_DEAD_TURN_RETRIES`` times (default 2, 5 s apart) and then raises on
   either leg, exactly as the Claude adapter raises on a non-zero exit. Auth /
   transport failures and a rejected (``invalid_prompt``) prompt are dead turns;
@@ -80,8 +81,9 @@ stream, never by matching error text:
   (the ``turn.failed`` message, else the last ``error`` event, else the
   stderr tail, else the exit code), so the runner grades whatever was written
   and resumes the thread;
-- ``turn.completed`` with no usage from any source raises — a success is
-  never recorded with zero tokens;
+- ``turn.completed`` whose STREAM reported no usage raises — a success is
+  never recorded with zero tokens (the rollout is not consulted: it is not a
+  usage source, see ``_usage_from``);
 - timeout (``CODEX_BUILD_TIMEOUT_SECONDS``, default 3600) kills the whole
   process group, drains the pipes and raises.
 
@@ -1055,8 +1057,14 @@ class CodexCliHarness(Harness):
     def _reset_run_state(self) -> None:
         """Every attribute that belongs to ONE run, back to its constructed
         value. This is the whole per-run state of the harness: ``start_build``
-        calls it on entry and on its failure path, so an instance is either in
-        exactly one run or in none — never half in the last one.
+        calls it on ENTRY and on either failure path (the pre-flight's and the
+        start leg's), so an instance is either in exactly one run or in none —
+        never half in the last one. The entry call is the load-bearing one:
+        four of ``start_build``'s reachable raise sites are BEFORE the ``try``
+        that owns those two handlers, so without it a raise at any of them
+        leaves the PREVIOUS run's state intact (round 16 — executed; the sites
+        are enumerated beside
+        test_a_failed_start_clears_every_per_run_attribute).
 
         Round 15 found the half-state this exists to prevent. The old failure
         path cleared ``_home_override`` alone; ``continue_build``'s guard
@@ -1473,9 +1481,13 @@ class CodexCliHarness(Harness):
         session_handle: str,
         followup_prompt: str,
     ) -> AttemptResult:
-        # Every attribute a resume leg consumes, including the throwaway HOME
-        # (round 15): a guard that checks a subset of them is a guard that lets
-        # a partially-reset instance through.
+        # The four attributes a resume leg needs NON-EMPTY, including the
+        # throwaway HOME (round 15). _thread_total / _thread_total_gap are
+        # consumed too (_attempt's delta baseline) but have legitimate None /
+        # False values after a successful start, so they cannot be checked
+        # here — what keeps them consistent is that start_build resets the
+        # whole set on entry rather than this guard growing an attribute at a
+        # time.
         if not (self._worktree_dir and self._model and self._effort and self._home_override):
             raise HarnessError("continue_build called before start_build")
         if not session_handle:

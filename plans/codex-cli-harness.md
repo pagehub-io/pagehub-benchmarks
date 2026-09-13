@@ -28,6 +28,20 @@ review round 11:** that vocabulary gained a third such value,
 `"dead_leg_unmeasured"`, for an attempt whose figure is short by a thread a
 dead start leg abandoned — previously published as `usage_faithful: true`
 and therefore unflagged on the results site (§4.5, §4.8 item 19).
+**Amended after review rounds 12–16** (this log ended at round 11 while the
+body already cited four later rounds — corrected in round 16): round 12
+extended lower-bound marking from the attempt row to every aggregate surface
+(§4.5); round 13 added the statement-to-test table and its anti-drift guard
+(§4.5); round 14 pinned both conjuncts of the absorbed-without-missing
+premise and widened the citation contract to README (§4.5, §4.8); round 15
+put `templates/` inside that contract, added the "what the guard does and
+does not certify" paragraph, and fixed the half-reset `start_build` left
+behind on its failure path (§4.4, §4.5); round 16 pinned the reset's
+POSITION at every raise site before the `try` (§4.4, §4.8), pinned
+`_marks.html`'s `lb_title` — the run-total rule as the index, benchmark and
+theory pages state it — and gated the per-attempt caveat legend so it does
+not mark the 27 published claude-code runs, none of which has a caveated
+attempt (§4.5).
 
 ## 1. Goal
 
@@ -133,9 +147,11 @@ was not allowed to guess at. Every one was settled by execution once
   text names only `config.toml`; the binary reads all of these; none exist on
   this box today.
 
-Unblock: `codex login --device-auth`, then `scratchpad/capture_codex_ok.sh`
-records the 0.2 probe **and a resume leg** verbatim (two fixtures) and dumps
-both turns' rollout usage payloads (0.4).
+Unblock: `codex login --device-auth`, then capture the 0.2 probe **and a
+resume leg** verbatim (two fixtures) and dump both turns' rollout usage
+payloads (0.4). *Historical: this was done in Stage 2 by a throwaway
+`scratchpad/capture_codex_ok.sh`, which was never committed and is not in the
+repo — the fixtures it produced are, under `tests/fixtures/`.*
 
 ### 3.3 Verified by reading external sources (not executed here)
 
@@ -214,8 +230,12 @@ codex exec resume <thread_id> --ignore-user-config \
   dead-leg evidence, rate limits) — *the second half is superseded: this read
   "as the failure-path usage source" until round 9 deleted rollout-sourced
   usage; the failure path now records zeros marked `["missing"]`* (§4.5).
-- The adapter remembers `worktree_dir`, `model`, mapped `effort` from
-  `start_build` (mirrors `ClaudeCodeHarness._worktree_dir/_model`).
+- The adapter remembers the **seven per-run attributes enumerated in
+  `_reset_run_state`** from `start_build` — `worktree_dir`, `model` and
+  mapped `effort` (mirroring `ClaudeCodeHarness._worktree_dir/_model`), plus
+  `auth_mode`, the thread-cumulative baseline and its gap flag, and the
+  throwaway HOME. §4.4 is the canonical list; restating a subset here is what
+  round 15's bug was made of, so this points at it rather than repeating it.
 
 ### 4.2 Effort mapping
 
@@ -296,7 +316,16 @@ throwaway HOME holds only a `.bash_profile` that re-exports the runner's
 skips that reset only because `WSL_DISTRO_NAME` is set; reproduced with it
 unset) and the runner's locale (see the Locale row of §3.4); nothing else.
 The directory is removed if the pre-flight fails; otherwise it is left
-behind (one tiny file per run). **The override is not optional at the
+behind (one tiny file per run) until a later run reaps it: `start_build`
+calls `_reap_throwaway_homes` before creating its own home and deletes every
+`run-*` directory older than `THROWAWAY_HOME_TTL_SECONDS` (7 days), because
+`Harness` has no teardown hook and Ctrl-C escapes any `try`/`finally`. The
+reap is best-effort — every `OSError` is swallowed, so a root-owned or
+read-only leftover can never fail a run
+(`test_stale_throwaway_homes_are_reaped_on_the_next_start`,
+`test_reaping_never_fails_a_run`,
+`test_reaping_survives_a_home_that_genuinely_cannot_be_removed`).
+**The override is not optional at the
 boundary** (*round 15*): `_subprocess_env` requires a non-empty home and
 raises without one, rather than defaulting to the operator's HOME, and
 `continue_build` refuses a resume that has no throwaway home to run in.
@@ -481,11 +510,22 @@ rule, as implemented in `_usage_from`:
   statement that will drift again, and is either wrong or a coverage gap.
 
   `templates/` joined that scope in round 15, and is the part of it a reader
-  actually meets: `run.html` carries the largest block of normative caveat
-  prose in the repo and is the only statement of these rules anyone reading a
-  published result ever sees. Three independent inversions of that copy — the
-  neutral caveat made lower-bound, the dead leg retried on the same thread,
-  the marked attempt called exact — each left the whole suite green.
+  actually meets: no statement of these rules outside `templates/` is ever
+  rendered to someone reading a published result. Three independent
+  inversions of `run.html`'s copy — the neutral caveat made lower-bound, the
+  dead leg retried on the same thread, the marked attempt called exact — each
+  left the whole suite green.
+
+  **Two templates carry it, not one** (corrected in round 16; rounds 15's
+  wording said `run.html` was the only statement a reader ever sees, and that
+  was wrong). `run.html` has the largest block — but it renders on the run
+  page alone. `_marks.html`'s `lb_title` macro is the run-total rule as the
+  index's head-to-head cost table, the benchmark page and the theory
+  comparison state it, and a reader who never opens a run page sees only that
+  sentence. It was unpinned for a round longer than `run.html` for exactly
+  that reason: inverting its trailing clause to "the real figure is exactly
+  this and needs no adjustment" left all 283 tests green. Both templates are
+  now pinned verbatim on the rendered page — see the rows below.
 
   **What the guard does and does not certify.** `test_every_test_named_in_the_docs_exists`
   checks the *shape* of the table and that every cited name *resolves* to a
@@ -494,8 +534,12 @@ rule, as implemented in `_usage_from`:
   statement beside it — repointing a row at an unrelated real test passes.
   That property is established by mutation (implement the statement as
   written; the cited test must fail), which is done per review round and
-  recorded in the commit messages, not by this test. A green build means the
-  citations resolve; it is not a certificate that the table is honest.
+  recorded in the commit messages, not by this test. It also checks that
+  every file in the contract's declared set still cites **at least one** test
+  — added in round 16, replacing two assertions that could not fail; it does
+  not check that a file still carries every inline pin it once had. A green
+  build means the citations resolve; it is not a certificate that the table
+  is honest.
 
   | Statement | Pinned by |
   |---|---|
@@ -521,6 +565,11 @@ rule, as implemented in `_usage_from`:
   | A record with no `raw` — claude-code and legacy runs — gets no marker rather than a false warning | `test_build_marks_no_attempt_when_the_harness_reports_none` |
   | The run page's own explanation of the marker states which caveats shorten a total and which do not, in the words a reader is given | `test_the_run_page_explainer_states_the_run_total_rule` |
   | …and its per-attempt legend states what a marked figure is — short, not provably its own, or short by an abandoned thread — never that it is exact | `test_the_run_page_legend_states_what_a_marked_attempt_means` |
+  | …and that legend renders **only** on a run that has a marked attempt: ungated it put a ⚠ on all 27 published claude-code pages, none of which has one, and pages.yml rebuilds from source on push so it would ship at merge | `test_build_marks_no_attempt_when_the_harness_reports_none`, `test_a_clean_codex_run_carries_no_caveat_marking_at_all` |
+  | The aggregate tooltip — the statement of the run-total rule on the index, benchmark and theory pages, and all a reader who never opens a run page sees — says the real figure is **higher by an unknown amount** | `test_index_presents_a_short_total_as_a_lower_bound` |
+  | The run page says what `usage_faithful` means: whether the figure measures **that attempt alone**, not whether the run passed | `test_the_raw_json_explainer_says_what_usage_faithful_means` |
+  | A `start_build` that raises leaves the instance exactly as constructed, whichever of its raise sites fires — including the four before the `try`, which is what pins the reset to the ENTRY rather than merely to the failure paths | `test_a_failed_start_clears_every_per_run_attribute` |
+  | A clean codex run — every attempt `usage_faithful` with an empty `usage_caveats` — renders no marker of any kind on any surface | `test_a_clean_codex_run_carries_no_caveat_marking_at_all` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
   jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured
@@ -680,7 +729,7 @@ error text**, and treats "the model never ran" the same on every attempt:
 7. Exit `0` with a `turn.failed` terminal event, or with no terminal event,
    is a failure per rules 2–5 (exit codes are advisory; the stream is the
    truth).
-8. **`turn.completed` with no usage from any source ⇒ `HarnessError`**
+8. **`turn.completed` whose STREAM reported no usage ⇒ `HarnessError`**
    (§4.5). A success is never recorded with zero tokens.
 
 Consequences of a *captured* failure (unchanged runner): the FAIL record is
@@ -776,7 +825,7 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     `communicate` ⇒ SIGTERM to the group, pipes closed, the interrupt
     re-raised unwrapped (never a `HarnessError`), no drain attempt.
 11. **parser:** non-JSON chatter ⇒ `unparsed_lines` bounded + count; exit 0 +
-    `turn.failed` ⇒ failure; **`turn.completed` with no usage anywhere ⇒
+    `turn.failed` ⇒ failure; **`turn.completed` with no STREAM usage ⇒
     `HarnessError`**; `errors` bounded + count; stderr tail bounded (2000)
     and ANSI-stripped.
 12. **attempt-1→2 chain** (after smoke) through `execute_benchmark_run` with
@@ -823,11 +872,26 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     `rate_limits` come from the LAST `token_count`; `stderr_tail` keeps the
     end; a resume leg's `reasoning_output_tokens` is its share of the thread
     total. Each rule was shown to survive the suite as a mutation first.
-    Still surviving, accepted as low-value (review round 6): first-vs-last
-    rollout file match and first-vs-last terminal event (equivalent on real
-    data: one rollout per thread, one terminal event per leg), the 500-char
-    bound on unparsed lines, an unresolved writable-root comparison (needs a
-    writable location outside `/tmp` to test), and the rate-limit print label.
+    Still surviving, accepted as low-value (review round 6; the list was
+    re-executed in round 16 and two of its five entries were wrong):
+    first-vs-last rollout file match and first-vs-last terminal event
+    (equivalent on real data: one rollout per thread, one terminal event per
+    leg), the 500-char bound on unparsed lines, and the `root_real` HALF of
+    the writable-root comparison (needs a writable location outside `/tmp`
+    to test). Corrected in round 16: (a) the `base` half of that comparison
+    is no longer unpinned — dropping `.resolve()` on `base` is KILLED by
+    `test_throwaway_home_base_resolves_dotdot_and_ignores_relative_xdg`
+    (executed: 1 failed, 288 passed), so only the `root_real` side survives;
+    (b) "the rate-limit print label" was already pinned —
+    `test_rate_limit_print_never_fails_a_completed_leg` asserts the literal
+    `5h=0.0%`. What actually survived was the window MAPPING: swapping
+    `rate_limits.get("primary")` / `.get("secondary")`, so the 5-hour figure
+    publishes under the weekly label and vice versa, left the suite green.
+    That is materially worse than the label it displaced — the 5-hour window
+    is the one an operator watches on a Plus plan — and it is now killed:
+    the same test gives the two windows different figures (`5h=0.0%
+    weekly=42.5%`), which is what the pin needed, because with both at the
+    fixture's 0.0 no assertion on either figure can tell the mapping apart.
 19. **Per-attempt usage is faithful or says it is not** (review rounds 7–9,
     on the REAL rollout lines and REAL streams). A leg the stream could not
     measure is marked `usage_missing` / `["missing"]` and records zeros —
@@ -902,7 +966,8 @@ calls of its own.
 Each step is cheap and gates the next. Back up `~/.codex/config.toml` first.
 
 1. `codex login status` ⇒ exit 0 + `Logged in using ChatGPT` (U6; note
-   which stream). Run `scratchpad/capture_codex_ok.sh`: records the exact
+   which stream). Capture (done in Stage 2 with a throwaway script that was
+   never committed — see §3.2): the exact
    0.2 probe **verbatim** to `tests/fixtures/codex_exec_ok.jsonl`, then a
    resume leg on the same thread to `tests/fixtures/codex_exec_resume_ok.jsonl`,
    and dumps both turns' rollout usage payloads (U1/U2, incl. per-turn vs.

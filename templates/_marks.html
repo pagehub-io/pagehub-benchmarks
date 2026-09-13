@@ -22,6 +22,9 @@
    triangles per row is noise — so the explanation rides on the number's own
    title instead. Without it, index.html and benchmark.html rendered a bare
    &#8805;3,199 whose only gloss was the tooltip on the cost cell further
-   along the row (review round 13). #}
-{% macro count(r, value) %}{% if r.totals_are_lower_bound %}<span title="{{ lb_title(r.totals_lower_bound_caveats) }}">&#8805;{{ '{:,}'.format(value) }}</span>{% else %}{{ '{:,}'.format(value) }}{% endif %}{% endmacro %}
+   along the row (review round 13). The `lb` class is what makes the tooltip
+   discoverable: `cursor: help` used to be defined on `.warn` alone, so the
+   figure carried an explanation with nothing to say so (round 16). Pinned by
+   test_index_presents_a_short_total_as_a_lower_bound. #}
+{% macro count(r, value) %}{% if r.totals_are_lower_bound %}<span class="lb" title="{{ lb_title(r.totals_lower_bound_caveats) }}">&#8805;{{ '{:,}'.format(value) }}</span>{% else %}{{ '{:,}'.format(value) }}{% endif %}{% endmacro %}
 {% macro metric(display, lower_bound, caveats) %}{% if lower_bound %}&#8805;{{ display }} {{ warn(caveats) }}{% else %}{{ display }}{% endif %}{% endmacro %}

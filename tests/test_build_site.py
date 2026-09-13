@@ -333,9 +333,20 @@ def test_build_flags_an_attempt_whose_tokens_are_not_its_own(tmp_path: Path):
 
 
 def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
-    """A run whose attempts are all faithful, and a legacy run with no ``raw``
-    at all, must carry no warning glyph in the table — a false warning on
-    every historical record would make the marker worthless."""
+    """A LEGACY record — ``per_attempt`` entries with no ``raw`` key at all,
+    which is every one of the 27 published claude-code runs — carries no
+    warning glyph anywhere on its page: not in the table, and not in the
+    legend above it. A false warning on every historical record would make
+    the marker worthless.
+
+    (Scoped to the legacy shape in round 16: the docstring used to claim an
+    all-faithful codex run too, and rendered only this one. That shape is
+    ``test_a_clean_codex_run_carries_no_caveat_marking_at_all`` below.)
+
+    The count is 0, not 1: round 16 gated the legend on a marked attempt
+    existing. Ungated it shipped a &#9888; to all 27 published claude-code
+    pages the moment this branch merged, because pages.yml rebuilds the site
+    from source rather than publishing the committed docs/."""
     results = tmp_path / "results" / "eval-chess-frontend"
     results.mkdir(parents=True)
     (results / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.json").write_text(
@@ -344,7 +355,34 @@ def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
     docs = tmp_path / "docs"
     build(results_dir=tmp_path / "results", docs_dir=docs)
     run_html = (docs / "runs" / "claude-code__claude-opus-4-7__effort-xhigh__2026-05-12T16-30-00Z.html").read_text()
-    assert run_html.count("&#9888;") == 1  # only the explanatory line
+    assert run_html.count("&#9888;") == 0
+    assert "on an attempt means" not in run_html
+
+
+def test_a_clean_codex_run_carries_no_caveat_marking_at_all(tmp_path: Path):
+    """The shape the FIRST clean codex run will produce, which no site test
+    rendered before round 16 (N-10): every attempt carries ``raw`` with
+    ``usage_faithful`` true and an EMPTY ``usage_caveats`` list.
+
+    Distinct from the legacy record above, where ``raw`` is absent entirely —
+    an empty list and a missing key are different inputs to the template's
+    ``{% if a.usage_caveats %}`` row gate and to the legend's
+    ``selectattr('usage_caveats')``, and only this one exercises the codex
+    path. Nothing on the page may suggest a measurement problem: no attempt
+    triangle, no legend, no lower-bound prefix on any aggregate."""
+    docs = _site(tmp_path, _run_with_caveats(), with_theory=True)
+    run_html = (docs / RUN_HTML).read_text()
+    # …and not vacuously: this really is the codex shape, raw JSON and all
+    # (HTML-escaped in the <pre>, so the quotes are entities).
+    assert "&#34;usage_faithful&#34;: true" in run_html
+    assert "&#34;usage_caveats&#34;: []" in run_html
+    assert run_html.count("&#9888;") == 0
+    assert "on an attempt means" not in run_html
+    for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
+                 "theories/cheaper.html"):
+        html = (docs / page).read_text()
+        assert "&#8805;" not in html, page
+        assert "lower bound" not in html, page
 
 
 # --------------------------------------------------------------------------
@@ -424,16 +462,36 @@ def test_run_page_headline_presents_a_short_total_as_a_lower_bound(tmp_path: Pat
 
 def test_index_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
     """SURFACE 2 of 4 — the head-to-head cost table this repo exists to
-    produce, plus the "cheapest pass" card above it."""
+    produce, plus the "cheapest pass" card above it.
+
+    Also the pin on ``_marks.html``'s ``lb_title`` (review round 16). That
+    macro is the ONLY statement of the run-total rule on the index, the
+    benchmark page and the theory comparison — ``run.html``'s paragraph never
+    renders for a reader who does not open a run page — and round 15 closed
+    ``run.html`` while leaving this one unpinned: inverting the trailing
+    clause to "the real figure is exactly this and needs no adjustment" left
+    all 283 tests green, i.e. the site telling every index reader that a
+    lower-bound total needs no adjustment. Only the OPENING clause was
+    incidentally covered, by the substring assertion below. Deliberate
+    rewording updates this string; an inversion cannot, because a sentence
+    and its negation are not the same string."""
     docs = _site(tmp_path, _run_with_caveats("dead_leg_unmeasured"))
     index = (docs / "index.html").read_text()
     assert index.count("&#8805;$12.3456") == 2  # all-runs row + cheapest-pass card
     assert index.count("&#9888;") >= 1
     assert "lower bound" in index
     # The token columns take the prefix but no triangle, so the number itself
-    # has to explain it — the cost cell's tooltip is columns away (round 13).
-    assert '<span title="This run\'s totals are a lower bound' in index
+    # has to explain it — the cost cell's tooltip is columns away (round 13) —
+    # and `lb` is what gives that title a `cursor: help` cue (round 16).
+    assert '<span class="lb" title="This run\'s totals are a lower bound' in index
     assert "&#8805;1,234,567</span>" in index
+    # The aggregate tooltip's sentence, verbatim, as every surface renders it.
+    assert (
+        "This run's totals are a lower bound, not a measurement: it spent tokens the "
+        "harness could not attribute to any attempt (dead_leg_unmeasured), so the real "
+        "figure is higher by an unknown amount. See the per-attempt table on the run "
+        "page." in index
+    )
 
 
 def test_benchmark_page_presents_a_short_total_as_a_lower_bound(tmp_path: Path):
@@ -486,15 +544,22 @@ def test_absorbed_missing_leg_alone_does_not_shorten_the_run_total(tmp_path: Pat
 
 
 def test_a_faithful_run_carries_no_lower_bound_marking(tmp_path: Path):
-    """A run with no caveats at all — and a legacy record with no ``raw`` —
-    must render the plain figure. A false ``≥`` on every historical record
-    would make the marking worthless."""
+    """A LEGACY record — no ``raw`` on any attempt — must render the plain
+    figure on every surface. A false ``≥`` on every historical record would
+    make the marking worthless.
+
+    (Scoped in round 16: the docstring claimed a caveat-free codex run as
+    well and rendered only ``SAMPLE_RUN``. The codex shape is
+    ``test_a_clean_codex_run_carries_no_caveat_marking_at_all``.)"""
     docs = _site(tmp_path, dict(SAMPLE_RUN), with_theory=True)
     for page in ("index.html", RUN_HTML, "benchmarks/eval-chess-backend.html",
                  "theories/cheaper.html"):
         html = (docs / page).read_text()
         assert "&#8805;" not in html, page
-        assert "$12.3456" in html and "&#8805;$12.3456" not in html, page
+        # The plain figure is really there — the line above would also pass on
+        # a page that rendered no cost at all. (The `and "&#8805;$12.3456" not
+        # in html` conjunct this replaces was entailed by it: round 16, N-11.)
+        assert "$12.3456" in html, page
 
 
 def test_a_short_runs_wall_time_and_attempts_are_not_marked_as_lower_bounds(tmp_path: Path):
@@ -554,7 +619,7 @@ def test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short(tmp_path: 
 
     run_html = (docs / RUN_HTML).read_text()
     reasons = re.search(r"Reason\(s\): <code>([^<]*)</code>", run_html)
-    assert reasons and reasons.group(1) == "missing", run_html[:0] or reasons
+    assert reasons and reasons.group(1) == "missing", run_html[:2000]
     # …and not vacuously: the neutral caveat IS published, on the attempt row
     # that carries it, where it says spend MOVED rather than left the run.
     assert "(absorbed_missing_leg)" in run_html
@@ -564,14 +629,22 @@ def test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short(tmp_path: 
 # Review round 15: the reader-facing copy is inside the §4.5 contract too.
 #
 # templates/run.html carries the largest block of normative caveat prose in
-# the repo and is the only statement of these rules a reader of a published
-# result ever sees — and it was the one file the contract's scope excluded.
-# Three independent inversions of that published copy each left the whole
-# suite green: saying absorbed_missing_leg DOES shorten the totals, saying a
-# dead leg is retried on the SAME thread so nothing is short, and telling the
+# the repo — and it was the one file the contract's scope excluded. Three
+# independent inversions of that published copy each left the whole suite
+# green: saying absorbed_missing_leg DOES shorten the totals, saying a dead
+# leg is retried on the SAME thread so nothing is short, and telling the
 # reader a marked attempt's figure is exact. The surface tests only assert
 # that the substring "lower bound" and a caveat NAME appear; nothing asserted
-# what the copy says. These two do, on the rendered page.
+# what the copy says. These do, on the rendered page.
+#
+# Round 16 correction: round 15 recorded run.html as "the only statement of
+# these rules a reader of a published result ever sees". That is false, and
+# the false half is the one that stayed unpinned. run.html renders on the RUN
+# PAGE ONLY; _marks.html's lb_title states the run-total rule on the index,
+# the benchmark page and the theory comparison, so a reader who never opens a
+# run page sees that sentence and nothing else. It is pinned verbatim in
+# test_index_presents_a_short_total_as_a_lower_bound, beside the surface it
+# renders on.
 
 
 def _explainer(docs: Path, marker: str) -> str:
@@ -631,6 +704,25 @@ def test_the_run_page_legend_states_what_a_marked_attempt_means(tmp_path: Path):
         "no attempt)." in para
     )
     assert "More than one reason can apply to the same attempt." in para
+
+
+def test_the_raw_json_explainer_says_what_usage_faithful_means(tmp_path: Path):
+    """The run page's definition of ``usage_faithful``, verbatim (round 16).
+
+    It is the second unpinned statement in the same class as ``lb_title``:
+    the flag appears in every raw JSON block on the page, and this sentence
+    is the only place the page says what it means. Rewriting "whether it
+    measures that attempt alone" to "whether the run passed" — turning a
+    measurement-quality flag into a pass/fail one — left all 283 tests
+    green."""
+    docs = _site(tmp_path, _run_with_caveats("missing"))
+    para = _explainer(docs, "What the harness returned for each attempt")
+    assert (
+        "Codex CLI: a bounded summary of the <code>codex exec --json</code> stream "
+        "(<code>thread_id</code>, the verbatim <code>usage</code> object and this "
+        "attempt's <code>usage_delta</code> with the <code>usage_faithful</code> "
+        "flag that says whether it measures that attempt alone" in para
+    ), para
 
 
 def test_every_harness_caveat_is_classified_for_run_totals():
