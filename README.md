@@ -151,7 +151,7 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   runs. (`$CODEX_HOME/config.toml` is a separate matter: it is excluded outright by
   `--ignore-user-config` on both legs.) Codex accepts any string here without
   validating it,
-  so the adapter's explicit map is the only guard. `ultra` (automatic sub-agent
+  so the adapter's explicit allowlist is the only guard. `ultra` (automatic sub-agent
   delegation) is deliberately not mapped. `--ignore-user-config` is passed on
   both legs so the operator's config never leaks in; codex still appends a
   `[projects."<worktree>"] trust_level` entry to `$CODEX_HOME/config.toml` per run
@@ -341,9 +341,7 @@ That is the rule the site renders as `≥` (`RUN_TOTAL_NEUTRAL_CAVEATS` in
 values that shorten a total today, by
 `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total` for the one
 that does not, and by `test_an_unclassified_caveat_makes_the_run_total_a_lower_bound`
-for the deny-by-default direction itself); this paragraph is pinned against
-the renderer's executed behaviour by
-`test_the_readme_states_the_run_total_predicate_the_renderer_implements`.
+for the deny-by-default direction itself).
 A consumer reading the JSON directly has to apply it, and reading `cost_usd`
 without it will sometimes understate a run.
 

@@ -349,9 +349,7 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         # once — in the deny-by-default note below — and this comment
         # deliberately does not restate it. It used to, naming the lower-bound
         # set as the predicate and calling every other caveat total-neutral;
-        # both halves were false against the filter three lines down. The
-        # spelling is retired in tests/test_prose_contract.py so it cannot
-        # come back (review round 18).
+        # both halves were false against the filter three lines down.
         caveats_any = sorted(
             {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
         )

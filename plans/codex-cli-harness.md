@@ -247,7 +247,8 @@ before any subprocess.
 | `low` / `medium` / `high` / `xhigh` / `max` | same string |
 | anything else — `ultra`, `minimal`, `none`, `""`, `"High"`, non-`str`, `None` | **`HarnessError`**, never passed through |
 
-Explicit dict, not a pass-through: codex does no client-side validation.
+Explicit allowlist (`EFFORTS`, a frozenset): codex does no client-side
+validation, so an unlisted value raises rather than reaching the CLI.
 `ultra` is excluded because it is outside the benchmark vocabulary and turns
 on automatic sub-agent delegation, which changes what is measured.
 
@@ -557,34 +558,14 @@ rule, as implemented in `_usage_from`:
   build means the citations resolve; it is not a certificate that the table
   is honest.
 
-  **One canonical statement per rule** (*added round 18*). Round 18 was the
-  EIGHTH round to find restated prose contradicting the code, and the two
-  rounds before it had each certified a surface as audited-clean while being
-  wrong at two entries. The diagnosis is structural, not a run of careless
-  edits: **the same rule was restated in prose in many places, and each
-  restatement is an independent opportunity to drift.** Fixing the ninth
-  instance does not stop the tenth.
-
-  So the standing rule is now: **a rule has exactly one canonical statement —
-  a row of the table below — and prose elsewhere REFERENCES it rather than
-  restating it.** A docstring, comment, README paragraph or template that
-  needs to convey a rule says what it is for and points at the canonical
-  statement. Where prose genuinely must restate a rule for a reader who will
-  not follow a link into a plan — published page copy, and README's
-  consumer-facing predicate, which is the one thing a JSON consumer has to
-  implement itself — that restatement is REGISTERED in
-  `tests/test_prose_contract.py` and pinned, the way `templates/` already is.
-
-  That register is the mechanical half, and it is what makes a ninth instance
-  either impossible or caught: `test_no_contract_prose_uses_a_retired_spelling`
-  fails the build on any spelling a numbered round ruled out by execution
-  (each entry carries the round and the executed reason), and
-  `test_every_prose_restatement_of_a_canonical_rule_is_registered` fails on a
-  NEW unregistered restatement appearing anywhere in the contract's file set,
-  and on a registered one being silently reworded. Both are lexical and
-  neither can prove prose correct — the module's docstring states those limits
-  and records one structural guard that was built, measured at 33 false
-  positives, and rejected.
+  **Keep prose and code in step, by hand.** Rounds 11-18 repeatedly found
+  restated prose contradicting the code. The honest fix is editorial, not
+  mechanical: when a rule changes, grep for the places that describe it and
+  update them in the same commit. A prose-linting test suite was tried in
+  round 19 and removed — it was lexical, missed line-wrapped sentences (the
+  majority), left the canonical statements themselves unpinned, and added 573
+  lines of surface to police documentation. Inaccurate prose about correct
+  code is a nit; fix it when you see it.
 
   | Statement | Pinned by |
   |---|---|
@@ -599,7 +580,7 @@ rule, as implemented in `_usage_from`:
   | …and the module overview states the delta rule for a dead **resume** leg only: there the next delta covers both legs of the attempt, whereas a dead start leg's abandoned thread is covered by no delta anywhere. Round 17: the overview claimed unconditionally that a retried dead leg's delta "covers every leg of the attempt", which is the negation of the row above — prose that merely re-describes a rule more optimistically than it is was outside the table | `test_a_dead_resume_leg_leaves_the_attempt_faithful`, `test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short` |
   | `usage_caveats` is a **list**, not an enum: more than one reason can apply to one attempt | `test_the_dead_leg_caveat_composes_with_the_leg_level_one` |
   | Every ordinary attempt is faithful — the marker is only worth reading if the ordinary paths clear it | `test_every_ordinary_attempt_is_recorded_as_faithful` |
-  | **Leg**-level on purpose (round 9): no rollout turn record is *ever* adopted as a leg's share, over all four rollout states | `test_no_rollout_record_is_ever_adopted_as_a_legs_share` |
+  | **Leg**-level on purpose (round 9): no rollout turn record is *ever* adopted as a leg's share | `test_no_rollout_record_is_ever_adopted_as_a_legs_share` |
   | `"missing"` makes a RUN's totals a lower bound; `"absorbed_missing_leg"` does not; a faithful run carries no marking | `test_missing_makes_the_run_total_a_lower_bound`, `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total`, `test_a_faithful_run_carries_no_lower_bound_marking` |
   | `"dead_leg_unmeasured"` makes them a lower bound too — its own pin, since dropping it from `RUN_TOTAL_LOWER_BOUND_CAVEATS` leaves the row above green (round 14) | `test_an_abandoned_thread_is_flagged_on_the_published_page`, `test_run_page_headline_presents_a_short_total_as_a_lower_bound` |
   | Every surface publishing a run total renders that lower bound | `test_run_page_headline_presents_a_short_total_as_a_lower_bound`, `test_index_presents_a_short_total_as_a_lower_bound`, `test_benchmark_page_presents_a_short_total_as_a_lower_bound`, `test_theory_page_presents_a_short_total_as_a_lower_bound` |
@@ -620,9 +601,7 @@ rule, as implemented in `_usage_from`:
   | A `start_build` that raises leaves the instance exactly as constructed, whichever of its raise sites fires — including the four before the `try`, which is what pins the reset to the ENTRY rather than merely to the failure paths | `test_a_failed_start_clears_every_per_run_attribute` |
   | A clean codex run — every attempt `usage_faithful` with an empty `usage_caveats` — renders no marker of any kind on any surface | `test_a_clean_codex_run_carries_no_caveat_marking_at_all` |
   | `_usage_from`'s docstring states the delta as the **attempt's** share, not one leg's, since a dead resume leg never reaches `_result` and so advances no baseline. Round 18: it stated the equation unconditionally at LEG granularity — in the function that COMPUTES the published figure, and in the same docstring that closes correctly at attempt granularity 40 lines later. Executed: with a dead resume leg between them, attempt 2 publishes `usage_delta` 16,119/5, measured from the START leg's total and identical to the same sequence without the dead leg | `test_a_dead_resume_leg_leaves_the_attempt_faithful` |
-  | Prose that states a rule is REGISTERED and pinned, and a spelling a round retired cannot come back — the structural close of the eight-round restatement-drift class (round 18) | `test_every_prose_restatement_of_a_canonical_rule_is_registered`, `test_no_contract_prose_uses_a_retired_spelling` |
   | The run page says so when a reason it NAMED is one it cannot explain — deny-by-default's reader-facing edge. Round 18: a record carrying `compaction_unmeasured` had the page name it as the reason and then gloss two names that were not in the list | `test_the_run_page_says_when_a_reason_it_named_is_one_it_cannot_explain` |
-  | `README.md`'s consumer-facing run-total paragraph — the predicate an external JSON consumer must implement, and the one restatement that has to exist — states **deny-by-default** and is pinned against the renderer's EXECUTED behaviour rather than against its own spelling. Round 18: it stated the two shortening values as the predicate, the same predicate today and fail-open the day a fourth value ships | `test_the_readme_states_the_run_total_predicate_the_renderer_implements` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
   jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured
@@ -954,10 +933,9 @@ must let a test assert process-group kill and drain; `time.sleep` patched):
     its own 1000 + the lost leg's 16119) and the marker clears on the leg
     after, since the stream's own thread total is a whole baseline.
     **No rollout turn record is ever adopted as a leg's share** — pinned over
-    the four rollout states that used to be treated differently (this leg's
-    own record, a previous turn's, an unpartitionable one, one bigger than the
-    stream delta): the answer is the same marked stream delta in all four, and
-    none of them raises. Round 9's three executed scenarios have their own
+    the rollout states that used to be treated differently (this leg's own
+    record, a previous turn's): the answer is the same marked stream delta,
+    and neither raises. Round 9's three executed scenarios have their own
     tests: a dead resume after an unmeasured start leg is **retried, not
     captured** (the control — a *completing* start leg — always was), a failed
     leg on a short baseline is not billed an earlier turn, and the winning

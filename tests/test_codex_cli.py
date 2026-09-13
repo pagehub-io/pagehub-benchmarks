@@ -2367,7 +2367,7 @@ _DOCS_CITING_TESTS = (
 # The §4.5 table's row floor. Bump it when the table grows; everything else
 # is derived from the rows themselves, so this is the only hand-maintained
 # number left.
-_MIN_TABLE_ROWS = 35
+_MIN_TABLE_ROWS = 33
 
 
 def test_every_test_named_in_the_docs_exists():
