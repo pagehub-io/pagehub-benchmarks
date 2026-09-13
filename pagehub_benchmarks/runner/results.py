@@ -67,9 +67,16 @@ class AttemptRecord:
     # ``usage``, ``total_cost_usd``, ``session_id``, …) verbatim. codex-cli: a
     # bounded summary of the ``codex exec --json`` stream whose ``usage`` key is
     # codex's verbatim usage object (see harnesses/codex_cli.py). Cheap
-    # back-fill insurance: when a usage-parsing bug surfaces (cf. PR #17
-    # ``modelUsage`` fix) we can recompute totals from ``raw`` instead of
-    # re-running. Empty dict on older records.
+    # back-fill insurance against a PARSING bug (cf. PR #17 ``modelUsage``
+    # fix): where the tokens were recorded and merely read wrongly, totals can
+    # be recomputed from ``raw`` instead of re-running. It is NOT a recovery
+    # path for a codex attempt the harness marked short, which is the case the
+    # unqualified promise used to imply it covered: ``"missing"`` publishes
+    # ``usage: None`` with an all-zero delta, so there is nothing to recompute
+    # from (executed: test_non_dead_failure_records_no_usage_and_says_so), and
+    # ``"dead_leg_unmeasured"`` means the spend is in no record anywhere. Read
+    # ``raw["usage_faithful"]`` before trusting a back-fill. Empty dict on
+    # older records.
     raw: dict[str, Any] = field(default_factory=dict)
 
 

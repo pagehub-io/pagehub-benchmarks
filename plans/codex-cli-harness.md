@@ -407,8 +407,15 @@ rule, as implemented in `_usage_from`:
   allowed only for the non-dead **failure** path (§4.6 rule 5), with a
   console warning.
 - **The stream's usage is the thread total** (verified, U2): the adapter keeps
-  the last total on the instance (reset per `start_build`) and records each
-  leg's delta; a total that goes backwards ⇒ `HarnessError`. After a leg the
+  the last total on the instance (reset per `start_build`) and records the
+  delta on each *returning* leg — a dead leg records none, so what the next
+  delta covers depends on which leg died: a dead **resume** leg is retried on
+  the same thread and its spend lands inside that delta (both legs are the one
+  attempt, so nothing is marked), while a dead **start** leg is retried onto a
+  new thread whose spend is covered by no delta at all and the attempt is
+  marked `"dead_leg_unmeasured"`. This is why the published figure is the
+  ATTEMPT's share and not a leg's (table row 1). A total that goes backwards ⇒
+  `HarnessError`. After a leg the
   stream could not measure, the total is re-anchored on the
   `thread_token_usage` codex records in the rollout — **only when it has
   advanced past the total already recorded**, so the baseline never walks

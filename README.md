@@ -259,8 +259,11 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   on the following attempt (which is flagged), when its baseline could not be
   re-anchored — and zero times when it could, because the attempt that spent
   them records zeros and its successor starts from the newer baseline. Either
-  way no attempt is silently wrong — but a run containing an unfaithful
-  attempt should be read as an estimate, not a bill. An unreadable *final*
+  way no attempt is silently wrong — but a run with an attempt marked
+  `"missing"` or `"dead_leg_unmeasured"` should be read as an estimate, not a
+  bill. Those two, and not "any unfaithful attempt", are the run-level rule:
+  `"absorbed_missing_leg"` alone moves spend between the attempt rows and
+  leaves the run total whole, so a run carrying only that one is not short. An unreadable *final*
   attempt likewise has no successor, and its tokens are simply absent from the
   totals — as is an abandoned thread's spend, on any attempt carrying
   `"dead_leg_unmeasured"`.
