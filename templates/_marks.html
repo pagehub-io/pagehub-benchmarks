@@ -2,10 +2,12 @@
   Aggregate-figure marking, shared by every page that publishes a run total.
 
   A run's per-attempt caveats can make the run's OWN totals a lower bound
-  rather than a measurement: see RUN_TOTAL_LOWER_BOUND_CAVEATS in
-  tools/build_site.py for which values do that and why. The caveats these
-  macros NAME are only the ones that shorten the total — a neutral caveat in
-  the same run is filtered out before it reaches here
+  rather than a measurement. WHICH ones do is stated once, in the
+  deny-by-default note in tools/build_site.py's load_runs and in plan
+  §4.5's contract table; this comment points at it rather than restating it,
+  because a restatement here is a restatement that drifts (review round 18).
+  The caveats these macros NAME are only the ones that shorten the total — a
+  neutral caveat in the same run is filtered out before it reaches here
   (test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short). Marking the attempt
   row alone left the headline, the index's cost table, the benchmark page and
   the theory comparison all rendering the short figure unmarked (review

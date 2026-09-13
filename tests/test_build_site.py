@@ -679,9 +679,9 @@ def test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short(tmp_path: 
     """The reason list beside a lower-bound total names only the caveats that
     SHORTEN it (review round 15).
 
-    ``build_site.py``'s rule comment states this normatively — "only the
-    lower-bound subset reaches the templates on purpose" — and nothing pinned
-    it: replacing the filtered list with the unfiltered ``caveats_any`` left
+    ``build_site.py``'s rule comment states this normatively (the sentence
+    above the filter in ``load_runs``) and nothing pinned it: replacing the
+    filtered list with the unfiltered ``caveats_any`` left
     the whole suite green while the run page and the index both named
     ``absorbed_missing_leg`` as a reason the totals are short, which is
     exactly what the site's own rule, the plan and the README all say it is

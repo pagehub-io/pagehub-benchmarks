@@ -259,14 +259,15 @@ and every verified/unverified fact behind it is in `plans/codex-cli-harness.md`.
   on the following attempt (which is flagged), when its baseline could not be
   re-anchored — and zero times when it could, because the attempt that spent
   them records zeros and its successor starts from the newer baseline. Either
-  way no attempt is silently wrong — but a run with an attempt marked
-  `"missing"` or `"dead_leg_unmeasured"` should be read as an estimate, not a
-  bill. Those two, and not "any unfaithful attempt", are the run-level rule:
-  `"absorbed_missing_leg"` alone moves spend between the attempt rows and
-  leaves the run total whole, so a run carrying only that one is not short. An unreadable *final*
-  attempt likewise has no successor, and its tokens are simply absent from the
-  totals — as is an abandoned thread's spend, on any attempt carrying
-  `"dead_leg_unmeasured"`.
+  way no attempt is silently wrong — but a run carrying a caveat that is not
+  run-total-neutral should be read as an estimate, not a bill. The run-level
+  rule is **deny-by-default**, and it is not "any unfaithful attempt": a run
+  total is short unless every caveat on it is run-total-neutral. Today
+  `"absorbed_missing_leg"` is the only neutral value — it moves spend between
+  the attempt rows and leaves the run total whole — so a run carrying only
+  that one is not short. An unreadable *final* attempt likewise has no
+  successor, and its tokens are simply absent from the totals — as is an
+  abandoned thread's spend, on any attempt carrying `"dead_leg_unmeasured"`.
   `raw.rate_limits` carries
   codex's 5-hour and weekly `used_percent` for the subscription — watch it on
   a Plus plan (it is printed for attempts that return a result; a dead,
@@ -323,17 +324,28 @@ append-only, one per run:
 
 The run-level totals (`cost_usd`, `total_*_tokens`) are a plain sum and carry
 no marker of their own. Whether they are a **measurement or a lower bound** is
-derived from the attempts: a run is short if any `per_attempt[].raw.usage_caveats`
-contains `"missing"` or `"dead_leg_unmeasured"` (spend that left the record),
-and whole if the only caveat is `"absorbed_missing_leg"` (spend that merely
-moved between attempt rows). That is the rule the site renders as `≥`
-(`RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`, pinned by
+derived from the attempts, **deny-by-default**: a run total is short unless
+every caveat in every `per_attempt[].raw.usage_caveats` is run-total-neutral.
+Implement it that way round. Today `"absorbed_missing_leg"` is the only
+neutral value — spend that merely moved between attempt rows — so today the
+values that shorten a total are `"missing"` and `"dead_leg_unmeasured"`
+(spend that left the record); but a caveat this README does not list is a
+caveat a newer harness added, and it shortens the total rather than clearing
+it. An allowlist of the two shortening names is the same predicate today and
+fails open the day a fourth value ships.
+
+That is the rule the site renders as `≥` (`RUN_TOTAL_NEUTRAL_CAVEATS` in
+`tools/build_site.py` is the set the filter reads, pinned by
 `test_missing_makes_the_run_total_a_lower_bound` and
 `test_an_abandoned_thread_is_flagged_on_the_published_page` for the two
-caveats that shorten a total and by
+values that shorten a total today, by
 `test_absorbed_missing_leg_alone_does_not_shorten_the_run_total` for the one
-that does not); a consumer reading the JSON directly has to apply it, and
-reading `cost_usd` without it will sometimes understate a run.
+that does not, and by `test_an_unclassified_caveat_makes_the_run_total_a_lower_bound`
+for the deny-by-default direction itself); this paragraph is pinned against
+the renderer's executed behaviour by
+`test_the_readme_states_the_run_total_predicate_the_renderer_implements`.
+A consumer reading the JSON directly has to apply it, and reading `cost_usd`
+without it will sometimes understate a run.
 
 ## The first benchmark — `eval-chess-backend`
 

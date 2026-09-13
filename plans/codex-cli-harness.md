@@ -492,9 +492,18 @@ rule, as implemented in `_usage_from`:
     between attempts of one run and leaves the total whole. It also never
     appears alone, since the baseline gap that produces it is set only on the
     path that publishes `"missing"` and `start_build` resets it per run.
-  The set is `RUN_TOTAL_LOWER_BOUND_CAVEATS` in `tools/build_site.py`; the
-  affected figures render as `≥` plus the same `⚠` the attempt row uses; and
-  one rendered-page test per surface pins it, each failing on its own when the
+  Those three are the **classification of today's closed vocabulary, not the
+  predicate.** The renderer's filter is **deny-by-default**: a run total is
+  short unless every caveat on it is run-total-neutral, so a value written by
+  a harness version the renderer does not import marks rather than clears.
+  `RUN_TOTAL_NEUTRAL_CAVEATS` in `tools/build_site.py` is the set the filter
+  reads; `RUN_TOTAL_LOWER_BOUND_CAVEATS` beside it records which of today's
+  values shorten a total and is read by no filter. (Stated here as well as in
+  the deny-by-default row below because round 17 fixed the table and left this
+  narrative asserting the superseded intersection — the same correct-table /
+  stale-narrative split round 18 found for a second rule.) The affected
+  figures render as `≥` plus the same `⚠` the attempt row uses, and one
+  rendered-page test per surface pins it, each failing on its own when the
   marking is reverted.
   Marking errs toward marking: a delta taken against a re-anchored baseline is
   often exactly right and is still flagged, because the harness cannot show
@@ -548,6 +557,35 @@ rule, as implemented in `_usage_from`:
   build means the citations resolve; it is not a certificate that the table
   is honest.
 
+  **One canonical statement per rule** (*added round 18*). Round 18 was the
+  EIGHTH round to find restated prose contradicting the code, and the two
+  rounds before it had each certified a surface as audited-clean while being
+  wrong at two entries. The diagnosis is structural, not a run of careless
+  edits: **the same rule was restated in prose in many places, and each
+  restatement is an independent opportunity to drift.** Fixing the ninth
+  instance does not stop the tenth.
+
+  So the standing rule is now: **a rule has exactly one canonical statement —
+  a row of the table below — and prose elsewhere REFERENCES it rather than
+  restating it.** A docstring, comment, README paragraph or template that
+  needs to convey a rule says what it is for and points at the canonical
+  statement. Where prose genuinely must restate a rule for a reader who will
+  not follow a link into a plan — published page copy, and README's
+  consumer-facing predicate, which is the one thing a JSON consumer has to
+  implement itself — that restatement is REGISTERED in
+  `tests/test_prose_contract.py` and pinned, the way `templates/` already is.
+
+  That register is the mechanical half, and it is what makes a ninth instance
+  either impossible or caught: `test_no_contract_prose_uses_a_retired_spelling`
+  fails the build on any spelling a numbered round ruled out by execution
+  (each entry carries the round and the executed reason), and
+  `test_every_prose_restatement_of_a_canonical_rule_is_registered` fails on a
+  NEW unregistered restatement appearing anywhere in the contract's file set,
+  and on a registered one being silently reworded. Both are lexical and
+  neither can prove prose correct — the module's docstring states those limits
+  and records one structural guard that was built, measured at 33 false
+  positives, and rejected.
+
   | Statement | Pinned by |
   |---|---|
   | `usage_delta` and the caveats are at **attempt** granularity: a dead *resume* leg's spend is inside the attempt's own delta and is deliberately **not** marked | `test_a_dead_resume_leg_leaves_the_attempt_faithful` |
@@ -581,6 +619,9 @@ rule, as implemented in `_usage_from`:
   | The run page says what `usage_faithful` means: whether the figure measures **that attempt alone**, not whether the run passed | `test_the_raw_json_explainer_says_what_usage_faithful_means` |
   | A `start_build` that raises leaves the instance exactly as constructed, whichever of its raise sites fires — including the four before the `try`, which is what pins the reset to the ENTRY rather than merely to the failure paths | `test_a_failed_start_clears_every_per_run_attribute` |
   | A clean codex run — every attempt `usage_faithful` with an empty `usage_caveats` — renders no marker of any kind on any surface | `test_a_clean_codex_run_carries_no_caveat_marking_at_all` |
+  | `_usage_from`'s docstring states the delta as the **attempt's** share, not one leg's, since a dead resume leg never reaches `_result` and so advances no baseline. Round 18: it stated the equation unconditionally at LEG granularity — in the function that COMPUTES the published figure, and in the same docstring that closes correctly at attempt granularity 40 lines later. Executed: with a dead resume leg between them, attempt 2 publishes `usage_delta` 16,119/5, measured from the START leg's total and identical to the same sequence without the dead leg | `test_a_dead_resume_leg_leaves_the_attempt_faithful` |
+  | Prose that states a rule is REGISTERED and pinned, and a spelling a round retired cannot come back — the structural close of the eight-round restatement-drift class (round 18) | `test_every_prose_restatement_of_a_canonical_rule_is_registered`, `test_no_contract_prose_uses_a_retired_spelling` |
+  | `README.md`'s consumer-facing run-total paragraph — the predicate an external JSON consumer must implement, and the one restatement that has to exist — states **deny-by-default** and is pinned against the renderer's EXECUTED behaviour rather than against its own spelling. Round 18: it stated the two shortening values as the predicate, the same predicate today and fail-open the day a fourth value ships | `test_the_readme_states_the_run_total_predicate_the_renderer_implements` |
 - **Dead-leg detection** (§4.6 rule 2) is the second of the rollout's three
   jobs. A leg with
   no model activity *and* no stream usage is dead and is retried, not captured

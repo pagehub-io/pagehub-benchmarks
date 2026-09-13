@@ -345,9 +345,13 @@ def load_runs(results_dir: Path, benchmarks_dir: Path) -> tuple[list[dict], dict
         # every aggregate the site publishes — this run's headline, the
         # index's head-to-head cost table, the benchmark page, the theory
         # comparison — rendering an understated figure with nothing to say so
-        # (review round 12, I-2). Only the caveats in
-        # RUN_TOTAL_LOWER_BOUND_CAVEATS shorten a TOTAL; the others move spend
-        # between attempts and leave it alone.
+        # (review round 12, I-2). WHICH caveats shorten a total is stated
+        # once — in the deny-by-default note below — and this comment
+        # deliberately does not restate it. It used to, naming the lower-bound
+        # set as the predicate and calling every other caveat total-neutral;
+        # both halves were false against the filter three lines down. The
+        # spelling is retired in tests/test_prose_contract.py so it cannot
+        # come back (review round 18).
         caveats_any = sorted(
             {c for a in rec.get("per_attempt") or [] for c in a["usage_caveats"]}
         )

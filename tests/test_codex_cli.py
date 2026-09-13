@@ -1925,9 +1925,9 @@ def test_the_absorbed_marker_clears_once_the_baseline_is_whole_again(
 def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
     monkeypatch, tmp_path, isolated_env
 ):
-    """``absorbed_missing_leg`` is classified as leaving a RUN's total whole
-    (``RUN_TOTAL_LOWER_BOUND_CAVEATS``) because it only moves spend between
-    attempt rows of the SAME run. That holds only because ``start_build``
+    """``absorbed_missing_leg`` is the one value in
+    ``RUN_TOTAL_NEUTRAL_CAVEATS`` — the set the run-level filter actually
+    reads — because it only moves spend between attempt rows of the SAME run. That holds only because ``start_build``
     clears the baseline gap: without the reset, run B's very first attempt
     would be marked for a leg run A never measured, and the site would read
     run B's total as whole when spend really had left it.
@@ -1967,7 +1967,7 @@ def test_a_baseline_gap_is_recorded_only_by_a_leg_that_also_publishes_missing(tm
     set the gap too (``baseline_gap=delta["output_tokens"] > 60``) left the
     whole suite green, and three clean legs then published
     ``absorbed_missing_leg`` with no ``"missing"`` anywhere in the run — the
-    exact state the classification in ``RUN_TOTAL_LOWER_BOUND_CAVEATS``
+    exact state its membership of ``RUN_TOTAL_NEUTRAL_CAVEATS``
     assumes cannot happen. Asserting the invariant beats re-deriving it: the
     gap is what makes the NEXT leg absorb, so a gap no attempt reports as
     missing is spend that left the record with nothing published saying so."""
@@ -2039,9 +2039,9 @@ def test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run(
     shapes, an attempt marked ``absorbed_missing_leg`` always has an EARLIER
     attempt of the same run marked ``"missing"``.
 
-    That is the whole premise ``build_site.RUN_TOTAL_LOWER_BOUND_CAVEATS``
-    rests on when it classifies ``absorbed_missing_leg`` as leaving a run's
-    total whole: the spend it may have swallowed is spend some attempt of this
+    That is the whole premise ``build_site.RUN_TOTAL_NEUTRAL_CAVEATS``
+    rests on when it clears ``absorbed_missing_leg`` — the only caveat the
+    deny-by-default filter lets through — as leaving a run's total whole: the spend it may have swallowed is spend some attempt of this
     run already reports as unmeasured, so the run is already marked short. If
     absorbed could stand alone, a run would publish a total that is short with
     nothing saying so. Round 13 established this by driving the 64 runs by
@@ -2319,7 +2319,7 @@ _DOCS_CITING_TESTS = (
 # The §4.5 table's row floor. Bump it when the table grows; everything else
 # is derived from the rows themselves, so this is the only hand-maintained
 # number left.
-_MIN_TABLE_ROWS = 31
+_MIN_TABLE_ROWS = 34
 
 
 def test_every_test_named_in_the_docs_exists():

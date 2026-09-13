@@ -29,11 +29,11 @@ byte-identical in the recorded session; also closes the hole where codex
 appends a piped stdin to a positional prompt as a ``<stdin>`` block.
 
 **Effort is required and explicit.** ``config["effort"]`` must be one of
-``low|medium|high|xhigh|max`` (an explicit map onto the values ``codex debug
-models`` lists for gpt-6-astra; ``ultra`` is deliberately unmapped). Anything
-else raises before any subprocess. It is re-passed on every resume: a bare
-``codex exec resume`` was observed to reset the effort to the model default.
-Codex itself does not validate the value, so this map is the only guard.
+``low|medium|high|xhigh|max`` — the values ``codex debug models`` lists for
+gpt-6-astra (``ultra`` is deliberately excluded). Anything else raises before
+any subprocess. It is re-passed on every resume: a bare ``codex exec resume``
+was observed to reset the effort to the model default. Codex itself does not
+validate the value, so this allowlist is the only guard.
 
 **Sandbox.** ``workspace-write`` (never ``danger-full-access``) with network
 enabled inside the sandbox, on both legs, so a resume never changes the
@@ -863,9 +863,15 @@ def _usage_from(
     :func:`_read_rollout`, not against docs.
 
     **A leg's own figure comes from the stream delta and from nothing else**
-    (review round 9). ``turn.completed.usage`` is the thread total, so this
-    leg = total − ``previous_thread_total`` (zero for the first leg of a
-    thread). A ``turn.failed`` carries no usage, and nothing may stand in for
+    (review round 9) — a claim about the SOURCE, which is leg-level on
+    purpose. The figure that source yields is not.
+    ``turn.completed.usage`` is the thread total, so the returning leg records
+    total − ``previous_thread_total`` (zero for the first leg of a thread) —
+    the ATTEMPT's share, not one leg's: a dead resume leg never reaches
+    :meth:`CodexCliHarness._result`, so it advances no baseline and this
+    difference spans it too. :class:`_Usage` states that rule canonically and
+    this docstring does not restate it (review round 18).
+    A ``turn.failed`` carries no usage, and nothing may stand in for
     it: the leg records zeros with ``usage_missing`` and
     :data:`USAGE_CAVEAT_MISSING`. (A *completed* turn landing there raises in
     :meth:`CodexCliHarness._attempt` — a success is never recorded as free.)
