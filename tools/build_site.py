@@ -461,7 +461,16 @@ def build(
         shutil.copy2(STATIC_DIR / "style.css", dst)
         written.add(dst)
 
-    common = {"repo_url": BENCHMARKS_REPO_URL}
+    # ``explained_caveats`` is the set of caveat names run.html DEFINES in
+    # words. It is RUN_TOTAL_LOWER_BOUND_CAVEATS because
+    # test_the_run_page_explainer_states_the_run_total_rule requires the page
+    # to gloss every member of that constant — so the page can tell a reader
+    # when a reason it named is one it cannot explain, without the template
+    # hard-coding a second copy of the vocabulary (round 18, N-8).
+    common = {
+        "repo_url": BENCHMARKS_REPO_URL,
+        "explained_caveats": sorted(RUN_TOTAL_LOWER_BOUND_CAVEATS),
+    }
 
     # Load theories early so the home-page link counter ("theories (N)")
     # can render before _render_theories writes the per-theory files.

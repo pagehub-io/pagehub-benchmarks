@@ -351,6 +351,21 @@ REGISTER: tuple[Rule, ...] = (
                 ),
             ),
             Entry(
+                rel="tools/build_site.py",
+                must_contain=(
+                    "# ``explained_caveats`` is the set of caveat names run.html DEFINES in\n"
+                    "    # words. It is RUN_TOTAL_LOWER_BOUND_CAVEATS because"
+                ),
+                kind="reference",
+                why=(
+                    "Explains why the run page's 'explained_caveats' context equals that "
+                    "constant — the page glosses every member of it in words, a property "
+                    "the explainer test enforces. Names the set to justify an equality; "
+                    "asserts no predicate. Added round 18 (N-8) so the template need not "
+                    "hard-code a second copy of the vocabulary."
+                ),
+            ),
+            Entry(
                 rel="tests/test_build_site.py",
                 must_contain=(
                     "with the\n    filter written as an intersection with "

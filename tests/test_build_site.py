@@ -378,6 +378,13 @@ def test_build_marks_no_attempt_when_the_harness_reports_none(tmp_path: Path):
     # separate assert on the phrase could not fail independently of the count
     # above (round 17, same class as round 16's N-11).
     assert run_html.count("&#9888;") == 0
+    # …and not vacuously (round 18, N-4). Alone among its three siblings this
+    # test was negative-only: deleting the per-attempt table from run.html
+    # entirely left it green, because a page that never renders the
+    # marker-bearing region also counts zero markers. The siblings each carry
+    # a positive control for exactly this reason; this is theirs.
+    assert run_html.count("<tr>") >= len(SAMPLE_RUN["per_attempt"])
+    assert "&#34;usage_faithful&#34;" not in run_html  # the legacy shape has no raw
 
 
 def test_a_clean_codex_run_carries_no_caveat_marking_at_all(tmp_path: Path):
@@ -781,16 +788,22 @@ def test_the_run_page_explainer_states_the_run_total_rule(tmp_path: Path):
 def test_the_run_page_legend_states_what_a_marked_attempt_means(tmp_path: Path):
     """The per-attempt legend's three reasons, verbatim. Round 15 rewrote its
     first two clauses to say the figure is exact and provably its own — the
-    opposite of what the marker means — and 275 tests passed."""
+    opposite of what the marker means — and 275 tests passed.
+
+    Round 18, N-7: the third clause said "a dead leg", eleven lines from the
+    run-total explainer's "a dead <strong>start</strong> leg" for the same
+    caveat. Both were defensible — this one's clause is restrictive and tracks
+    the real predicate — but a reader meeting both on one page cannot tell
+    whether two conditions are meant, so the two now use one spelling."""
     docs = _site(tmp_path, _run_with_caveats("missing"))
     para = _explainer(docs, "on an attempt means")
     assert (
         "the harness could not measure that attempt's tokens exactly — the figure "
         "is short (nothing measured that attempt&#8217;s turn), not provably its own (it "
         "was taken against a baseline that may be short by an earlier unmeasured turn, so "
-        "it may span that turn too), or short by an abandoned thread (a dead leg was "
-        "retried onto a new thread, so whatever the harness walked away from is billed to "
-        "no attempt)." in para
+        "it may span that turn too), or short by an abandoned thread (a dead "
+        "<strong>start</strong> leg was retried onto a <em>new</em> thread, so whatever "
+        "the harness walked away from is billed to no attempt)." in para
     )
     assert "More than one reason can apply to the same attempt." in para
 
@@ -846,6 +859,35 @@ def test_an_unclassified_caveat_makes_the_run_total_a_lower_bound(tmp_path: Path
     )
     reasons = re.search(r"Reason\(s\): <code>([^<]*)</code>", (docs / RUN_HTML).read_text())
     assert reasons and reasons.group(1) == "compaction_unmeasured", reasons
+
+
+def test_the_run_page_says_when_a_reason_it_named_is_one_it_cannot_explain(tmp_path: Path):
+    """Deny-by-default's reader-facing edge (round 18, N-8).
+
+    The explainer renders the reason list and then glosses the caveat names it
+    knows. Executed before this: a record carrying ``compaction_unmeasured``
+    had the page NAME it as the reason the totals are short and then define
+    two names that were not in the list — an undefined term with no hint that
+    the renderer does not recognise it either. The marking was right and the
+    direction was right; the silence was the defect, exactly as it was at the
+    run-total filter itself.
+
+    The gate is the set of names the page actually glosses
+    (``explained_caveats``), not a second hard-coded copy of the vocabulary in
+    the template, so it cannot drift from the constant the explainer test
+    already checks the copy against."""
+    docs = _site(tmp_path, _run_with_caveats("compaction_unmeasured"))
+    para = _explainer(docs, "lower bound (&#8805;)")
+    assert "compaction_unmeasured" in para
+    assert (
+        "A reason not defined above was written by a newer harness version than this "
+        "page, and is treated as shortening the total." in para
+    )
+    # …and only then: a run whose reasons the page DOES define must not carry
+    # the sentence, or it would be noise on every marked page.
+    docs = _site(tmp_path / "known", _run_with_caveats("missing", "dead_leg_unmeasured"))
+    para = _explainer(docs, "lower bound (&#8805;)")
+    assert "A reason not defined above" not in para
 
 
 def test_every_harness_caveat_is_classified_for_run_totals():

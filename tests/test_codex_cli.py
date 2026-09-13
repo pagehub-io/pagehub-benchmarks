@@ -888,7 +888,7 @@ def test_non_dead_failure_records_no_usage_and_says_so(monkeypatch, tmp_path, is
     assert r.raw["usage"] is None
     assert r.raw["usage_delta"] == {k: 0 for k in r.raw["usage_delta"]}
     assert r.raw["usage_missing"] is True
-    assert r.raw["usage_faithful"] is False and r.raw["usage_caveats"] == ["missing"]
+    assert r.raw["usage_caveats"] == ["missing"]
     assert (r.input_tokens, r.output_tokens, r.cache_read_tokens) == (0, 0, 0)
     # No counted object, so no cache split was reported (round 4, M12).
     assert r.raw["cache_tokens_reported"] is False
@@ -1025,10 +1025,10 @@ def _rollout_lines() -> list[str]:
     return OK_ROLLOUT.splitlines()
 
 
-def _write_rollout(tmp_path: Path, lines: list[str], thread_id: str = OK_THREAD_ID) -> Path:
+def _write_rollout(tmp_path: Path, lines: list[str]) -> Path:
     d = tmp_path / "codex-home" / "sessions" / "2026" / "09" / "11"
     d.mkdir(parents=True, exist_ok=True)
-    path = d / f"rollout-2026-09-11T10-08-21-{thread_id}.jsonl"
+    path = d / f"rollout-2026-09-11T10-08-21-{OK_THREAD_ID}.jsonl"
     path.write_text("\n".join(lines) + "\n")
     return path
 
@@ -1369,7 +1369,8 @@ def test_cache_writes_partitioned_out_of_input_on_the_start_leg(monkeypatch, tmp
     legs = _Legs([(stream, "", 0)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
-    assert r.input_tokens == 15359 - 12160 - 1000 == 2199
+    u = _usage_line(OK_START)
+    assert r.input_tokens == u["input_tokens"] - u["cached_input_tokens"] - 1000 == 2199
     assert r.cache_creation_tokens == 1000
     assert r.cache_read_tokens == 12160
     assert r.output_tokens == 5
@@ -1384,9 +1385,16 @@ def test_cache_writes_on_a_resume_leg_are_the_legs_share(monkeypatch, tmp_path, 
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "again")
-    assert r1.cache_creation_tokens == 300 and r1.input_tokens == 15359 - 12160 - 300
+    start, resume = _usage_line(OK_START), _usage_line(OK_RESUME)
+    assert r1.cache_creation_tokens == 300
+    assert r1.input_tokens == start["input_tokens"] - start["cached_input_tokens"] - 300
     assert r2.cache_creation_tokens == 1000
-    assert r2.input_tokens == 16119 - 12160 - 1000 == 2959 and r2.cache_read_tokens == 12160
+    # Fixture-derived, so the trailing literal pins the fixture rather than
+    # restating an all-literal identity (round 18, N-3c).
+    delta_in = resume["input_tokens"] - start["input_tokens"]
+    delta_cached = resume["cached_input_tokens"] - start["cached_input_tokens"]
+    assert r2.input_tokens == delta_in - delta_cached - 1000 == 2959
+    assert r2.cache_read_tokens == 12160
 
 
 
@@ -1580,13 +1588,15 @@ def _rollout_plus_turn3(turn: dict[str, int], thread: dict[str, int]) -> list[st
     def _with_total(u: dict[str, int]) -> dict[str, int]:
         return {**u, "total_tokens": u["input_tokens"] + u["output_tokens"]}
 
+    # No `turn_id` and no `payload["usage"]`: both were staging for the
+    # rollout turn-adoption mechanism round 9 deleted, and `_read_rollout`
+    # reads neither at HEAD (round 18, N-5). `turn_token_usage` stays — it is
+    # still consulted, as an isinstance pairing check — and
+    # `thread_token_usage` is the one load-bearing field.
     ctx = json.loads(_last_turn_context_line())
-    ctx["payload"]["turn_id"] = "turn-3"
     record = json.loads(
         [ln for ln in _rollout_lines() if json.loads(ln).get("type") == "token_usage_record"][-1]
     )
-    record["payload"]["turn_id"] = "turn-3"
-    record["payload"]["usage"] = _with_total(turn)
     record["payload"]["turn_token_usage"] = _with_total(turn)
     record["payload"]["thread_token_usage"] = _with_total(thread)
     return _rollout_lines() + [
@@ -1596,10 +1606,7 @@ def _rollout_plus_turn3(turn: dict[str, int], thread: dict[str, int]) -> list[st
 
 
 
-@pytest.mark.parametrize(
-    "rollout",
-    ["fresh_turn_3", "stale_turn_1", "unpartitionable_turn_3", "oversized_turn_3"],
-)
+@pytest.mark.parametrize("rollout", ["fresh_turn_3", "stale_turn_1"])
 def test_no_rollout_record_is_ever_adopted_as_a_legs_share(
     monkeypatch, tmp_path, isolated_env, rollout
 ):
@@ -1615,30 +1622,28 @@ def test_no_rollout_record_is_ever_adopted_as_a_legs_share(
     baseline. Neither test proves a record BELONGS to this leg: when the
     baseline is short (exactly the ``usage_missing`` state this machinery
     existed for) an earlier, never-billed turn advances past it too, and was
-    adopted with ``usage_faithful: true``. The four cases below are the ones
-    that used to be adopted (a fresh record), refused-but-marked (stale,
-    unpartitionable, oversized) — now they are all the same case, because the
-    rollout no longer answers "which turn does this record belong to":
+    adopted with ``usage_faithful: true``. Whatever the rollout holds, leg 3
+    records the stream delta, so the two cases below are the two that are
+    still DISTINGUISHABLE to the code under test:
 
-    * ``fresh_turn_3`` — leg 3's own record, id and cumulative both new: used
-      to be recovered as ``usage_source: "stream+rollout_turn"``;
+    * ``fresh_turn_3`` — leg 3's own record, cumulative advanced: used to be
+      recovered as ``usage_source: "stream+rollout_turn"``;
     * ``stale_turn_1`` — codex appended nothing, so the file still ends on
-      turn 1's record;
-    * ``unpartitionable_turn_3`` — cache slice exceeds the prompt (round 8,
-      N-8): must not raise on a leg the stream reported as completed;
-    * ``oversized_turn_3`` — bigger than the stream delta, so it cannot be a
-      share of it.
+      turn 1's record, and the cumulative has not moved.
+
+    Two more ran here until round 18 — ``unpartitionable_turn_3`` (cache slice
+    exceeds the prompt, round 8 N-8) and ``oversized_turn_3`` (bigger than the
+    stream delta) — and both were retired because the fields they perturbed
+    are no longer read. Executed: the three ``_rollout_plus_turn3`` variants
+    produce byte-different files (9940, 9940, 9946 bytes) and ``_read_rollout``
+    returns the IDENTICAL ``(thread_total, rate_limits)`` for all three, so the
+    four parametrize cases bought two. Re-add a case here only with a field
+    ``_read_rollout`` actually reads.
     """
     turn3, total_after_turn3 = _turn3_figures()
     files = {
         "fresh_turn_3": lambda: _rollout_plus_turn3(turn3, total_after_turn3),
         "stale_turn_1": _rollout_through_turn1,
-        "unpartitionable_turn_3": lambda: _rollout_plus_turn3(
-            {**turn3, "cached_input_tokens": turn3["input_tokens"] + 1}, total_after_turn3
-        ),
-        "oversized_turn_3": lambda: _rollout_plus_turn3(
-            {**turn3, "input_tokens": 999_999}, total_after_turn3
-        ),
     }
     legs = _Legs([(OK_START, "", 0), (_failed_resume_stream(), "", 1),
                   (_stream_reporting(total_after_turn3), "", 0)])
@@ -1658,13 +1663,13 @@ def test_no_rollout_record_is_ever_adopted_as_a_legs_share(
     r3 = h.continue_build(r1.session_handle, "fix it again")  # must not raise
 
     # Leg 1 measured itself.
-    assert r1.raw["usage_faithful"] is True and r1.raw["usage_caveats"] == []
+    assert r1.raw["usage_caveats"] == []
     # Leg 2: zero tokens, but marked — not indistinguishable from a free turn.
     assert r2.raw["usage_source"] == "none"
     assert r2.raw["usage_missing"] is True
     assert r2.raw["usage_delta"] == {k: 0 for k in r2.raw["usage_delta"]}  # a dict, never None
     assert (r2.input_tokens, r2.output_tokens, r2.cache_tokens) == (0, 0, 0)
-    assert r2.raw["usage_faithful"] is False and r2.raw["usage_caveats"] == ["missing"]
+    assert r2.raw["usage_caveats"] == ["missing"]
     # Leg 3: the stream delta, which spans leg 2 — never a rollout figure.
     assert r3.raw["usage_source"] == "stream"
     assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
@@ -1848,7 +1853,14 @@ def test_reaping_never_fails_a_run(monkeypatch, tmp_path, isolated_env):
         raise PermissionError("read-only cache")
 
     monkeypatch.setattr(codex_cli, "_throwaway_home_base", lambda: base)
-    monkeypatch.setattr(codex_cli.shutil, "rmtree", refuse)
+    # The module's OWN `shutil`, not the stdlib one: `codex_cli.shutil is
+    # shutil`, so patching `codex_cli.shutil.rmtree` replaced rmtree
+    # PROCESS-WIDE and reached past the code under test — start_build's own
+    # failure path calls `shutil.rmtree(home, ignore_errors=True)`, which
+    # under a raising global raises instead of ignoring. The sibling below
+    # names that coupling from round 8 (N-3/N-4); this is the same fix round
+    # 16 applied to `time` (round 18, N-6).
+    monkeypatch.setattr(codex_cli, "shutil", types.SimpleNamespace(rmtree=refuse))
     legs = _Legs([(OK_START, "", 0)])
     _install(monkeypatch, legs)
     r = CodexCliHarness().start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
@@ -1884,10 +1896,10 @@ def test_persistently_unreadable_rollout_marks_the_attempt_that_absorbs_it(
     r3 = h.continue_build(r1.session_handle, "fix it again")
 
     # Leg 1 measured itself.
-    assert r1.raw["usage_faithful"] is True and r1.raw["usage_caveats"] == []
+    assert r1.raw["usage_caveats"] == []
     # Leg 2 spent tokens nobody could read: short, and already marked (round 7).
     assert r2.raw["usage_source"] == "none" and r2.raw["usage_missing"] is True
-    assert r2.raw["usage_faithful"] is False and r2.raw["usage_caveats"] == ["missing"]
+    assert r2.raw["usage_caveats"] == ["missing"]
     # Leg 3 absorbed leg 2 — the reviewer's executed numbers, reproduced.
     assert r3.raw["usage_delta"]["input_tokens"] == 17119 == turn3["input_tokens"] + 16119
     assert r3.raw["usage_source"] == "stream" and r3.raw["usage_missing"] is False
@@ -1919,7 +1931,7 @@ def test_the_absorbed_marker_clears_once_the_baseline_is_whole_again(
     r4 = h.continue_build(r1.session_handle, "again")
     assert r3.raw["usage_caveats"] == ["absorbed_missing_leg"]
     assert r4.raw["usage_delta"] == turn4
-    assert r4.raw["usage_faithful"] is True and r4.raw["usage_caveats"] == []
+    assert r4.raw["usage_caveats"] == []
 
 
 def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
@@ -1947,7 +1959,7 @@ def test_a_new_run_does_not_inherit_the_previous_runs_baseline_gap(
     # Run B is a new thread; its first attempt owns its whole delta.
     b1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     assert b1.raw["usage_source"] == "stream"
-    assert b1.raw["usage_faithful"] is True and b1.raw["usage_caveats"] == []
+    assert b1.raw["usage_caveats"] == []
 
 
 # --------------------------------------------------------------------------
@@ -2029,6 +2041,42 @@ def _premise_script(pattern: tuple[str, ...]) -> list[tuple[str, str, int]]:
         else:
             legs.append((_MISSING_LEG, "", 1))
     return legs
+
+
+def test_usage_faithful_is_exactly_the_absence_of_caveats(
+    monkeypatch, tmp_path, isolated_env
+):
+    """``_result`` sets ``usage_faithful = not caveats``, so the two fields are
+    one fact published twice — and pinning ``usage_caveats`` on a record fully
+    determines ``usage_faithful`` on it.
+
+    Rounds 16, 17 and 18 each removed a few of the assertions that re-stated
+    the entailed half beside the pinning half (``assert X.raw["usage_faithful"]
+    is False and X.raw["usage_caveats"] == ["missing"]`` — the second conjunct
+    strictly entails the first, so the first can never fail). Round 18's N-3b
+    asked for the negation to be pinned ONCE instead, which is this: the
+    property worth asserting is that the two fields cannot diverge, and it is
+    worth asserting exactly here.
+
+    Driven over all 16 two-attempt runs built from the four leg shapes, so
+    both directions are exercised on real ``AttemptResult``s rather than
+    asserted about the source line."""
+    faithful = unfaithful = 0
+    for pattern in itertools.product(_ABSORBED_SHAPES, repeat=2):
+        legs = _Legs(_premise_script(pattern))
+        _install(monkeypatch, legs)
+        monkeypatch.setattr(codex_cli, "DEAD_TURN_RETRY_PAUSE_SECONDS", 0)
+        h = CodexCliHarness()
+        results = [h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})]
+        results.append(h.continue_build(results[0].session_handle, "again"))
+        for r in results:
+            raw = r.raw
+            assert raw["usage_faithful"] == (not raw["usage_caveats"]), (pattern, raw)
+            faithful += bool(raw["usage_faithful"])
+            unfaithful += not raw["usage_faithful"]
+    # Non-vacuity: an all-faithful or all-unfaithful sweep would pass the
+    # identity above without ever testing it in both directions.
+    assert faithful and unfaithful, (faithful, unfaithful)
 
 
 def test_absorbed_missing_leg_never_appears_without_missing_in_the_same_run(
@@ -2319,7 +2367,7 @@ _DOCS_CITING_TESTS = (
 # The §4.5 table's row floor. Bump it when the table grows; everything else
 # is derived from the rows themselves, so this is the only hand-maintained
 # number left.
-_MIN_TABLE_ROWS = 34
+_MIN_TABLE_ROWS = 35
 
 
 def test_every_test_named_in_the_docs_exists():
@@ -2378,7 +2426,13 @@ def test_every_test_named_in_the_docs_exists():
         cells = row.rstrip().rstrip("|").rsplit("|", 1)
         pinned_by = set(re.findall(r"\btest_[a-z0-9_]+", cells[-1]))
         assert pinned_by, f"a table row names no test: {row}"
-        assert pinned_by <= defined, f"row cites tests that do not exist: {row}"
+        # No per-row `pinned_by <= defined` here: it could not fail (round 18,
+        # N-3a). `pinned_by` is the same regex over a substring of a plan line,
+        # the plan is _DOCS_CITING_TESTS[0] over which `cited` is built with
+        # that regex, and the `missing` assertion above has already checked
+        # `cited <= defined` — so it held by construction. Executed: repointing
+        # a row at a non-existent test fires `missing` first and this loop is
+        # never reached.
         statements.append(cells[0].strip())
         row_cites |= pinned_by
     # Derived floors, so nobody has to remember to bump them. Repointing the
@@ -2441,7 +2495,7 @@ def test_a_final_leg_with_unreadable_usage_is_marked_with_nothing_after_it(
     h = CodexCliHarness()
     r1 = h.start_build(str(tmp_path), "p", "gpt-6-astra", {"effort": "low"})
     r2 = h.continue_build(r1.session_handle, "fix it")
-    assert r2.raw["usage_faithful"] is False and r2.raw["usage_caveats"] == ["missing"]
+    assert r2.raw["usage_caveats"] == ["missing"]
     assert (r2.input_tokens, r2.output_tokens) == (0, 0)
 
 
@@ -2460,11 +2514,11 @@ def test_every_ordinary_attempt_is_recorded_as_faithful(monkeypatch, tmp_path, i
     r2 = h.continue_build(r1.session_handle, "again")
     r3 = h.continue_build(r1.session_handle, "again")
     assert r1.raw["usage_source"] == "stream"
-    assert r1.raw["usage_faithful"] is True and r1.raw["usage_caveats"] == []
+    assert r1.raw["usage_caveats"] == []
     assert r2.raw["usage_source"] == "stream"
-    assert r2.raw["usage_faithful"] is True and r2.raw["usage_caveats"] == []
+    assert r2.raw["usage_caveats"] == []
     assert r3.raw["usage_source"] == "none"
-    assert r3.raw["usage_faithful"] is False and r3.raw["usage_caveats"] == ["missing"]
+    assert r3.raw["usage_caveats"] == ["missing"]
 
 
 # --------------------------------------------------------------------------
@@ -2692,7 +2746,7 @@ def test_a_failed_leg_on_a_short_baseline_is_not_billed_an_earlier_turn(
     assert r3.raw["usage_source"] == "none"
     assert r3.raw["usage_delta"] == {k: 0 for k in r3.raw["usage_delta"]}
     assert (r3.input_tokens, r3.cache_read_tokens, r3.output_tokens) == (0, 0, 0)
-    assert r3.raw["usage_faithful"] is False and r3.raw["usage_caveats"] == ["missing"]
+    assert r3.raw["usage_caveats"] == ["missing"]
     # The cumulative beside turn 2's record still repaired the baseline.
     assert r4.raw["usage_delta"] == turn4
     assert r4.raw["usage_caveats"] == ["absorbed_missing_leg"]
@@ -2907,7 +2961,6 @@ def test_a_start_leg_that_abandoned_a_thread_marks_the_figure_short(
     assert r.raw["dead_turn_retries"] == 1
     assert r.raw["dead_turn_thread_ids"] == ["orphan-thread-1"]
     assert r.raw["usage_caveats"] == [codex_cli.USAGE_CAVEAT_DEAD_LEG]
-    assert r.raw["usage_faithful"] is False
     # The measured leg's own figure is still recorded verbatim: the caveat
     # says the total is short, it does not discard what WAS measured.
     assert r.raw["usage_source"] == "stream"
@@ -2932,7 +2985,6 @@ def test_a_dead_resume_leg_leaves_the_attempt_faithful(monkeypatch, tmp_path, is
     assert r2.raw["dead_turn_retries"] == 1
     assert r2.raw["dead_turn_thread_ids"] == []  # nothing abandoned
     assert r2.raw["usage_caveats"] == []
-    assert r2.raw["usage_faithful"] is True
 
 
 def test_the_dead_leg_caveat_composes_with_the_leg_level_one(
@@ -2954,7 +3006,6 @@ def test_the_dead_leg_caveat_composes_with_the_leg_level_one(
         codex_cli.USAGE_CAVEAT_MISSING,
         codex_cli.USAGE_CAVEAT_DEAD_LEG,
     ]
-    assert r.raw["usage_faithful"] is False
 
 
 def test_an_abandoned_thread_is_flagged_on_the_published_page(

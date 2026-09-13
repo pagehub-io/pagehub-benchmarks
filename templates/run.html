@@ -52,7 +52,7 @@
   Which caveats reach `totals_lower_bound_caveats` at all is
   test_a_neutral_caveat_is_never_named_as_a_reason_a_total_is_short.
 #}
-<p class="muted"><span class="warn">&#9888;</span> <strong>The token and cost totals above are a lower bound (&#8805;), not a measurement</strong> — this run spent tokens that are in none of them, so the real figures are higher by an unknown amount. Reason(s): <code>{{ r.totals_lower_bound_caveats|join(', ') }}</code>. <code>missing</code> — a turn was spent and nothing measured it; a later attempt's delta reabsorbs it only if codex's rollout did not re-anchor the baseline in between, and the record cannot say which happened. <code>dead_leg_unmeasured</code> — a dead start leg was retried onto a <em>new</em> thread, so whatever the abandoned thread spent is billed to no attempt anywhere. (<code>absorbed_missing_leg</code> alone does <em>not</em> shorten these totals: it moves spend between the attempt rows below.)</p>
+<p class="muted"><span class="warn">&#9888;</span> <strong>The token and cost totals above are a lower bound (&#8805;), not a measurement</strong> — this run spent tokens that are in none of them, so the real figures are higher by an unknown amount. Reason(s): <code>{{ r.totals_lower_bound_caveats|join(', ') }}</code>. <code>missing</code> — a turn was spent and nothing measured it; a later attempt's delta reabsorbs it only if codex's rollout did not re-anchor the baseline in between, and the record cannot say which happened. <code>dead_leg_unmeasured</code> — a dead start leg was retried onto a <em>new</em> thread, so whatever the abandoned thread spent is billed to no attempt anywhere. (<code>absorbed_missing_leg</code> alone does <em>not</em> shorten these totals: it moves spend between the attempt rows below.){% if r.totals_lower_bound_caveats|reject('in', explained_caveats)|list %} A reason not defined above was written by a newer harness version than this page, and is treated as shortening the total.{% endif %}</p>
 {% endif %}
 
 <h2>Built code</h2>
@@ -119,7 +119,7 @@
    Pinned empty by test_build_marks_no_attempt_when_the_harness_reports_none
    and test_a_clean_codex_run_carries_no_caveat_marking_at_all. #}
 {% if r.per_attempt|selectattr('usage_caveats')|list %}
-<p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (nothing measured that attempt&#8217;s turn), not provably its own (it was taken against a baseline that may be short by an earlier unmeasured turn, so it may span that turn too), or short by an abandoned thread (a dead leg was retried onto a new thread, so whatever the harness walked away from is billed to no attempt). More than one reason can apply to the same attempt. Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
+<p class="muted">A <span class="warn">&#9888;</span> on an attempt means the harness could not measure that attempt's tokens exactly — the figure is short (nothing measured that attempt&#8217;s turn), not provably its own (it was taken against a baseline that may be short by an earlier unmeasured turn, so it may span that turn too), or short by an abandoned thread (a dead <strong>start</strong> leg was retried onto a <em>new</em> thread, so whatever the harness walked away from is billed to no attempt). More than one reason can apply to the same attempt. Hover it, or read <code>raw.usage_faithful</code> / <code>raw.usage_caveats</code> below.</p>
 {% endif %}
 <table>
 <thead><tr>
