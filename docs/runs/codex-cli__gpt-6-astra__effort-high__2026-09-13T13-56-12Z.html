@@ -1,0 +1,1903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eval-chess-backend · codex-cli gpt-6-astra — run</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav><a href="../index.html">pagehub-benchmarks</a> / <a href="../benchmarks/eval-chess-backend.html">eval-chess-backend</a> / run</nav>
+<h1>eval-chess-backend — codex-cli <span class="muted">gpt-6-astra</span></h1>
+<p>
+<span class="pass">PASSED</span>  · attempt 2 of 3
+  · $1.5999 (computed)
+  · 476s
+  · config <code class="mono">effort=high</code>
+</p>
+
+<h2>Metrics</h2>
+<div class="cards">
+  <div class="card"><h3>Outcome</h3><dl>
+    <dt>passed</dt><dd><span class="pass">✓</span></dd>
+    <dt>attempts</dt><dd>2</dd>
+    <dt>max_attempts</dt><dd>3</dd>
+    <dt>started</dt><dd>2026-09-13T13:56:12.974044Z</dd>
+    <dt>finished</dt><dd>2026-09-13T14:04:16.556491Z</dd>
+  </dl></div>
+  <div class="card"><h3>Tokens</h3><dl>
+    <dt>input</dt><dd>39,788</dd>
+    <dt>output</dt><dd>13,419</dd>
+    <dt>cache</dt><dd>531,072</dd>
+    <dt>cost USD</dt><dd>$1.5999</dd>
+    <dt>wall time</dt><dd>475.6s</dd>
+  </dl></div>
+  <div class="card"><h3>Target</h3><dl>
+    <dt>repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-backend">pagehub-io/eval-chess-backend</a></dd>
+    <dt>start</dt><dd class="mono">empty</dd>
+    <dt>built sha</dt><dd><a href="https://github.com/pagehub-io/eval-chess-backend/commit/06fad2eb8222b5a3adb4c8959e94c6f688e69c6b">06fad2eb8222</a></dd>
+    <dt>worktree</dt><dd class="mono" title="/home/gavin/github/pagehub-io/pagehub-benchmarks/.worktrees/eval-chess-backend/codex-cli__gpt-6-astra__effort-high__20260913T135612Z">codex-cli__gpt-6-astra__effort-high__20260913T135612Z</dd>
+  </dl></div>
+</div>
+
+<h2>Built code</h2>
+<div class="cards"><div class="card"><dl>
+    <dt>branch</dt>
+    <dd>
+      <a href="https://github.com/pagehub-io/eval-chess-backend/tree/bench/codex-cli/gpt-6-astra/effort-high/2026-09-13T13-56-12Z"><span class="mono">bench/codex-cli/gpt-6-astra/effort-high/2026-09-13T13-56-12Z</span></a>
+    </dd>
+    <dt>commit</dt>
+    <dd><a href="https://github.com/pagehub-io/eval-chess-backend/commit/06fad2eb8222b5a3adb4c8959e94c6f688e69c6b" class="mono">06fad2eb8222</a></dd>
+    <dt>pushed at</dt><dd>2026-09-13T14:04:18.754634Z</dd>
+    <dt>browse repo</dt><dd><a href="https://github.com/pagehub-io/eval-chess-backend">pagehub-io/eval-chess-backend</a></dd>
+</dl></div></div>
+
+<h2>Template vars</h2>
+<p class="muted">The variables that were substituted into the build prompt at render time. Auto-vars and any custom <code>template_vars</code> declared in the benchmark YAML. Click a row to expand a multi-line value.</p>
+<table class="tvars">
+<thead><tr><th>name</th><th>value</th><th class="num">bytes</th></tr></thead>
+<tbody>
+<tr>
+  <td class="mono">benchmark_name</td>
+  <td>
+      <code class="mono">eval-chess-backend</code>
+  </td>
+  <td class="num">18</td>
+</tr>
+<tr>
+  <td class="mono">grader_fixture</td>
+  <td>
+      <details><summary class="muted">JSON, 37436 bytes — show</summary>
+        <pre class="mono prompt-block">{
+  &#34;collections&#34;: [
+    {
+      &#34;description&#34;: &#34;Chess rule-conformance battery for the eval-chess-backend FastAPI service (POST/GET /games, /games/{id}/moves, /legal-moves, /health, /metrics). Covers: legal &amp; illegal moves (board left unchanged, move_history empty on rejection); kingside &amp; queenside castling; castling-rights respected (kingside disallowed when the K right is absent in the FEN); cannot castle through an attacked square; en passant offered when the FEN&#39;s ep square is set and not when it is cleared, and the capture applies; promotion incl. underpromotion; a pinned piece cannot move; a move leaving one&#39;s own king in check is rejected; checkmate -&gt; white_won; stalemate -&gt; draw; the 50-move rule (start at halfmove clock 99) -&gt; draw; threefold repetition (knight shuffle) -&gt; draw; 404 for an unknown game; 422 for an unparseable move and for a bad FEN. All FENs and legal-move lists are python-chess-derived; draw assertions assume claim-aware game-over detection (board.is_game_over(claim_draw=True)).&#34;,
+      &#34;items&#34;: [
+        &#34;chess-01-health&#34;,
+        &#34;chess-02-metrics&#34;,
+        &#34;chess-03-create-legal&#34;,
+        &#34;chess-04-legal-move-e2e4&#34;,
+        &#34;chess-05-get-game-after-e4&#34;,
+        &#34;chess-06-create-illegal&#34;,
+        &#34;chess-07-illegal-move-rejected&#34;,
+        &#34;chess-08-unparseable-move-422&#34;,
+        &#34;chess-09-unknown-game-move-404&#34;,
+        &#34;chess-10-create-castle-k&#34;,
+        &#34;chess-11-castle-kingside&#34;,
+        &#34;chess-12-create-castle-q&#34;,
+        &#34;chess-13-castle-queenside&#34;,
+        &#34;chess-14-create-castle-rights&#34;,
+        &#34;chess-15-castle-k-disallowed&#34;,
+        &#34;chess-16-castle-q-still-ok&#34;,
+        &#34;chess-17-create-castle-through-check&#34;,
+        &#34;chess-18-castle-through-check-rejected&#34;,
+        &#34;chess-19-legal-moves-ep-available&#34;,
+        &#34;chess-20-legal-moves-ep-gone&#34;,
+        &#34;chess-21-create-ep-game&#34;,
+        &#34;chess-22-en-passant-capture&#34;,
+        &#34;chess-23-create-promo-q&#34;,
+        &#34;chess-24-promotion-queen&#34;,
+        &#34;chess-25-create-promo-n&#34;,
+        &#34;chess-26-underpromotion-knight&#34;,
+        &#34;chess-27-create-pin&#34;,
+        &#34;chess-28-pinned-piece-cannot-move&#34;,
+        &#34;chess-29-create-incheck&#34;,
+        &#34;chess-30-move-into-check-rejected&#34;,
+        &#34;chess-31-create-mate&#34;,
+        &#34;chess-32-checkmate-terminal&#34;,
+        &#34;chess-33-create-stalemate&#34;,
+        &#34;chess-34-stalemate-draw&#34;,
+        &#34;chess-35-create-fifty-move&#34;,
+        &#34;chess-36-fifty-move-draw&#34;,
+        &#34;chess-37-create-threefold&#34;,
+        &#34;chess-38-threefold-move-0&#34;,
+        &#34;chess-39-threefold-move-1&#34;,
+        &#34;chess-40-threefold-move-2&#34;,
+        &#34;chess-41-threefold-move-3&#34;,
+        &#34;chess-42-threefold-move-4&#34;,
+        &#34;chess-43-threefold-move-5&#34;,
+        &#34;chess-44-threefold-move-6&#34;,
+        &#34;chess-45-threefold-move-7&#34;,
+        &#34;chess-46-bad-fen-create-422&#34;,
+        &#34;chess-47-bad-fen-legal-moves-422&#34;
+      ],
+      &#34;name&#34;: &#34;eval-chess-backend&#34;
+    }
+  ],
+  &#34;environments&#34;: [
+    {
+      &#34;name&#34;: &#34;chess-local&#34;,
+      &#34;secrets&#34;: {},
+      &#34;variables&#34;: {
+        &#34;eval-chess-backend_url&#34;: &#34;http://localhost:8003&#34;
+      }
+    }
+  ],
+  &#34;requests&#34;: [
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;health-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;ok&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;health-status-ok&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;needle&#34;: &#34;commit&#34;
+          },
+          &#34;kind&#34;: &#34;body_contains&#34;,
+          &#34;name&#34;: &#34;health-has-commit&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;GET&#34;,
+      &#34;name&#34;: &#34;chess-01-health&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/health&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;metrics-200&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;GET&#34;,
+      &#34;name&#34;: &#34;chess-02-metrics&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/metrics&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_LEGAL&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-legal-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-legal-status&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white&#34;,
+            &#34;path&#34;: &#34;$.turn&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-legal-turn&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-legal-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-03-create-legal&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e2e4&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;legal-move-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;legal-move-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;legal-move-fen&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;black&#34;,
+            &#34;path&#34;: &#34;$.turn&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;legal-move-turn&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: [
+              &#34;e2e4&#34;
+            ],
+            &#34;path&#34;: &#34;$.move_history&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;legal-move-history&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-04-legal-move-e2e4&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_LEGAL}}/moves&#34;
+    },
+    {
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;get-game-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: [
+              &#34;e2e4&#34;
+            ],
+            &#34;path&#34;: &#34;$.move_history&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;get-game-history&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;get-game-status&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;a7a5&#34;,
+            &#34;path&#34;: &#34;$.legal_moves[0]&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;get-game-legal0&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;GET&#34;,
+      &#34;name&#34;: &#34;chess-05-get-game-after-e4&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_LEGAL}}&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_ILLEGAL&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-illegal-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-illegal-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-06-create-illegal&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e2e5&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;illegal-move-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;illegal-move-not-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;illegal-move-fen-unchanged&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: [],
+            &#34;path&#34;: &#34;$.move_history&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;illegal-move-history-empty&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-07-illegal-move-rejected&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_ILLEGAL}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;banana&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 422
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;unparseable-422&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-08-unparseable-move-422&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_ILLEGAL}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e2e4&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 404
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;unknown-game-move-404&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-09-unknown-game-move-404&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/this-game-does-not-exist/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_CK&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-k-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-k-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-10-create-castle-k&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-11-castle-kingside&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_CK}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_CQ&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-q-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-q-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-12-create-castle-q&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1c1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-13-castle-queenside&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_CQ}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_CR&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-rights-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-rights-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-14-create-castle-rights&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-disallowed-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-disallowed-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w Qkq - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-k-disallowed-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-15-castle-k-disallowed&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_CR}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1c1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-still-ok-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-still-ok-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-q-still-ok-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-16-castle-q-still-ok&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_CR}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;4k3/8/8/8/8/8/5r2/R3K2R w KQ - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_TC&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-tc-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-castle-tc-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-17-create-castle-through-check&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;castle-tc-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-tc-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/8/8/8/8/5r2/R3K2R w KQ - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;castle-tc-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-18-castle-through-check-rejected&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_TC}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;fen&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;ep-available-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-available-fen&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: [
+              &#34;e1d1&#34;,
+              &#34;e1d2&#34;,
+              &#34;e1e2&#34;,
+              &#34;e1f1&#34;,
+              &#34;e1f2&#34;,
+              &#34;e5d6&#34;,
+              &#34;e5e6&#34;
+            ],
+            &#34;path&#34;: &#34;$.legal_moves&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-available-legal-moves&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white&#34;,
+            &#34;path&#34;: &#34;$.turn&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-available-turn&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.is_game_over&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-available-not-over&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-19-legal-moves-ep-available&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/legal-moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;fen&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - - 0 2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;ep-gone-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: [
+              &#34;e1d1&#34;,
+              &#34;e1d2&#34;,
+              &#34;e1e2&#34;,
+              &#34;e1f1&#34;,
+              &#34;e1f2&#34;,
+              &#34;e5e6&#34;
+            ],
+            &#34;path&#34;: &#34;$.legal_moves&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-gone-legal-moves&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-20-legal-moves-ep-gone&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/legal-moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_EP&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-ep-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white&#34;,
+            &#34;path&#34;: &#34;$.turn&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-ep-turn&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-21-create-ep-game&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e5d6&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;ep-capture-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-capture-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/3P4/8/8/8/8/4K3 b - - 0 2&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;ep-capture-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-22-en-passant-capture&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_EP}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;8/1P6/8/8/4k3/8/8/4K3 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_PQ&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-promo-q-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-promo-q-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-23-create-promo-q&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;b7b8q&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;promo-q-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-q-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1Q6/8/8/8/4k3/8/8/4K3 b - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-q-fen&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;black&#34;,
+            &#34;path&#34;: &#34;$.turn&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-q-turn&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-q-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-24-promotion-queen&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_PQ}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;8/1P6/8/8/4k3/8/8/4K3 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_PN&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-promo-n-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-promo-n-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-25-create-promo-n&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;b7b8n&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;promo-n-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-n-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;1N6/8/8/8/4k3/8/8/4K3 b - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;promo-n-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-26-underpromotion-knight&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_PN}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_PIN&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-pin-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-pin-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-27-create-pin&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e2c3&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;pin-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;pin-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4rk2/8/8/8/8/8/4N3/4K3 w - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;pin-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-28-pinned-piece-cannot-move&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_PIN}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;4r3/8/8/8/8/2k5/8/4K3 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_IC&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-incheck-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-incheck-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-29-create-incheck&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;e1e2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;incheck-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: false,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;incheck-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4r3/8/8/8/8/2k5/8/4K3 w - - 0 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;incheck-fen-unchanged&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-30-move-into-check-rejected&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_IC}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_M&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-mate-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-mate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-31-create-mate&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;a1a8&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;mate-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;mate-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;white_won&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;mate-status-white-won&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;R5k1/5ppp/8/8/8/8/8/4K3 b - - 1 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;mate-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-32-checkmate-terminal&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_M}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;7k/8/6K1/5Q2/8/8/8/8 w - - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_S&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-stalemate-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-stalemate-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-33-create-stalemate&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;f5f7&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;stalemate-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;stalemate-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;stalemate-status-draw&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;7k/5Q2/6K1/8/8/8/8/8 b - - 1 1&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;stalemate-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-34-stalemate-draw&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_S}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;4k3/8/8/8/8/8/8/R3K3 w - - 99 60&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_50&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-fifty-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-fifty-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-35-create-fifty-move&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;a1a2&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;fifty-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;fifty-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;fifty-status-draw&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;4k3/8/8/8/8/8/R7/4K3 b - - 100 60&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;fifty-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-36-fifty-move-draw&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_50}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1&#34;
+      },
+      &#34;capture&#34;: {
+        &#34;GAME_3F&#34;: &#34;$.game_id&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;create-threefold-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;in_progress&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;create-threefold-status&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-37-create-threefold&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;g1f3&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-0-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-0-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-38-threefold-move-0&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;g8f6&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-1-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-1-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-39-threefold-move-1&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;f3g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-2-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-2-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-40-threefold-move-2&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;f6g8&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-3-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-3-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-41-threefold-move-3&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;g1f3&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-4-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-4-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-42-threefold-move-4&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;g8f6&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-5-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-5-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-43-threefold-move-5&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;f3g1&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-6-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-6-legal&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-44-threefold-move-6&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;move&#34;: &#34;f6g8&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 200
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-7-200&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: true,
+            &#34;path&#34;: &#34;$.legal&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-move-7-legal&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;draw&#34;,
+            &#34;path&#34;: &#34;$.status&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-final-status-draw&#34;
+        },
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: &#34;rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 8 5&#34;,
+            &#34;path&#34;: &#34;$.fen&#34;
+          },
+          &#34;kind&#34;: &#34;json_path_eq&#34;,
+          &#34;name&#34;: &#34;threefold-final-fen&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-45-threefold-move-7&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games/{{GAME_3F}}/moves&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;starting_fen&#34;: &#34;this-is-not-a-fen&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 422
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;bad-fen-create-422&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-46-bad-fen-create-422&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/games&#34;
+    },
+    {
+      &#34;body&#34;: {
+        &#34;fen&#34;: &#34;totally bogus !!&#34;
+      },
+      &#34;evaluations&#34;: [
+        {
+          &#34;config&#34;: {
+            &#34;expected&#34;: 422
+          },
+          &#34;kind&#34;: &#34;status_eq&#34;,
+          &#34;name&#34;: &#34;bad-fen-legal-moves-422&#34;
+        }
+      ],
+      &#34;method&#34;: &#34;POST&#34;,
+      &#34;name&#34;: &#34;chess-47-bad-fen-legal-moves-422&#34;,
+      &#34;url&#34;: &#34;{{eval-chess-backend_url}}/legal-moves&#34;
+    }
+  ],
+  &#34;version&#34;: 1
+}</pre>
+      </details>
+  </td>
+  <td class="num">37,436</td>
+</tr>
+<tr>
+  <td class="mono">pagehub_evals_url</td>
+  <td>
+      <code class="mono">http://localhost:8002</code>
+  </td>
+  <td class="num">21</td>
+</tr>
+<tr>
+  <td class="mono">target_port</td>
+  <td>
+      <code class="mono">8003</code>
+  </td>
+  <td class="num">4</td>
+</tr>
+<tr>
+  <td class="mono">target_repo</td>
+  <td>
+      <code class="mono">git@github.com:pagehub-io/eval-chess-backend.git</code>
+  </td>
+  <td class="num">48</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Per-attempt breakdown</h2>
+<table>
+<thead><tr>
+  <th class="num">attempt</th><th class="num">input tokens</th><th class="num">output tokens</th>
+  <th class="num">wall s</th><th>grader passed?</th><th>grader failures</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="num">1</td>
+  <td class="num">21,986</td>
+  <td class="num">10,028</td>
+  <td class="num">338.1</td>
+  <td><span class="fail">✗</span></td>
+  <td>
+      <details class="failures"><summary>1 failure(s)</summary>
+        <ul><li class="mono">chess-35-create-fifty-move :: create-fifty-status [json_path_eq] failed: {&#34;path&#34;: &#34;$.status&#34;, &#34;expected&#34;: &#34;in_progress&#34;, &#34;observed&#34;: &#34;draw&#34;, &#34;expected_raw&#34;: &#34;in_progress&#34;}</li></ul>
+      </details>
+  </td>
+</tr>
+<tr>
+  <td class="num">2</td>
+  <td class="num">17,802</td>
+  <td class="num">3,391</td>
+  <td class="num">137.5</td>
+  <td><span class="pass">✓</span></td>
+  <td>
+<span class="muted">none</span>  </td>
+</tr>
+</tbody>
+</table>
+
+<h2>Raw harness JSON (per attempt)</h2>
+<p class="muted">What the harness returned for each attempt. Claude Code: the full <code>claude -p --output-format json</code> response (<code>modelUsage</code>, <code>usage</code>, <code>total_cost_usd</code>, <code>session_id</code>, …), verbatim. Codex CLI: a bounded summary of the <code>codex exec --json</code> stream (<code>thread_id</code>, the verbatim <code>usage</code> object and this attempt's <code>usage_delta</code> with the <code>usage_faithful</code> flag that says whether it measures that attempt alone, errors, subscription <code>rate_limits</code>, <code>rollout_path</code> to codex's own transcript relative to <code>$CODEX_HOME</code>). Kept so usage-parsing bugs can be back-filled without re-running. Older records (before this feature) won't have it.</p>
+  <details class="raw-json">
+    <summary>Attempt 1 — raw JSON (1696 chars)</summary>
+    <pre class="mono prompt-block">{
+  &#34;auth_mode&#34;: &#34;Logged in using ChatGPT&#34;,
+  &#34;cache_tokens_reported&#34;: true,
+  &#34;dead_turn_errors&#34;: [],
+  &#34;dead_turn_errors_total&#34;: 0,
+  &#34;dead_turn_retries&#34;: 0,
+  &#34;dead_turn_thread_ids&#34;: [],
+  &#34;effort&#34;: &#34;high&#34;,
+  &#34;errors&#34;: [],
+  &#34;errors_total&#34;: 0,
+  &#34;event_counts&#34;: {
+    &#34;item.completed&#34;: 16,
+    &#34;item.started&#34;: 12,
+    &#34;thread.started&#34;: 1,
+    &#34;turn.completed&#34;: 1,
+    &#34;turn.started&#34;: 1
+  },
+  &#34;exit_code&#34;: 0,
+  &#34;final_event&#34;: {
+    &#34;type&#34;: &#34;turn.completed&#34;,
+    &#34;usage&#34;: {
+      &#34;cache_write_input_tokens&#34;: 0,
+      &#34;cached_input_tokens&#34;: 175616,
+      &#34;input_tokens&#34;: 197602,
+      &#34;output_tokens&#34;: 10028,
+      &#34;reasoning_output_tokens&#34;: 1220
+    }
+  },
+  &#34;model&#34;: &#34;gpt-6-astra&#34;,
+  &#34;rate_limits&#34;: {
+    &#34;plan_type&#34;: &#34;plus&#34;,
+    &#34;primary&#34;: {
+      &#34;resets_at&#34;: 1789325784,
+      &#34;used_percent&#34;: 8.0,
+      &#34;window_minutes&#34;: 300
+    },
+    &#34;secondary&#34;: {
+      &#34;resets_at&#34;: 1789912584,
+      &#34;used_percent&#34;: 1.0,
+      &#34;window_minutes&#34;: 10080
+    }
+  },
+  &#34;reasoning_output_tokens&#34;: 1220,
+  &#34;rollout_path&#34;: &#34;sessions/2026/09/13/rollout-2026-09-13T08-56-16-01a09b0d-ef34-7d72-9e14-e086f81b593a.jsonl&#34;,
+  &#34;stderr_tail&#34;: &#34;&#34;,
+  &#34;thread_id&#34;: &#34;01a09b0d-ef34-7d72-9e14-e086f81b593a&#34;,
+  &#34;unparsed_lines&#34;: [],
+  &#34;unparsed_total&#34;: 0,
+  &#34;usage&#34;: {
+    &#34;cache_write_input_tokens&#34;: 0,
+    &#34;cached_input_tokens&#34;: 175616,
+    &#34;input_tokens&#34;: 197602,
+    &#34;output_tokens&#34;: 10028,
+    &#34;reasoning_output_tokens&#34;: 1220
+  },
+  &#34;usage_caveats&#34;: [],
+  &#34;usage_delta&#34;: {
+    &#34;cache_write_input_tokens&#34;: 0,
+    &#34;cached_input_tokens&#34;: 175616,
+    &#34;input_tokens&#34;: 197602,
+    &#34;output_tokens&#34;: 10028,
+    &#34;reasoning_output_tokens&#34;: 1220
+  },
+  &#34;usage_faithful&#34;: true,
+  &#34;usage_missing&#34;: false,
+  &#34;usage_source&#34;: &#34;stream&#34;
+}</pre>
+  </details>
+  <details class="raw-json">
+    <summary>Attempt 2 — raw JSON (1652 chars)</summary>
+    <pre class="mono prompt-block">{
+  &#34;cache_tokens_reported&#34;: true,
+  &#34;dead_turn_errors&#34;: [],
+  &#34;dead_turn_errors_total&#34;: 0,
+  &#34;dead_turn_retries&#34;: 0,
+  &#34;dead_turn_thread_ids&#34;: [],
+  &#34;effort&#34;: &#34;high&#34;,
+  &#34;errors&#34;: [],
+  &#34;errors_total&#34;: 0,
+  &#34;event_counts&#34;: {
+    &#34;item.completed&#34;: 14,
+    &#34;item.started&#34;: 11,
+    &#34;thread.started&#34;: 1,
+    &#34;turn.completed&#34;: 1,
+    &#34;turn.started&#34;: 1
+  },
+  &#34;exit_code&#34;: 0,
+  &#34;final_event&#34;: {
+    &#34;type&#34;: &#34;turn.completed&#34;,
+    &#34;usage&#34;: {
+      &#34;cache_write_input_tokens&#34;: 0,
+      &#34;cached_input_tokens&#34;: 531072,
+      &#34;input_tokens&#34;: 570860,
+      &#34;output_tokens&#34;: 13419,
+      &#34;reasoning_output_tokens&#34;: 1860
+    }
+  },
+  &#34;model&#34;: &#34;gpt-6-astra&#34;,
+  &#34;rate_limits&#34;: {
+    &#34;plan_type&#34;: &#34;plus&#34;,
+    &#34;primary&#34;: {
+      &#34;resets_at&#34;: 1789325786,
+      &#34;used_percent&#34;: 15.0,
+      &#34;window_minutes&#34;: 300
+    },
+    &#34;secondary&#34;: {
+      &#34;resets_at&#34;: 1789912586,
+      &#34;used_percent&#34;: 2.0,
+      &#34;window_minutes&#34;: 10080
+    }
+  },
+  &#34;reasoning_output_tokens&#34;: 640,
+  &#34;rollout_path&#34;: &#34;sessions/2026/09/13/rollout-2026-09-13T08-56-16-01a09b0d-ef34-7d72-9e14-e086f81b593a.jsonl&#34;,
+  &#34;stderr_tail&#34;: &#34;&#34;,
+  &#34;thread_id&#34;: &#34;01a09b0d-ef34-7d72-9e14-e086f81b593a&#34;,
+  &#34;unparsed_lines&#34;: [],
+  &#34;unparsed_total&#34;: 0,
+  &#34;usage&#34;: {
+    &#34;cache_write_input_tokens&#34;: 0,
+    &#34;cached_input_tokens&#34;: 531072,
+    &#34;input_tokens&#34;: 570860,
+    &#34;output_tokens&#34;: 13419,
+    &#34;reasoning_output_tokens&#34;: 1860
+  },
+  &#34;usage_caveats&#34;: [],
+  &#34;usage_delta&#34;: {
+    &#34;cache_write_input_tokens&#34;: 0,
+    &#34;cached_input_tokens&#34;: 355456,
+    &#34;input_tokens&#34;: 373258,
+    &#34;output_tokens&#34;: 3391,
+    &#34;reasoning_output_tokens&#34;: 640
+  },
+  &#34;usage_faithful&#34;: true,
+  &#34;usage_missing&#34;: false,
+  &#34;usage_source&#34;: &#34;stream&#34;
+}</pre>
+  </details>
+
+<h2>Rendered prompts (per attempt)</h2>
+<p class="muted">Attempt 1 carries the full rendered build prompt sent to the harness (with all <code>{{ … }}</code> already substituted). Attempts 2+ carry the failure-summary follow-up the runner generated from the prior grader failures. Collapsed by default — these get long.</p>
+  <details class="rendered-prompt">
+    <summary>Attempt 1 — 3892 chars (build prompt)</summary>
+    <pre class="mono prompt-block">Build a chess API as a Python FastAPI service backed by the `python-chess`
+library. It runs on **port 8003**. State may be kept in memory (a dict of
+games is fine — no database needed).
+
+## Stack &amp; layout
+
+- FastAPI app under `api/` (e.g. `api/main.py`), standard-stack shape.
+- Every route uses a Pydantic `response_model`; every request body is a
+  Pydantic model — no raw dicts. Group schemas in a `schemas.py`.
+- `requirements.txt` including `fastapi`, `uvicorn`, and `python-chess`.
+- A `Makefile` with `make up` (run the service on :8003) and `make test`
+  (run the unit tests).
+- A `docker-compose.yml` that runs the service on :8003.
+- Unit tests (pytest) covering the endpoints below — legal/illegal moves,
+  castling, en passant, promotion, pins, checkmate, stalemate, draws, the
+  404/422 cases.
+
+## Endpoints
+
+### `POST /games`
+Body: `{ &#34;starting_fen&#34;: &lt;string, optional&gt; }`. Creates a game (from the
+standard start position if `starting_fen` is omitted, otherwise from that
+FEN). A syntactically/semantically invalid FEN → **422**.
+
+Response: `{ &#34;game_id&#34;: &lt;string&gt;, &#34;fen&#34;: &lt;string&gt;, &#34;turn&#34;: &#34;white&#34;|&#34;black&#34;,
+&#34;status&#34;: &#34;in_progress&#34;|&#34;white_won&#34;|&#34;black_won&#34;|&#34;draw&#34; }`.
+
+### `POST /games/{game_id}/moves`
+Body: `{ &#34;move&#34;: &lt;uci string&gt; }`, e.g. `&#34;e2e4&#34;`, `&#34;e7e8q&#34;`.
+
+- Unknown `game_id` → **404**.
+- A `move` that is not parseable as UCI (garbage like `&#34;hello&#34;`, or
+  malformed coordinates) → **422**.
+- A move that *parses* but is **illegal in the current position** → **200**
+  with `legal: false` and the board **unchanged** (`fen` is the pre-move FEN,
+  it is **not** appended to `move_history`).
+- A legal move is applied: `legal: true`, `fen` updated, the move appended to
+  `move_history`. If the move ends the game, `status` reflects the terminal
+  outcome (`white_won` / `black_won` / `draw`).
+
+Response: `{ &#34;game_id&#34;, &#34;fen&#34;, &#34;turn&#34;, &#34;status&#34;, &#34;legal&#34;: &lt;bool&gt;,
+&#34;move_history&#34;: [&lt;uci&gt;, ...] }`.
+
+### `GET /games/{game_id}`
+Unknown `game_id` → **404**. Response: `{ &#34;game_id&#34;, &#34;fen&#34;, &#34;turn&#34;, &#34;status&#34;,
+&#34;move_history&#34;: [&lt;uci&gt;, ...], &#34;legal_moves&#34;: [&lt;uci&gt;, ...] }` where
+`legal_moves` is the list of legal UCI moves in the current position,
+**sorted** (plain ascending string sort).
+
+### `POST /legal-moves`
+Body: `{ &#34;fen&#34;: &lt;string&gt; }`. A bad FEN → **422**. Response:
+`{ &#34;fen&#34;, &#34;legal_moves&#34;: [&lt;uci&gt;, ...], &#34;turn&#34;: &#34;white&#34;|&#34;black&#34;,
+&#34;is_game_over&#34;: &lt;bool&gt; }` — `legal_moves` **sorted** as above. This endpoint
+is stateless (it does not create a game).
+
+### `GET /health`
+`{ &#34;status&#34;: &#34;ok&#34;, &#34;commit&#34;: &lt;string&gt; }` — `commit` is the current git short
+SHA if available, otherwise any non-empty string (e.g. `&#34;dev&#34;`).
+
+### `GET /metrics`
+A metrics endpoint (Prometheus text format is fine — even a minimal one).
+
+## Notes on semantics (use `python-chess` for all of this)
+
+- `turn` is `&#34;white&#34;` when it is White to move, `&#34;black&#34;` otherwise — derive
+  it from the board, don&#39;t track it separately.
+- Draw detection must use `python-chess`&#39;s **claim-aware** game-over check so
+  claimable draws count: a game is over and drawn when
+  `board.is_game_over(claim_draw=True)` is true and
+  `board.outcome(claim_draw=True).winner` is `None`. That covers stalemate,
+  insufficient material, **threefold repetition**, and the **50-move rule**
+  (as well as the forced fivefold / seventy-five-move conditions). So:
+  `status` is `&#34;white_won&#34;` / `&#34;black_won&#34;` for a checkmate, `&#34;draw&#34;` for any
+  such drawn outcome, otherwise `&#34;in_progress&#34;`.
+- Promotion moves carry the promotion piece in the UCI string (`e7e8q`,
+  `e7e8n`, ...). Underpromotion must work.
+- For `POST /games/{game_id}/moves`, &#34;illegal in the current position&#34; means
+  the parsed move is not in `board.legal_moves` (this covers moving a pinned
+  piece, leaving your own king in check, castling through check, etc.) —
+  return `200` with `legal: false`, do not mutate the board.
+
+Build it, get the tests passing — that is all.</pre>
+  </details>
+  <details class="rendered-prompt">
+    <summary>Attempt 2 — 298 chars (retry follow-up)</summary>
+    <pre class="mono prompt-block">The conformance evals are still failing:
+
+- chess-35-create-fifty-move :: create-fifty-status [json_path_eq] failed: {&#34;path&#34;: &#34;$.status&#34;, &#34;expected&#34;: &#34;in_progress&#34;, &#34;observed&#34;: &#34;draw&#34;, &#34;expected_raw&#34;: &#34;in_progress&#34;}
+
+Fix the code so every eval passes. Build it, get the tests passing — that is all.</pre>
+  </details>
+
+<h2>Links</h2>
+<ul class="links">
+  <li>Target repo: <a href="https://github.com/pagehub-io/eval-chess-backend">https://github.com/pagehub-io/eval-chess-backend</a></li>
+<li>Built code commit: <a href="https://github.com/pagehub-io/eval-chess-backend/commit/06fad2eb8222b5a3adb4c8959e94c6f688e69c6b">https://github.com/pagehub-io/eval-chess-backend/commit/06fad2eb8222b5a3adb4c8959e94c6f688e69c6b</a></li>  <li>Benchmark definition: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/benchmarks/eval-chess-backend.yaml">benchmarks/eval-chess-backend.yaml</a></li>
+  <li>Build prompt: <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/prompts/eval-chess-backend.md">prompts/eval-chess-backend.md</a></li>
+  <li>Grader fixture bundle: <a href="https://github.com/pagehub-io/pagehub-evals/blob/main/fixtures/eval-chess-backend.json">fixtures/eval-chess-backend.json</a> (pagehub-evals)</li>
+  <li>Raw run record (JSON): <a href="../results/eval-chess-backend/codex-cli__gpt-6-astra__effort-high__2026-09-13T13-56-12Z.json">results/eval-chess-backend/codex-cli__gpt-6-astra__effort-high__2026-09-13T13-56-12Z.json</a></li>
+</ul>
+<footer>
+Generated by <code>tools/build_site.py</code> from <code>results/**/*.json</code>.
+<code>cost_usd</code> is a computed figure (summed tokens &times; <a href="https://github.com/pagehub-io/pagehub-benchmarks/blob/main/pricing.yaml">pricing.yaml</a>) — what a run's recorded tokens would cost at API rates, not an actual bill (runs execute on each harness CLI's subscription auth — Claude Code or Codex).
+</footer>
+</body>
+</html>
