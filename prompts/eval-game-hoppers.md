@@ -185,6 +185,18 @@ URL params override defaults:
 - **No real ad code loaded** — these are placeholders. Real ad
   provider integration is a documented v2 follow-up; v1 just proves
   the integration points exist at the right shape.
+- **DO NOT add a rewarded-continue / watch-ad-to-revive mechanic.**
+  No `[data-testid="rewarded-continue"]` button, no "watch ad to
+  continue from where you died", no resume-at-same-lane affordance.
+  This is a *single-tap runner*; the death-and-restart moment IS the
+  share trigger (`WIPEOUT → screenshot → "beat my score"`). A revive
+  path turns it into pay-to-skip-the-stakes, shifts the implicit
+  pitch from skill game to skill game with paywall around the
+  failure moment, and kills virality. Banner + interstitial are
+  passive placements (fine — they don't change gameplay). A revive
+  button is active monetization that compromises the game shape;
+  it's explicitly **forbidden** for this build, the way `frog` is
+  forbidden as a species.
 
 ### Gameplay shape (theme-agnostic — graded)
 
