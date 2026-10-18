@@ -1,0 +1,450 @@
+{
+ "deepseek": {
+  "runs": [
+   {
+    "run": "a1",
+    "verdict": "RESOLVED",
+    "wall": 180,
+    "steps": 0,
+    "patch_lines": 129,
+    "cost": 0.0255,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a2",
+    "verdict": "RESOLVED",
+    "wall": 100,
+    "steps": 0,
+    "patch_lines": 126,
+    "cost": 0.0229,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a3",
+    "verdict": "RESOLVED",
+    "wall": 132,
+    "steps": 0,
+    "patch_lines": 134,
+    "cost": 0.0171,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a4",
+    "verdict": "RESOLVED",
+    "wall": 115,
+    "steps": 0,
+    "patch_lines": 129,
+    "cost": 0.0215,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a5",
+    "verdict": "RESOLVED",
+    "wall": 117,
+    "steps": 0,
+    "patch_lines": 127,
+    "cost": 0.0302,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a6",
+    "verdict": "RESOLVED",
+    "wall": 115,
+    "steps": 0,
+    "patch_lines": 131,
+    "cost": 0.023,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a7",
+    "verdict": "RESOLVED",
+    "wall": 123,
+    "steps": 0,
+    "patch_lines": 129,
+    "cost": 0.0149,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a8",
+    "verdict": "RESOLVED",
+    "wall": 84,
+    "steps": 0,
+    "patch_lines": 130,
+    "cost": 0.0237,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a9",
+    "verdict": "RESOLVED",
+    "wall": 72,
+    "steps": 0,
+    "patch_lines": 130,
+    "cost": 0.0158,
+    "mode": "solved",
+    "tail": ""
+   },
+   {
+    "run": "a10",
+    "verdict": "RESOLVED",
+    "wall": 165,
+    "steps": 0,
+    "patch_lines": 137,
+    "cost": 0.0315,
+    "mode": "solved",
+    "tail": ""
+   }
+  ],
+  "rate": [
+   0.3,
+   1.2
+  ],
+  "resolved": 10,
+  "n": 10,
+  "cost": 0.2261,
+  "wall": 1203
+ },
+ "nemotron-lightning": {
+  "runs": [
+   {
+    "run": "a1",
+    "verdict": "RESOLVED",
+    "wall": 238,
+    "steps": 51,
+    "patch_lines": 124,
+    "cost": 0.007,
+    "mode": "solved",
+    "tail": "40 passed in 0.19s | 1520 passed, 142 skipped, 3 deselected in 19.35s"
+   },
+   {
+    "run": "a2",
+    "verdict": "NOT_RESOLVED",
+    "wall": 226,
+    "steps": 1,
+    "patch_lines": 0,
+    "cost": 0.0066,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.47s | 1520 passed, 142 skipped, 3 deselected in 20.57s"
+   },
+   {
+    "run": "a3",
+    "verdict": "RESOLVED",
+    "wall": 303,
+    "steps": 82,
+    "patch_lines": 143,
+    "cost": 0.0153,
+    "mode": "solved",
+    "tail": "40 passed in 0.17s | 1520 passed, 142 skipped, 3 deselected in 24.49s"
+   },
+   {
+    "run": "a4",
+    "verdict": "NOT_RESOLVED",
+    "wall": 680,
+    "steps": 2,
+    "patch_lines": 0,
+    "cost": 0.007,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.56s | 1520 passed, 142 skipped, 3 deselected in 25.01s"
+   },
+   {
+    "run": "a5",
+    "verdict": "NOT_RESOLVED",
+    "wall": 192,
+    "steps": 2,
+    "patch_lines": 0,
+    "cost": 0.0005,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.50s | 1520 passed, 142 skipped, 3 deselected in 22.40s"
+   },
+   {
+    "run": "a6",
+    "verdict": "NOT_RESOLVED",
+    "wall": 281,
+    "steps": 1,
+    "patch_lines": 0,
+    "cost": 0.0004,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.65s | 1520 passed, 142 skipped, 3 deselected in 22.12s"
+   },
+   {
+    "run": "a7",
+    "verdict": "NOT_RESOLVED",
+    "wall": 971,
+    "steps": 41,
+    "patch_lines": 148,
+    "cost": 0.007,
+    "mode": "partial",
+    "tail": "23 failed, 17 passed in 0.92s | 1520 passed, 142 skipped, 3 deselected in 23.47s"
+   },
+   {
+    "run": "a8",
+    "verdict": "NOT_RESOLVED",
+    "wall": 300,
+    "steps": 2,
+    "patch_lines": 0,
+    "cost": 0.0006,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.99s | 1520 passed, 142 skipped, 3 deselected in 24.66s"
+   },
+   {
+    "run": "a9",
+    "verdict": "NOT_RESOLVED",
+    "wall": 340,
+    "steps": 1,
+    "patch_lines": 0,
+    "cost": 0.0004,
+    "mode": "collapsed",
+    "tail": "39 failed, 1 passed in 0.66s | 1520 passed, 142 skipped, 3 deselected in 24.34s"
+   },
+   {
+    "run": "a10",
+    "verdict": "NOT_RESOLVED",
+    "wall": 1031,
+    "steps": 43,
+    "patch_lines": 120,
+    "cost": 0.0111,
+    "mode": "partial",
+    "tail": "9 failed, 31 passed in 0.21s | 1520 passed, 142 skipped, 3 deselected in 20.90s"
+   }
+  ],
+  "rate": [
+   0.05,
+   0.2
+  ],
+  "resolved": 2,
+  "n": 10,
+  "cost": 0.0559,
+  "wall": 4562
+ },
+ "glm-5p3-flash": {
+  "runs": [
+   {
+    "run": "a1",
+    "verdict": "RESOLVED",
+    "wall": 326,
+    "steps": 41,
+    "patch_lines": 145,
+    "cost": 0.0189,
+    "mode": "solved",
+    "tail": "40 passed in 0.12s | 1520 passed, 142 skipped, 3 deselected in 21.17s"
+   },
+   {
+    "run": "a2",
+    "verdict": "RESOLVED",
+    "wall": 271,
+    "steps": 33,
+    "patch_lines": 129,
+    "cost": 0.021,
+    "mode": "solved",
+    "tail": "40 passed in 0.11s | 1520 passed, 142 skipped, 3 deselected in 19.93s"
+   },
+   {
+    "run": "a3",
+    "verdict": "RESOLVED",
+    "wall": 257,
+    "steps": 29,
+    "patch_lines": 120,
+    "cost": 0.0183,
+    "mode": "solved",
+    "tail": "40 passed in 0.13s | 1520 passed, 142 skipped, 3 deselected in 20.73s"
+   },
+   {
+    "run": "a4",
+    "verdict": "RESOLVED",
+    "wall": 276,
+    "steps": 28,
+    "patch_lines": 132,
+    "cost": 0.0154,
+    "mode": "solved",
+    "tail": "40 passed in 0.12s | 1520 passed, 142 skipped, 3 deselected in 19.67s"
+   },
+   {
+    "run": "a5",
+    "verdict": "RESOLVED",
+    "wall": 272,
+    "steps": 35,
+    "patch_lines": 137,
+    "cost": 0.023,
+    "mode": "solved",
+    "tail": "40 passed in 0.13s | 1520 passed, 142 skipped, 3 deselected in 21.00s"
+   },
+   {
+    "run": "a6",
+    "verdict": "RESOLVED",
+    "wall": 505,
+    "steps": 45,
+    "patch_lines": 132,
+    "cost": 0.0273,
+    "mode": "solved",
+    "tail": "40 passed in 0.18s | 1520 passed, 142 skipped, 3 deselected in 26.63s"
+   },
+   {
+    "run": "a7",
+    "verdict": "RESOLVED",
+    "wall": 354,
+    "steps": 39,
+    "patch_lines": 132,
+    "cost": 0.0204,
+    "mode": "solved",
+    "tail": "40 passed in 0.15s | 1520 passed, 142 skipped, 3 deselected in 26.78s"
+   },
+   {
+    "run": "a8",
+    "verdict": "RESOLVED",
+    "wall": 298,
+    "steps": 38,
+    "patch_lines": 132,
+    "cost": 0.0203,
+    "mode": "solved",
+    "tail": "40 passed in 0.12s | 1520 passed, 142 skipped, 3 deselected in 22.49s"
+   },
+   {
+    "run": "a9",
+    "verdict": "RESOLVED",
+    "wall": 420,
+    "steps": 37,
+    "patch_lines": 132,
+    "cost": 0.0222,
+    "mode": "solved",
+    "tail": "40 passed in 0.19s | 1520 passed, 142 skipped, 3 deselected in 25.66s"
+   },
+   {
+    "run": "a10",
+    "verdict": "RESOLVED",
+    "wall": 320,
+    "steps": 39,
+    "patch_lines": 130,
+    "cost": 0.0204,
+    "mode": "solved",
+    "tail": "40 passed in 0.13s | 1520 passed, 142 skipped, 3 deselected in 26.29s"
+   }
+  ],
+  "rate": [
+   0.15,
+   0.5
+  ],
+  "resolved": 10,
+  "n": 10,
+  "cost": 0.2072,
+  "wall": 3299
+ },
+ "gpt-oss-120b": {
+  "runs": [
+   {
+    "run": "a1",
+    "verdict": "RESOLVED",
+    "wall": 89,
+    "steps": 16,
+    "patch_lines": 95,
+    "cost": 0.0115,
+    "mode": "solved",
+    "tail": "40 passed in 0.13s | 1520 passed, 142 skipped, 3 deselected in 21.46s"
+   },
+   {
+    "run": "a2",
+    "verdict": "NOT_RESOLVED",
+    "wall": 108,
+    "steps": 35,
+    "patch_lines": 136,
+    "cost": 0.0144,
+    "mode": "broken",
+    "tail": "2 errors in 0.13s | 46 errors in 2.88s"
+   },
+   {
+    "run": "a3",
+    "verdict": "NOT_RESOLVED",
+    "wall": 137,
+    "steps": 29,
+    "patch_lines": 112,
+    "cost": 0.0157,
+    "mode": "regressed",
+    "tail": "34 failed, 6 passed in 0.49s | 5 failed, 1515 passed, 142 skipped, 3 deselected in 21.69s"
+   },
+   {
+    "run": "a4",
+    "verdict": "RESOLVED",
+    "wall": 116,
+    "steps": 35,
+    "patch_lines": 136,
+    "cost": 0.0109,
+    "mode": "solved",
+    "tail": "40 passed in 0.14s | 1520 passed, 142 skipped, 3 deselected in 23.59s"
+   },
+   {
+    "run": "a5",
+    "verdict": "NOT_RESOLVED",
+    "wall": 77,
+    "steps": 7,
+    "patch_lines": 51,
+    "cost": 0.0072,
+    "mode": "regressed",
+    "tail": "2 failed, 38 passed in 0.15s | 2 failed, 1518 passed, 142 skipped, 3 deselected in 22.34s"
+   },
+   {
+    "run": "a6",
+    "verdict": "NOT_RESOLVED",
+    "wall": 89,
+    "steps": 24,
+    "patch_lines": 127,
+    "cost": 0.0108,
+    "mode": "broken",
+    "tail": "40 passed in 0.15s | 1 deselected, 2 errors in 1.33s"
+   },
+   {
+    "run": "a7",
+    "verdict": "NOT_RESOLVED",
+    "wall": 64,
+    "steps": 25,
+    "patch_lines": 97,
+    "cost": 0.0104,
+    "mode": "broken",
+    "tail": "2 errors in 0.12s | 46 errors in 2.43s"
+   },
+   {
+    "run": "a8",
+    "verdict": "NOT_RESOLVED",
+    "wall": 62,
+    "steps": 20,
+    "patch_lines": 100,
+    "cost": 0.009,
+    "mode": "broken",
+    "tail": "2 errors in 0.13s | 46 errors in 2.76s"
+   },
+   {
+    "run": "a9",
+    "verdict": "NOT_RESOLVED",
+    "wall": 86,
+    "steps": 14,
+    "patch_lines": 88,
+    "cost": 0.0088,
+    "mode": "broken",
+    "tail": "2 errors in 0.13s | 46 errors in 2.65s"
+   },
+   {
+    "run": "a10",
+    "verdict": "NOT_RESOLVED",
+    "wall": 40,
+    "steps": 5,
+    "patch_lines": 0,
+    "cost": 0.0059,
+    "mode": "wrong",
+    "tail": "39 failed, 1 passed in 0.67s | 1520 passed, 142 skipped, 3 deselected in 24.33s"
+   }
+  ],
+  "rate": [
+   0.15,
+   0.6
+  ],
+  "resolved": 2,
+  "n": 10,
+  "cost": 0.1046,
+  "wall": 868
+ }
+}

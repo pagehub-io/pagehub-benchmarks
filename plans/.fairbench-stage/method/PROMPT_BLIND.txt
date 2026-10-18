@@ -1,0 +1,29 @@
+You are writing a test suite (a "verifier") that grades candidate solutions to a software problem.
+
+STRICT INPUT BOUNDARY — this is the whole point of the exercise:
+- Read ONLY files inside your current working directory: PROBLEM.md and repo/.
+- Do NOT read anything outside it. Do NOT search the wider filesystem. Do NOT look for an upstream
+  patch, a reference solution, or any existing verifier. Do not use the network.
+- If you are tempted to go looking for "the answer", don't — a verifier written from the answer is
+  worthless here.
+
+TASK
+Read PROBLEM.md and the files under repo/. The "Required behaviour" section defines what a correct
+solution must do. Write a pytest file that grades whether a candidate implements that requirement.
+
+- Derive each expected message from the rules the statement states; do not hardcode one literal
+  string. The rule should be visible in your code.
+- Cover every case the statement describes, including degenerate and edge cases.
+- Test only what the statement requires; do not invent requirements it does not state.
+- Tests run inside the astropy repository. Import from astropy.timeseries as the existing tests do,
+  and copy their idioms for constructing objects (see repo/astropy/timeseries/tests/test_sampled.py).
+- `_required_columns` can be set directly on an object to change which columns are required.
+
+WRITE YOUR FILE TO: verifier_blind2.py  (in your working directory)
+
+THEN, in your final message, report:
+1. The behaviours you decided the statement requires (short bullets).
+2. Every place the statement was ambiguous or underspecified and you had to make a judgement call —
+   quote the sentence and say what you chose. This is the most valuable part of your report.
+3. Anything the statement says that you could not turn into a test, and why.
+4. Which files you read.
